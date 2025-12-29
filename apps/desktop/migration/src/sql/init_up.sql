@@ -117,3 +117,4 @@ CREATE TABLE exclusions (
     exclusion_data TEXT NOT NULL
 )
 
+

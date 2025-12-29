@@ -10,3 +10,4 @@ async fn main() {
 
     funkyscout_lib::run();
 }
+

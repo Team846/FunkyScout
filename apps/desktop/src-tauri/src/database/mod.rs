@@ -41,3 +41,4 @@ impl LocalDatabase {
         Ok(())
     }
 }
+

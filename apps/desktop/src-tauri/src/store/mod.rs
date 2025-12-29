@@ -23,3 +23,4 @@ pub struct AppConfig {
     pub event_key: String,
     pub team_key: String,
 }
+

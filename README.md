@@ -23,3 +23,4 @@ The `NO_STRIP` is required for linux builds. The command may fail from failing t
 
 If this fails, download a [runtime file](https://github.com/AppImage/type2-runtime/releases), and pass in its path to the `LDAI_RUNTIME_FILE` environment variable.
 
+

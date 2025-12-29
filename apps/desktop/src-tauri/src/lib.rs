@@ -73,3 +73,4 @@ impl AppState {
 pub enum AppError {
     DatabaseError(String),
 }
+

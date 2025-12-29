@@ -9,3 +9,4 @@ DROP TABLE IF EXISTS exclusions;
 
 PRAGMA journal_mode = DELETE;
 
+

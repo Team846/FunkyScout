@@ -23,3 +23,4 @@ if (!rootElement.innerHTML) {
     </StrictMode>,
   )
 }
+

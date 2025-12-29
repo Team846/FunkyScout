@@ -20,3 +20,4 @@ impl MigrationTrait for Migration {
     }
 }
 
+
