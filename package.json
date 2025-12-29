@@ -1,0 +1,18 @@
+{
+  "scripts": {
+    "dev:desktop": "pnpm --filter funkyscout-desktop tauri dev",
+    "dev:mobile": "pnpm --filter funkyscout dev",
+    "build:desktop": "pnpm --filter funkyscout-desktop tauri build",
+    "build:mobile": "pnpm --filter funkyscout build"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^24.8.1",
+    "tailwindcss": "^4.1.14"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "npm:rolldown-vite@7.1.14"
+    }
+  }
+}

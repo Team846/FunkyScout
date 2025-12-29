@@ -1,0 +1,36 @@
+dist
+.wrangler
+.output
+.vercel
+.netlify
+.vinxi
+target
+app.config.timestamp_*.js
+tsconfig.tsbuildinfo
+
+# Environment
+.env
+.env*.local
+
+# dependencies
+/node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+
+# Temp
+gitignore
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Supabase
+.branches
+.temp
+
+database.db
