@@ -10,3 +10,4 @@ impl MigratorTrait for Migrator {
         vec![Box::new(m20251113_173514_init::Migration)]
     }
 }
+

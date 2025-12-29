@@ -39,3 +39,4 @@
     ```sh
     cargo run -- status
     ```
+

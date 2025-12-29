@@ -8,3 +8,4 @@ DROP TABLE IF EXISTS event_list;
 DROP TABLE IF EXISTS exclusions;
 
 PRAGMA journal_mode = DELETE;
+
