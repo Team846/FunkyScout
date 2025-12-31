@@ -8,70 +8,71 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as AboutRouteImport } from './routes/about'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as AuthIndexRouteRouteImport } from "./routes/auth/index.route";
+import { Route as AuthComponentsLoadWidgetRouteImport } from "./routes/auth/components/EmptyWidget.tsx";
 
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
+const AuthIndexRouteRoute = AuthIndexRouteRouteImport.update({
+  id: "/auth/",
+  path: "/auth",
   getParentRoute: () => rootRouteImport,
-} as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
+const AuthComponentsLoadWidgetRoute = AuthComponentsLoadWidgetRouteImport
+  .update({
+    id: "/auth/components/LoadWidget",
+    path: "/auth/components/LoadWidget",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  "/auth": typeof AuthIndexRouteRoute;
+  "/auth/components/LoadWidget": typeof AuthComponentsLoadWidgetRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  "/auth": typeof AuthIndexRouteRoute;
+  "/auth/components/LoadWidget": typeof AuthComponentsLoadWidgetRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/about': typeof AboutRoute
+  __root__: typeof rootRouteImport;
+  "/auth/": typeof AuthIndexRouteRoute;
+  "/auth/components/LoadWidget": typeof AuthComponentsLoadWidgetRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about'
-  id: '__root__' | '/' | '/about'
-  fileRoutesById: FileRoutesById
+  fileRoutesByFullPath: FileRoutesByFullPath;
+  fullPaths: "/auth" | "/auth/components/LoadWidget";
+  fileRoutesByTo: FileRoutesByTo;
+  to: "/auth" | "/auth/components/LoadWidget";
+  id: "__root__" | "/auth/" | "/auth/components/LoadWidget";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AboutRoute: typeof AboutRoute
+  AuthIndexRouteRoute: typeof AuthIndexRouteRoute;
+  AuthComponentsLoadWidgetRoute: typeof AuthComponentsLoadWidgetRoute;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+    "/auth/": {
+      id: "/auth/";
+      path: "/auth";
+      fullPath: "/auth";
+      preLoaderRoute: typeof AuthIndexRouteRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/auth/components/LoadWidget": {
+      id: "/auth/components/LoadWidget";
+      path: "/auth/components/LoadWidget";
+      fullPath: "/auth/components/LoadWidget";
+      preLoaderRoute: typeof AuthComponentsLoadWidgetRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AboutRoute: AboutRoute,
-}
+  AuthIndexRouteRoute: AuthIndexRouteRoute,
+  AuthComponentsLoadWidgetRoute: AuthComponentsLoadWidgetRoute,
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();

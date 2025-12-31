@@ -12,8 +12,9 @@
   "app": {
     "windows": [
       {
+        "decorations": false,
         "title": "funkyscout",
-        "width": 800,
+        "width": 900,
         "height": 600
       }
     ],
