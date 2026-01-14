@@ -41,6 +41,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.0
+      lucide-react:
+        specifier: ^0.546.0
+        version: 0.546.0(react@19.2.0)
       react:
         specifier: ^19.1.0
         version: 19.2.0
@@ -5817,4 +5820,3 @@ snapshots:
   zod@3.25.76: {}
 
   zod@4.1.12: {}
-

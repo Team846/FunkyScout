@@ -1,0 +1,24 @@
+@font-face {
+    font-family: "Outfit";
+    src: url("/src/assets/fonts/Outfit-VariableFont.ttf") format("truetype");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+html,
+body,
+#root {
+    font-family: "Outfit", system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, Ubuntu, Cantarell,
+        "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
