@@ -24,10 +24,11 @@
     "baseUrl": ".",
     "paths": {
       "@ui/*": ["../../packages/shadcn/src/*"],
-      "@/*": ["../../packages/shadcn/src/*"]
+      "@/*": ["../../packages/shadcn/src/*"],
+      "@lib/*": ["../../lib/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "../../lib", "../../lib/**/*.d.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
 

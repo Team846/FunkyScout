@@ -16,6 +16,7 @@ export default defineConfig({
     alias: {
       "@ui": path.resolve(__dirname, "../../packages/shadcn/src"),
       "@": path.resolve(__dirname, "../../packages/shadcn/src"),
+      "@lib": path.resolve(__dirname, "../../lib"),
     },
   },
 });

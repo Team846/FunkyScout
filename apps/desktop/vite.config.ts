@@ -20,6 +20,7 @@ export default defineConfig(async () => ({
     alias: {
       "@ui": path.resolve(__dirname, "../../packages/shadcn/src"),
       "@": path.resolve(__dirname, "../../packages/shadcn/src"),
+      "@lib": path.resolve(__dirname, "../../lib"),
     },
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

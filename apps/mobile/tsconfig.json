@@ -8,7 +8,8 @@
     "baseUrl": ".",
     "paths": {
       "@ui/*": ["../../packages/shadcn/src/*"],
-      "@/*": ["../../packages/shadcn/src/*"]
+      "@/*": ["../../packages/shadcn/src/*"],
+      "@lib/*": ["../../lib/*"]
     }
   }
 }

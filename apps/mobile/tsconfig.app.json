@@ -20,10 +20,13 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@lib/*": ["../../lib/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../../lib", "../../lib/**/*.d.ts"]
 }
 
