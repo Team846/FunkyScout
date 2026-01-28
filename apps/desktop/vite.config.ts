@@ -16,6 +16,8 @@ export default defineConfig(async () => ({
     target: "react",
     autoCodeSplitting: true,
   }), react(), tailwindcss()],
+  // Use shared .env from workspace root
+  envDir: path.resolve(__dirname, "../.."),
   resolve: {
     alias: {
       "@ui": path.resolve(__dirname, "../../packages/shadcn/src"),

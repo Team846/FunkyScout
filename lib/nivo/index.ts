@@ -1,0 +1,1 @@
+export { NivoChartTheme } from "./theme";

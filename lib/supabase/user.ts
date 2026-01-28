@@ -111,43 +111,43 @@ export async function fetchUserProfile(): Promise<LocalUserData | false> {
 
 
 
-// export async function applyInviteCode(code: string): Promise<boolean> {
-//   try {
-//     const { data: { user }, error: authError } = await supabase.auth.getUser();
-//     if (authError || !user?.id) {
-//       throw new Error("Must be logged in to apply invite code");
-//     }
+export async function useInviteCode(code: string): Promise<boolean> {
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user?.id) {
+      throw new Error("Must be logged in to apply invite code");
+    }
 
-//     const { error } = await supabase.functions.invoke("use-invite", {
-//       body: { userID: user.id, inviteCode: code },
-//     });
-//     if (error) throw new Error(error.message);
+    const { error } = await supabase.functions.invoke("useInviteCode", {
+      body: { userID: user.id, inviteCode: code },
+    });
+    if (error) throw new Error(error.message);
 
-//     await fetchUserProfile();
-//     return true;
-//   } catch (err) {
-//     handleError(err);
-//     return false;
-//   }
-// }
+    await fetchUserProfile();
+    return true;
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+}
 
 
-// export async function changeName(newName: string): Promise<boolean> {
-//   try {
-//     const { data: { user }, error: authError } = await supabase.auth.getUser();
-//     if (authError || !user?.id) {
-//       throw new Error("Must be logged in to change name");
-//     }
+export async function changeName(newName: string): Promise<boolean> {
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user?.id) {
+      throw new Error("Must be logged in to change name");
+    }
 
-//     const { error } = await supabase.functions.invoke("change-name", {
-//       body: { userID: user.id, name: newName },
-//     });
-//     if (error) throw new Error(error.message);
+    const { error } = await supabase.functions.invoke("changeName", {
+      body: { userID: user.id, name: newName },
+    });
+    if (error) throw new Error(error.message);
 
-//     await fetchUserProfile();
-//     return true;
-//   } catch (err) {
-//     handleError(err);
-//     return false;
-//   }
-// }
+    await fetchUserProfile();
+    return true;
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+}

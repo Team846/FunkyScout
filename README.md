@@ -1,5 +1,7 @@
 ## Development
 
+You will need to create a .env.local file (like the example given) with the supabase url and keys given by the lead
+
 You must have Node.js and pnpm installed, and for desktop development, you will
 additionally need to install Rust (through rustup). The local database on
 desktop uses sea-orm, so if development with the database is needed, then run:
@@ -13,6 +15,8 @@ Run the following commands inside this directory:
 ```bash
 # First,
 pnpm install
+
+# To run either app
 
 pnpm dev:desktop
 pnpm dev:mobile

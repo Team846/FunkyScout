@@ -30,7 +30,7 @@ export async function loginWithPassword(email: string, password: string): Promis
 
 export async function signupWithPassword(email: string, password: string, username: string): Promise<boolean> {
   try {
-    const { error } = await supabase.functions.invoke("create-account", {
+    const { error } = await supabase.functions.invoke("createAccount", {
       body: { email, password, username },
     });
     if (error) throw error;
@@ -43,8 +43,10 @@ export async function signupWithPassword(email: string, password: string, userna
 
 export async function sendPasswordReset(email: string, redirectTo?: string): Promise<boolean> {
   try {
+    // Always use current origin + /reset (works for both localhost and production)
+    const resetUrl = redirectTo || `${window.location.origin}/reset`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectTo || import.meta.env.VITE_REDIRECT_URL || "https://funkyscout.vercel.app/reset-page-link",
+      redirectTo: resetUrl,
     });
     if (error) throw error;
     return true;
@@ -75,7 +77,6 @@ export async function logout(): Promise<void> {
   }
 }
 
-
 export function listenToAuthChanges() {
   return supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
     if (event === "SIGNED_IN" && session) {
@@ -83,7 +84,7 @@ export function listenToAuthChanges() {
     } else if (event === "SIGNED_OUT") {
       clearLocalUserData();
     } else if (event === "TOKEN_REFRESHED" && session) {
-      
+      // Token refreshed - no action needed
     }
   });
 }
