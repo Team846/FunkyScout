@@ -16,7 +16,7 @@ function IndexPage() {
       const userData = getLocalUserData();
 
       if (session && userData.uid) {
-        navigate({ to: "/home", replace: true });
+        navigate({ to: "/match", replace: true });
       } else {
         navigate({ to: "/auth", replace: true });
       }
