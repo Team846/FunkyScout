@@ -18,5 +18,10 @@
       "@tailwindcss/oxide",
       "esbuild"
     ]
+  },
+  "dependencies": {
+    "cargo": "^0.8.0",
+    "pnpm": "^10.28.2",
+    "tauri": "^0.15.0"
   }
 }
