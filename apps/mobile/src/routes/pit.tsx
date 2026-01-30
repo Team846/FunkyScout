@@ -7,6 +7,36 @@ import { toast } from "sonner";
 import { logout } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
 
+interface TeamProps {
+  name: string;
+  rank: number; //reuse: either time or rank
+  num: number;
+}
+
+export function TeamComponent(props: TeamProps){
+    return (
+    <div className="flex flex-row items-center gap-2">
+
+        <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
+            <div className = "flex justify-between">
+                <p className="font-medium ">{props.name}</p>
+                <p className = "font-regular text-sm  text-muted-foreground"> Rank {props.rank}</p>
+            </div>
+
+            <div className = "flex justify-between">
+            <p className="font-regular text-sm  text-muted-foreground">{props.num}</p>
+            
+            <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7.06934 1.08545L7.89316 0.261621C8.24199 -0.087207 8.80606 -0.087207 9.15117 0.261621L16.3652 7.47197C16.7141 7.8208 16.7141 8.38486 16.3652 8.72998L9.15117 15.944C8.80234 16.2929 8.23828 16.2929 7.89316 15.944L7.06934 15.1202C6.7168 14.7677 6.72422 14.1925 7.08418 13.8474L11.5559 9.58721H0.890625C0.39707 9.58721 0 9.19014 0 8.69658V7.50908C0 7.01553 0.39707 6.61846 0.890625 6.61846H11.5559L7.08418 2.3583C6.72051 2.01318 6.71309 1.43799 7.06934 1.08545Z" fill="#FBBF24"/>
+            </svg>
+            </div>
+
+        </div>
+        
+        
+    </div>
+    );
+}
 export const Route = createFileRoute("/pit")({
   component: Pit,
 })
@@ -22,9 +52,14 @@ export function Pit() {
         //onClick = {handleClick}
     }
 
+    let teams: TeamProps[] = [{name: "Cheezy", rank: 1, num: 254}, 
+                            {name: "Funky Monkeys", rank: 2, num: 846},
+                            {name: "Funky Monkeys", rank: 3, num: 846},
+                            {name: "Funky Monkeys", rank: 4, num: 846},
+                            {name: "Funky Monkeys", rank: 5, num: 846}]
     
 
-  return (
+    return (
 
     <div className="min-h-screen w-[390px] h-[844px] bg-background flex flex-col items-start p-[40px] gap-4 rounded-[15px] text-primary">
 
@@ -77,65 +112,12 @@ export function Pit() {
             
 
             
-            <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
-                <div className = "flex justify-between">
-                    <p className="font-medium ">Qualification 31</p>
-                    <p className = "font-regular text-sm  text-muted-foreground"> Rank 1</p>
-                </div>
-
-                <div className = "flex justify-between">
-                <p className="font-regular text-sm  text-muted-foreground">Team 254</p>
-                
-                <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M7.06934 1.08545L7.89316 0.261621C8.24199 -0.087207 8.80606 -0.087207 9.15117 0.261621L16.3652 7.47197C16.7141 7.8208 16.7141 8.38486 16.3652 8.72998L9.15117 15.944C8.80234 16.2929 8.23828 16.2929 7.89316 15.944L7.06934 15.1202C6.7168 14.7677 6.72422 14.1925 7.08418 13.8474L11.5559 9.58721H0.890625C0.39707 9.58721 0 9.19014 0 8.69658V7.50908C0 7.01553 0.39707 6.61846 0.890625 6.61846H11.5559L7.08418 2.3583C6.72051 2.01318 6.71309 1.43799 7.06934 1.08545Z" fill="#FBBF24"/>
-                </svg>
-                </div>
-
-            </div>
-
-            
-            
-            <div className="flex flex-row items-center gap-2" >
-
-                <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
-                    <div className = "flex justify-between">
-                        <p className="font-medium ">Qualification 31</p>
-                        <p className = "font-regular text-sm  text-muted-foreground"> Rank 2</p>
-                    </div>
-
-                    <div className = "flex justify-between">
-                    <p className="font-regular text-sm  text-muted-foreground">Team 254</p>
+            <ul className="flex flex-col gap-[10px]">
+                {teams.map((item, index) => (
                     
-                    <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M7.06934 1.08545L7.89316 0.261621C8.24199 -0.087207 8.80606 -0.087207 9.15117 0.261621L16.3652 7.47197C16.7141 7.8208 16.7141 8.38486 16.3652 8.72998L9.15117 15.944C8.80234 16.2929 8.23828 16.2929 7.89316 15.944L7.06934 15.1202C6.7168 14.7677 6.72422 14.1925 7.08418 13.8474L11.5559 9.58721H0.890625C0.39707 9.58721 0 9.19014 0 8.69658V7.50908C0 7.01553 0.39707 6.61846 0.890625 6.61846H11.5559L7.08418 2.3583C6.72051 2.01318 6.71309 1.43799 7.06934 1.08545Z" fill="#FBBF24"/>
-                    </svg>
-                    </div>
-
-                </div>
-                
-                
-            </div>
-
-            <div className="flex flex-row items-center gap-2" >
-
-                <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
-                    <div className = "flex justify-between">
-                        <p className="font-medium ">Qualification 31</p>
-                        <p className = "font-regular text-sm  text-muted-foreground"> Rank 3</p>
-                    </div>
-
-                    <div className = "flex justify-between">
-                    <p className="font-regular text-sm  text-muted-foreground">Team 254</p>
-                    
-                    <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M7.06934 1.08545L7.89316 0.261621C8.24199 -0.087207 8.80606 -0.087207 9.15117 0.261621L16.3652 7.47197C16.7141 7.8208 16.7141 8.38486 16.3652 8.72998L9.15117 15.944C8.80234 16.2929 8.23828 16.2929 7.89316 15.944L7.06934 15.1202C6.7168 14.7677 6.72422 14.1925 7.08418 13.8474L11.5559 9.58721H0.890625C0.39707 9.58721 0 9.19014 0 8.69658V7.50908C0 7.01553 0.39707 6.61846 0.890625 6.61846H11.5559L7.08418 2.3583C6.72051 2.01318 6.71309 1.43799 7.06934 1.08545Z" fill="#FBBF24"/>
-                    </svg>
-                    </div>
-
-                </div>
-                
-                
-            </div>
+                    <li key={index}> <TeamComponent name = {item.name} rank = {item.rank} num={item.num}/></li> 
+                ))}
+            </ul>
         </div>
       </div>
 
