@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as VerifyRouteImport } from "./routes/verify"
 import { Route as ResetRouteImport } from "./routes/reset"
+import { Route as PitRouteImport } from "./routes/pit"
 import { Route as MatchRouteImport } from "./routes/match"
 import { Route as HomeRouteImport } from "./routes/home"
 import { Route as AuthRouteImport } from "./routes/auth"
@@ -24,6 +25,11 @@ const VerifyRoute = VerifyRouteImport.update({
 const ResetRoute = ResetRouteImport.update({
   id: "/reset",
   path: "/reset",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PitRoute = PitRouteImport.update({
+  id: "/pit",
+  path: "/pit",
   getParentRoute: () => rootRouteImport,
 } as any)
 const MatchRoute = MatchRouteImport.update({
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   "/auth": typeof AuthRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/pit": typeof PitRoute
   "/reset": typeof ResetRoute
   "/verify": typeof VerifyRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   "/auth": typeof AuthRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/pit": typeof PitRoute
   "/reset": typeof ResetRoute
   "/verify": typeof VerifyRoute
 }
@@ -69,15 +77,24 @@ export interface FileRoutesById {
   "/auth": typeof AuthRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/pit": typeof PitRoute
   "/reset": typeof ResetRoute
   "/verify": typeof VerifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: "/" | "/auth" | "/home" | "/match" | "/reset" | "/verify"
+  fullPaths: "/" | "/auth" | "/home" | "/match" | "/pit" | "/reset" | "/verify"
   fileRoutesByTo: FileRoutesByTo
-  to: "/" | "/auth" | "/home" | "/match" | "/reset" | "/verify"
-  id: "__root__" | "/" | "/auth" | "/home" | "/match" | "/reset" | "/verify"
+  to: "/" | "/auth" | "/home" | "/match" | "/pit" | "/reset" | "/verify"
+  id:
+    | "__root__"
+    | "/"
+    | "/auth"
+    | "/home"
+    | "/match"
+    | "/pit"
+    | "/reset"
+    | "/verify"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -85,6 +102,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   HomeRoute: typeof HomeRoute
   MatchRoute: typeof MatchRoute
+  PitRoute: typeof PitRoute
   ResetRoute: typeof ResetRoute
   VerifyRoute: typeof VerifyRoute
 }
@@ -103,6 +121,13 @@ declare module "@tanstack/react-router" {
       path: "/reset"
       fullPath: "/reset"
       preLoaderRoute: typeof ResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/pit": {
+      id: "/pit"
+      path: "/pit"
+      fullPath: "/pit"
+      preLoaderRoute: typeof PitRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/match": {
@@ -141,6 +166,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   HomeRoute: HomeRoute,
   MatchRoute: MatchRoute,
+  PitRoute: PitRoute,
   ResetRoute: ResetRoute,
   VerifyRoute: VerifyRoute,
 }

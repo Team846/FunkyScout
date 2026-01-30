@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectLabel, SelectGroup, SelectItem } from "@shadcn/ui/components/select.tsx";
 import { Button } from "@shadcn/ui/components/button.js";
 
@@ -6,19 +7,15 @@ import { toast } from "sonner";
 import { logout } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
 
-export const Route = createFileRoute("/match")({
-  component: Match,
-});
+export const Route = createFileRoute("/pit")({
+  component: Pit,
+})
 
-
-export function Match() {
+export function Pit() {
     const navigate = useNavigate();
   
 
-    const handlePitClick = () => {
-        navigate({ to: "/pit" });
-        //onClick = {handleClick}
-    }
+    
 
     const handleBackClick = () => {
         navigate({ to: "/" });
@@ -46,21 +43,11 @@ export function Match() {
       
       
       <div className="flex flex-col items-start w-[304px] mt-4 gap-4  ">
-        <p className="font-medium">Match Scouting</p>
+        <p className="font-medium">Select Team</p>
         
-        <div className="flex flex-col items-start w-full bg-[#0D0D0D] rounded-[20px] w-[304px] h-[160px] gap-[18px] px-[20px] py-[15px]">
+        <div className="flex flex-col items-start w-full bg-[#0D0D0D] rounded-[20px] w-[304px] h-[99px] gap-[18px] px-[20px] py-[15px]">
            
-            <Select>
-                <SelectTrigger className="w-full flex items-center justify-between !h-[56px] ">
-                    <SelectValue placeholder="Select a Match" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="Match">Match 1</SelectItem>
-                      <SelectItem value="banana">Match 2</SelectItem>
-                    </SelectGroup>
-                </SelectContent>
-            </Select>
+            
 
             
             <div className="flex flex-row items-center gap-2 ">
@@ -85,15 +72,15 @@ export function Match() {
         </div>
 
 
-        <div className="flex flex-col items-start w-full gap-4 bg-[#0D0D0D] rounded-[20px] w-[304px] h-[234px] gap-[18px] px-[20px] py-[23px]">
-            <p className="font-medium">Recommended Matches</p>
+        <div className="flex flex-col items-start w-full gap-4 bg-[#0D0D0D] rounded-[20px] w-[304px] h-[314px] gap-[18px] px-[20px] py-[23px]">
+            <p className="font-medium">Recommended Teams</p>
             
 
             
-            <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]" onClick={handlePitClick}>
+            <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
                 <div className = "flex justify-between">
                     <p className="font-medium ">Qualification 31</p>
-                    <p className = "font-regular text-sm  text-muted-foreground"> 00:00</p>
+                    <p className = "font-regular text-sm  text-muted-foreground"> Rank 1</p>
                 </div>
 
                 <div className = "flex justify-between">
@@ -108,12 +95,33 @@ export function Match() {
 
             
             
-            <div className="flex flex-row items-center gap-2" onClick={handlePitClick}>
+            <div className="flex flex-row items-center gap-2" >
 
                 <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
                     <div className = "flex justify-between">
                         <p className="font-medium ">Qualification 31</p>
-                        <p className = "font-regular text-sm  text-muted-foreground"> 00:00</p>
+                        <p className = "font-regular text-sm  text-muted-foreground"> Rank 2</p>
+                    </div>
+
+                    <div className = "flex justify-between">
+                    <p className="font-regular text-sm  text-muted-foreground">Team 254</p>
+                    
+                    <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7.06934 1.08545L7.89316 0.261621C8.24199 -0.087207 8.80606 -0.087207 9.15117 0.261621L16.3652 7.47197C16.7141 7.8208 16.7141 8.38486 16.3652 8.72998L9.15117 15.944C8.80234 16.2929 8.23828 16.2929 7.89316 15.944L7.06934 15.1202C6.7168 14.7677 6.72422 14.1925 7.08418 13.8474L11.5559 9.58721H0.890625C0.39707 9.58721 0 9.19014 0 8.69658V7.50908C0 7.01553 0.39707 6.61846 0.890625 6.61846H11.5559L7.08418 2.3583C6.72051 2.01318 6.71309 1.43799 7.06934 1.08545Z" fill="#FBBF24"/>
+                    </svg>
+                    </div>
+
+                </div>
+                
+                
+            </div>
+
+            <div className="flex flex-row items-center gap-2" >
+
+                <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
+                    <div className = "flex justify-between">
+                        <p className="font-medium ">Qualification 31</p>
+                        <p className = "font-regular text-sm  text-muted-foreground"> Rank 3</p>
                     </div>
 
                     <div className = "flex justify-between">
@@ -131,10 +139,9 @@ export function Match() {
         </div>
       </div>
 
-      <p className="font-regular text-sm  text-muted-foreground text-center">
-        The match does NOT start after clicking the arrow button. Please lock orientation or turn off auto-rotate before scouting.
-      </p>
+      
     </div>
   );
 }
+
 
