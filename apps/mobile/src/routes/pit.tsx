@@ -48,7 +48,7 @@ export function Pit() {
     
 
     const handleBackClick = () => {
-        navigate({ to: "/" });
+        navigate({ to: "/match" });
         //onClick = {handleClick}
     }
 

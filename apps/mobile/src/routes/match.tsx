@@ -17,8 +17,16 @@ interface MatchProps {
 }
 
 export function MatchComponent(props: MatchProps){
+
+    const navigate = useNavigate();
+
+    const handlePitClick = () => {
+        navigate({ to: "/pit" });
+        //onClick = {handleClick}
+    }
+
     return (
-    <div className="flex flex-row items-center gap-2">
+    <div className="flex flex-row items-center gap-2" onClick = {handlePitClick}>
 
         <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
             <div className = "flex justify-between">
@@ -45,10 +53,7 @@ export function Match() {
     const navigate = useNavigate();
   
 
-    const handlePitClick = () => {
-        navigate({ to: "/pit" });
-        //onClick = {handleClick}
-    }
+    
 
     const handleBackClick = () => {
         navigate({ to: "/" });
@@ -133,7 +138,7 @@ export function Match() {
             <ul className="flex flex-col gap-[10px]">
                 {matches.map((item, index) => (
                     
-                    <li key={index}> <MatchComponent team_num = {item.team_num} time = {item.time} qual_num={item.team_num}/></li> 
+                    <li key={index}> <MatchComponent team_num = {item.team_num} time = {item.time} qual_num={item.qual_num}/></li> 
                 ))}
             </ul>
         </div>
