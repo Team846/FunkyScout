@@ -1,3 +1,4 @@
+import { useState, type ReactEventHandler } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectLabel, SelectGroup, SelectItem } from "@shadcn/ui/components/select.tsx";
@@ -59,36 +60,53 @@ export function Events(){
                             {name: "Sacremento", date: "3/20", year: 2026},
                             {name: "Aerospace", date: "4/2", year: 2026},
                             ]
+    const [inputText, setInputText] = useState("")
+
+    
     return (
 
         <div className = "flex flex-col min-h-screen bg-background w-[390px] h-[844px] gap-[10px] p-[32px] justify-center items-center rounded-[8px]">
             <div className = "flex flex-col w-[285px] h-[331px] gap-[15px] px-[20px] py-[24px] justify-center items-start rounded-[10px]">
-                
-                <Input
-                placeholder="Search events..."
-                className="
+                <div className=" w-[245px] h-[46px]">
+                    <Input
+                    placeholder="Search events..."
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
                     
-                    h-[46px]
-                    rounded-[20px]
-                    text-xs
-                    font-regular
-                    !text-[#FBBF24]
-                    bg-accent
-                    border-border
-                    focus-visible:ring-0
-                    focus-visible:ring-offset-0
-                "
-                />
+                    className="
+                        
+                        h-[46px]
+                        rounded-[20px]
+                        text-xs
+                        font-regular
+                        !text-[#FBBF24]
+                        bg-accent
+                        border-border
+                        focus-visible:ring-0
+                        focus-visible:ring-offset-0
+                    "
+                    />
+                </div>
+                
+                
                 
 
 
                 
                 <div className="flex flex-col items-start w-full bg-accent rounded-[20px] w-[245] gap-[10px] px-[12px] py-[16px]">
                     <ul className = "flex flex-col gap-[10px]">
-                        {events.map((item, index) => (
+                        
+                        
+                        {(inputText != "" ? events.filter(function(event){
+                            
+                            if(event.name.toLowerCase().includes(inputText)){
+                                return event
+                            }
+                        }): events).map((item, index) => (
                             
                             <li key={index}> <EventComponent name = {item.name} date = {item.date} year = {item.year}/></li> 
                         ))}
+                        
                     </ul>
                 </div>
                 
