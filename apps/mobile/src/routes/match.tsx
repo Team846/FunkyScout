@@ -1,152 +1,225 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectLabel, SelectGroup, SelectItem } from "@shadcn/ui/components/select.tsx";
+import { useState, useEffect } from "react";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "@shadcn/ui/components/select.tsx";
 import { Button } from "@shadcn/ui/components/button.js";
-
-import { toast } from "sonner";
-import { logout } from "@lib/supabase/auth";
-import { getLocalUserData } from "@lib/supabase/user";
+import { getTeams, getSchedule } from "@lib/data";
+import { useEvent } from "@lib/context/EventContext";
 
 export const Route = createFileRoute("/match")({
   component: Match,
 });
 
-interface MatchProps {
-  team_num: number;
-  time: string; //reuse: either time or rank
-  qual_num: number;
+// const CURRENT_EVENT = "2025cada";
+
+interface Team {
+  name: string;
+  num: number;
+  key: string;
 }
 
-export function MatchComponent(props: MatchProps){
-
-    const navigate = useNavigate();
-
-    const handlePitClick = () => {
-        navigate({ to: "/pit" });
-        //onClick = {handleClick}
-    }
-
-    return (
-    <div className="flex flex-row items-center gap-2" onClick = {handlePitClick}>
-
-        <div className="rounded-[20px] w-[264px] h-[70px] bg-[#131313] px-[18px] py-[10px]">
-            <div className = "flex justify-between">
-                <p className="font-medium ">Qualification {props.qual_num}</p>
-                <p className = "font-regular text-sm  text-muted-foreground"> {props.time}</p>
-            </div>
-
-            <div className = "flex justify-between">
-            <p className="font-regular text-sm  text-muted-foreground">Team {props.team_num}</p>
-            
-            <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7.06934 1.08545L7.89316 0.261621C8.24199 -0.087207 8.80606 -0.087207 9.15117 0.261621L16.3652 7.47197C16.7141 7.8208 16.7141 8.38486 16.3652 8.72998L9.15117 15.944C8.80234 16.2929 8.23828 16.2929 7.89316 15.944L7.06934 15.1202C6.7168 14.7677 6.72422 14.1925 7.08418 13.8474L11.5559 9.58721H0.890625C0.39707 9.58721 0 9.19014 0 8.69658V7.50908C0 7.01553 0.39707 6.61846 0.890625 6.61846H11.5559L7.08418 2.3583C6.72051 2.01318 6.71309 1.43799 7.06934 1.08545Z" fill="#FBBF24"/>
-            </svg>
-            </div>
-
-        </div>
-        
-        
-    </div>
-    );
+interface ScheduleEntry {
+  match: string;
+  team: string;
+  alliance: string;
 }
 
 export function Match() {
-    const navigate = useNavigate();
-  
+  const navigate = useNavigate();
+  const { currentEvent } = useEvent();
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
 
-    
+  useEffect(() => {
+    if (!currentEvent) return;
 
-    const handleBackClick = () => {
-        navigate({ to: "/" });
-        //onClick = {handleClick}
-    }
+    setLoading(true);
+    Promise.all([getTeams(currentEvent), getSchedule(currentEvent)])
+      .then(([teamsData, scheduleData]) => {
+        // Transform teams
+        const transformedTeams: Team[] = (teamsData ?? []).map((t) => ({
+          key: t.team,
+          num: parseInt(t.team.replace("frc", ""), 10),
+          name: t.team_name ?? `Team ${t.team.replace("frc", "")}`,
+        }));
+        transformedTeams.sort((a, b) => a.num - b.num);
+        setTeams(transformedTeams);
 
-    let matches: MatchProps[] = [{team_num: 254, time: "00:00", qual_num: 33}, 
-                            {team_num: 846, time: "00:00", qual_num: 1},
-                            {team_num: 1, time: "00:00", qual_num: 2},
-                            {team_num: 2, time: "00:00", qual_num: 14},
-                            {team_num: 340, time: "00:00", qual_num: 32}]
-    
+        // Store schedule
+        setSchedule(scheduleData ?? []);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Get unique matches from schedule
+  const uniqueMatches = [...new Set(schedule.map((s) => s.match))].sort((a, b) => {
+    // Sort by match type then number (qm1, qm2, ... sf1m1, f1m1)
+    const aNum = parseInt(a.replace(/\D/g, ""), 10) || 0;
+    const bNum = parseInt(b.replace(/\D/g, ""), 10) || 0;
+    return aNum - bNum;
+  });
+
+  // Get teams for selected match
+  const teamsInMatch = selectedMatch
+    ? schedule.filter((s) => s.match === selectedMatch)
+    : [];
+
+  const handleBackClick = () => {
+    navigate({ to: "/home" });
+  };
 
   return (
-
-    <div className="min-h-screen w-[390px] h-[844px] bg-background flex flex-col items-start p-[40px] gap-4 rounded-[15px] text-primary">
-
-    
-      
-      <div className="flex w-full justify-start p-0" onClick={handleBackClick}>
-        <svg width="14" height="23" viewBox="0 0 14 23" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M0.356894 11.9495L10.2259 21.8185C10.7019 22.2945 11.4736 22.2945 11.9495 21.8185L13.1006 20.6674C13.5757 20.1923 13.5766 19.4222 13.1026 18.9459L5.2812 11.0877L13.1026 3.22957C13.5766 2.7533 13.5757 1.9832 13.1006 1.50804L11.9495 0.356979C11.4735 -0.118993 10.7018 -0.118993 10.2259 0.356979L0.356946 10.226C-0.119027 10.7019 -0.119027 11.4736 0.356894 11.9495Z" fill="#FBBF24"/>
+    <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
+      {/* Back Button */}
+      <button onClick={handleBackClick} className="text-primary mb-4">
+        <svg
+          viewBox="0 0 24 24"
+          className="size-6"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M15 18L9 12L15 6"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
-      </div>
-     
-        <svg width="344" height="3" viewBox="0 0 344 3" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1.5 1.5H342.5" stroke="#404040" strokeWidth="3" strokeLinecap="round"/>
-        </svg>
-      
-      
-      
-      <div className="flex flex-col items-start w-[304px] mt-4 gap-4  ">
-        <p className="font-medium">Match Scouting</p>
-        
-        <div className="flex flex-col items-start w-full bg-[#0D0D0D] rounded-[20px] w-[304px] h-[160px] gap-[18px] px-[20px] py-[15px]">
-           
-            <Select>
-                <SelectTrigger className="w-full flex items-center justify-between !h-[56px] ">
-                    <SelectValue placeholder="Select a Match" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="Match">Match 1</SelectItem>
-                      <SelectItem value="banana">Match 2</SelectItem>
-                    </SelectGroup>
-                </SelectContent>
-            </Select>
+      </button>
 
-            
-            <div className="flex flex-row items-center gap-2 ">
-                <Select>
-                  <SelectTrigger className="w-full h-full !w-[201px] !h-[56px] py-0">
-                      <SelectValue placeholder="Select a Match" />
-                  </SelectTrigger>
-                  <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="Match">Match 1</SelectItem>
-                      </SelectGroup>
-                  </SelectContent>
-                </Select>
+      {/* Divider */}
+      <div className="h-px w-full bg-border mb-6" />
 
-                
-                <Button className="w-[53px] h-[53px] rounded-full bg-[#FBBF24] hover:bg-[#e2ac20] p-0" variant="default" size="icon">
-                    <svg width="26" height="26" viewBox="0 0 26 26" fill="none"> 
-                      <path d="M11.0546 1.74147L12.3428 0.419739C12.8883 -0.139913 13.7703 -0.139913 14.31 0.419739L25.5909 11.9879C26.1364 12.5475 26.1364 13.4525 25.5909 14.0062L14.31 25.5803C13.7645 26.1399 12.8825 26.1399 12.3428 25.5803L11.0546 24.2585C10.5033 23.6929 10.5149 22.7701 11.0778 22.2164L18.0703 15.3815H1.3927C0.620913 15.3815 0 14.7444 0 13.9526V12.0474C0 11.2556 0.620913 10.6185 1.3927 10.6185H18.0703L11.0778 3.7836C10.5091 3.22991 10.4975 2.30708 11.0546 1.74147Z" fill="#0D0D0D"/> 
-                    </svg>
-                </Button>
-            </div>
-        </div>
+      <div className="flex flex-col gap-4">
+        <p className="text-base text-primary">Match Scouting</p>
 
-
-        <div className="flex flex-col items-start w-full bg-[#0D0D0D] rounded-[20px] w-[304px] gap-[10px] px-[20px] py-[23px]">
-            <p className="font-medium">Recommended Matches</p>
-            
-
-            
-            
-            
-            
-            
-            
-            <ul className="flex flex-col gap-[10px]">
-                {matches.map((item, index) => (
-                    
-                    <li key={index}> <MatchComponent team_num = {item.team_num} time = {item.time} qual_num={item.qual_num}/></li> 
+        {/* Selection Card */}
+        <div className="flex flex-col gap-4 rounded-2xl bg-muted px-5 py-3">
+          <Select value={selectedMatch ?? undefined} onValueChange={setSelectedMatch}>
+            <SelectTrigger className="w-full h-14 hover:text-primary">
+              <SelectValue placeholder={loading ? "Loading..." : "Select a Match"} />
+            </SelectTrigger>
+            <SelectContent className="bg-accent">
+              <SelectGroup>
+                {uniqueMatches.map((match) => (
+                  <SelectItem
+                    key={match}
+                    value={match}
+                    className="focus:text-foreground text-muted-foreground focus:bg-ring"
+                  >
+                    {match.toUpperCase()}
+                  </SelectItem>
                 ))}
-            </ul>
-        </div>
-      </div>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
 
-      <p className="font-regular text-sm  text-muted-foreground text-center">
-        The match does NOT start after clicking the arrow button. Please lock orientation or turn off auto-rotate before scouting.
-      </p>
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <Select value={selectedTeam ?? undefined} onValueChange={setSelectedTeam}>
+                <SelectTrigger className="w-full h-14 hover:text-primary">
+                  <SelectValue placeholder="Select a Team" />
+                </SelectTrigger>
+                <SelectContent className="bg-accent">
+                  <SelectGroup>
+                    {(selectedMatch ? teamsInMatch : []).map((entry) => {
+                      const team = teams.find((t) => t.key === entry.team);
+                      return (
+                        <SelectItem
+                          key={`${entry.match}-${entry.team}`}
+                          value={entry.team}
+                          className="focus:text-foreground text-muted-foreground focus:bg-ring"
+                        >
+                          {entry.alliance.toUpperCase()} | Team {team?.num ?? entry.team} | {team?.name ?? ""}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              className="h-8 w-8 shrink-0 rounded-full bg-primary hover:bg-primary/90 p-0"
+              variant="default"
+              size="icon"
+            >
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <path
+                  d="M11.0546 1.74147L12.3428 0.419739C12.8883 -0.139913 13.7703 -0.139913 14.31 0.419739L25.5909 11.9879C26.1364 12.5475 26.1364 13.4525 25.5909 14.0062L14.31 25.5803C13.7645 26.1399 12.8825 26.1399 12.3428 25.5803L11.0546 24.2585C10.5033 23.6929 10.5149 22.7701 11.0778 22.2164L18.0703 15.3815H1.3927C0.620913 15.3815 0 14.7444 0 13.9526V12.0474C0 11.2556 0.620913 10.6185 1.3927 10.6185H18.0703L11.0778 3.7836C10.5091 3.22991 10.4975 2.30708 11.0546 1.74147Z"
+                  fill="#0D0D0D"
+                />
+              </svg>
+            </Button>
+          </div>
+        </div>
+
+        {/* Recommended Matches - show first 3 matches with one team each */}
+        <p className="text-base text-primary mt-2">Recommended Matches</p>
+
+        {loading ? (
+          <p className="text-muted-foreground">Loading matches...</p>
+        ) : uniqueMatches.length === 0 ? (
+          <p className="text-muted-foreground">No schedule available yet</p>
+        ) : (
+        <div className="flex flex-col">
+          {uniqueMatches.slice(0, 3).map((match) => {
+            const matchTeams = schedule.filter((s) => s.match === match);
+            // Pick the first team from the match
+            const firstTeamEntry = matchTeams[0];
+            const firstTeam = teams.find((t) => t.key === firstTeamEntry?.team);
+            
+            return (
+              <div
+                key={match}
+                className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
+                onClick={() => {
+                  setSelectedMatch(match);
+                  if (firstTeamEntry) setSelectedTeam(firstTeamEntry.team);
+                }}
+              >
+                <div className="flex w-full items-center justify-between">
+                  <div>
+                    <p className="text-base">
+                      <span className="font-bold text-primary">{match.toUpperCase()}</span>
+                      {firstTeam && (
+                        <span className="text-foreground"> | Team {firstTeam.num}</span>
+                      )}
+                    </p>
+                    <p className="mt-1 text-sm text-border">
+                      {firstTeamEntry?.alliance.toUpperCase()} Alliance
+                    </p>
+                  </div>
+                  <svg
+                    viewBox="0 0 24 24"
+                    style={{ width: 20, height: 20 }}
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M9 18L15 12L9 6"
+                      stroke="#FBBF24"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        )}
+
+        <p className="text-sm text-muted-foreground text-center mt-4">
+          The match does NOT start after clicking the arrow button. Please lock
+          orientation or turn off auto-rotate before scouting.
+        </p>
+      </div>
     </div>
   );
 }

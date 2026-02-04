@@ -1,5 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
+import { Input } from "@shadcn/ui/components/input.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@shadcn/ui/components/dialog.tsx";
 import {
   Command,
   CommandInput,
@@ -9,16 +17,56 @@ import {
 } from "@shadcn/ui/components/command.js";
 import { toast } from "sonner";
 import { logout } from "@lib/supabase/auth";
-import { getLocalUserData } from "@lib/supabase/user";
+import { getLocalUserData, changeName, useInviteCode, fetchUserProfile } from "@lib/supabase/user";
 import { fetchTeamEventStatus } from "@lib/tba";
+import { getTeams } from "@lib/data";
+import { useEvent } from "@lib/context/EventContext";
 
 export const Route = createFileRoute("/home")({
   component: HomePage,
 });
 
+// TODO: Replace with event context when ready
+// const CURRENT_EVENT = "2025cada";
+
+interface Team {
+  num: number;
+  name: string;
+  key: string;
+  rank: number;
+}
+
 function HomePage() {
   const navigate = useNavigate();
-  const userData = getLocalUserData();
+  const { currentEvent } = useEvent();
+  const [userData, setUserData] = useState(getLocalUserData());
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(true);
+  
+  // Settings dialog state
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [renamingUser, setRenamingUser] = useState(false);
+  const [applyingCode, setApplyingCode] = useState(false);
+
+  useEffect(() => {
+    if (!currentEvent) return;
+
+    getTeams(currentEvent)
+      .then((data) => {
+        const transformed: Team[] = (data ?? []).map((t) => ({
+          key: t.team,
+          num: parseInt(t.team.replace("frc", ""), 10),
+          name: t.team_name ?? `Team ${t.team.replace("frc", "")}`,
+          rank: (t as any).rank ?? 0,
+        }));
+        transformed.sort((a, b) => a.num - b.num);
+        setTeams(transformed);
+      })
+      .catch(console.error)
+      .finally(() => setTeamsLoading(false));
+  }, [currentEvent]);
 
   const handleLogout = async () => {
     await logout();
@@ -26,19 +74,70 @@ function HomePage() {
     navigate({ to: "/auth" });
   };
 
+  const handleRename = async () => {
+    if (!newName.trim()) {
+      toast.error("Please enter a name");
+      return;
+    }
+    
+    setRenamingUser(true);
+    try {
+      const success = await changeName(newName.trim());
+      if (success) {
+        toast.success("Name updated successfully!");
+        setNewName("");
+        // Refresh user data
+        const profile = await fetchUserProfile();
+        if (profile) {
+          setUserData(profile);
+        }
+      } else {
+        toast.error("Failed to update name");
+      }
+    } finally {
+      setRenamingUser(false);
+    }
+  };
+
+  const handleInviteCode = async () => {
+    if (!inviteCode.trim()) {
+      toast.error("Please enter an invite code");
+      return;
+    }
+    
+    setApplyingCode(true);
+    try {
+      const success = await useInviteCode(inviteCode.trim());
+      if (success) {
+        toast.success("Invite code applied successfully!");
+        setInviteCode("");
+        // Refresh user data
+        const profile = await fetchUserProfile();
+        if (profile) {
+          setUserData(profile);
+        }
+      } else {
+        toast.error("Failed to apply invite code");
+      }
+    } finally {
+      setApplyingCode(false);
+    }
+  };
+
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background">
       {/* Header */}
-      <header className="shrink-0 px-6 py-4">
-        <div className="flex items-center gap-12">
-          <p className="text-primary font-light">Dashboard</p>
-
+      <header className="shrink-0 px-7 py-4">
+        <div className="flex items-center gap-3">
+          <p className="text-primary text-md font-light
+          ">Dashboard</p>
           <div className="ml-auto flex items-center gap-3">
-            <Button className="h-8 px-4">
-              <p className="text-sm">Admin</p>
-            </Button>
+            <p className="text-sm text-foreground">{userData.name || "User"}</p>
+            {currentEvent && (
+              <p className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">{currentEvent}</p>
+            )}
 
-            <Button className=" h-9 w-9 bg-background p-0" variant="ghost">
+            <Button className=" h-9 w-9 bg-background p-0" variant="ghost" onClick={() => setSettingsOpen(true)}>
               <svg
                 viewBox="0 0 25 25"
                 style={{ width: 24, height: 24 }}
@@ -98,13 +197,13 @@ function HomePage() {
             </div>
 
             <div className="flex gap-4">
-              <div className="flex-1 aspect-square rounded-2xl bg-muted p-6">
+              <div className="flex-1 aspect-square rounded-2xl bg-muted p-6" onClick={() => navigate({ to: "/match" })}>
                 <div className="flex h-full flex-col justify-between">
                   <p className="text-primary text-base">Match Scouting</p>
 
                   <div className="mt-6 flex items-end justify-between">
                     <p className="text-[15px]">Start</p>
-                    <Button className="h-6 w-6 bg-muted p-0">
+                    <Button className="h-6 w-6 bg-muted p-0" >
                       {/* SAME ICON AS ORIGINAL */}
                       <svg
                         viewBox="0 0 30 30"
@@ -130,13 +229,13 @@ function HomePage() {
                 </div>
               </div>
 
-              <div className="flex-1 rounded-2xl bg-muted p-6">
+              <div className="flex-1 rounded-2xl bg-muted p-6"onClick={() => navigate({ to: "/pit" })}>
                 <div className="flex h-full flex-col justify-between">
                   <p className="text-primary text-base">Pit Scouting</p>
 
                   <div className="mt-6 flex items-end justify-between">
                     <p className="text-[15px]">Start</p>
-                    <Button className="h-6 w-6 bg-muted p-0">
+                    <Button className="h-6 w-6 bg-muted p-0" >
                       {/* SAME ICON AS ORIGINAL */}
                       <svg
                         viewBox="0 0 30 30"
@@ -262,112 +361,40 @@ function HomePage() {
                 className="text-foreground text-md placeholder-border"
                 placeholder="Search teams..."
               />
-              <CommandList className="mt-5 flex flex-col gap-4">
-                <CommandEmpty>No teams found.</CommandEmpty>
-
-                <CommandItem className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 data-[selected]:bg-muted">
-                  <div className="flex w-full items-center justify-between">
-                    <div>
-                      <p className="text-base">
-                        <span className="font-bold text-primary">10213</span>
-                        <span className="text-foreground"> | BALTA</span>
-                      </p>
-                      <p className="mt-1 text-sm text-border">Rank &nbsp;#6</p>
+              <CommandList className="mt-5 flex flex-col gap-4 max-h-[400px] overflow-y-auto">
+                <CommandEmpty>{teamsLoading ? "Loading teams..." : "No teams found."}</CommandEmpty>
+                {teams.map((team) => (
+                  <CommandItem
+                    key={team.key}
+                    className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px]"
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <div className="flex-1">
+                        <p className="text-base">
+                          <span className="font-bold text-primary">{team.num}</span>
+                          <span className="text-foreground"> | {team.name}</span>
+                        </p>
+                        {team.rank > 0 && (
+                          <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+                        )}
+                      </div>
+                      <svg
+                        viewBox="0 0 24 24"
+                        style={{ width: 20, height: 20 }}
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M9 18L15 12L9 6"
+                          stroke="#FBBF24"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </div>
-                    <svg
-                      viewBox="0 0 24 24"
-                      style={{ width: 20, height: 20 }}
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 18L15 12L9 6"
-                        stroke="#FBBF24"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                </CommandItem>
-
-                <CommandItem className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 data-[selected]:bg-muted">
-                  <div className="flex w-full items-center justify-between">
-                    <div>
-                      <p className="text-base">
-                        <span className="font-bold text-primary">1160</span>
-                        <span className="text-foreground"> | Titanium Robotics</span>
-                      </p>
-                      <p className="mt-1 text-sm text-border">Rank &nbsp;#25</p>
-                    </div>
-                    <svg
-                      viewBox="0 0 24 24"
-                      style={{ width: 20, height: 20 }}
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 18L15 12L9 6"
-                        stroke="#FBBF24"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                </CommandItem>
-
-                <CommandItem className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 data-[selected]:bg-muted">
-                  <div className="flex w-full items-center justify-between">
-                    <div>
-                      <p className="text-base">
-                        <span className="font-bold text-primary">1515</span>
-                        <span className="text-foreground"> | MorTorq</span>
-                      </p>
-                      <p className="mt-1 text-sm text-border">Rank &nbsp;#34</p>
-                    </div>
-                    <svg
-                      viewBox="0 0 24 24"
-                      style={{ width: 20, height: 20 }}
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 18L15 12L9 6"
-                        stroke="#FBBF24"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                </CommandItem>
-
-                <CommandItem className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 data-[selected]:bg-muted">
-                  <div className="flex w-full items-center justify-between">
-                    <div>
-                      <p className="text-base">
-                        <span className="font-bold text-primary">1700</span>
-                        <span className="text-foreground"> | Gatorbotics</span>
-                      </p>
-                      <p className="mt-1 text-sm text-border">Rank &nbsp;#42</p>
-                    </div>
-                    <svg
-                      viewBox="0 0 24 24"
-                      style={{ width: 20, height: 20 }}
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 18L15 12L9 6"
-                        stroke="#FBBF24"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                </CommandItem>
+                  </CommandItem>
+                ))}
               </CommandList>
             </Command>
           </div>
@@ -447,6 +474,93 @@ function HomePage() {
           </div>
         </div>
       </nav>
+
+      {/* Settings Dialog */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="w-[95vw] h-[90vh] max-w-none bg-background border border-border p-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <div className="flex flex-col gap-1">
+                <DialogTitle className="text-xl text-primary text-left">User Settings</DialogTitle>
+                <p className="text-sm text-muted-foreground mt-1 text-left">{userData.email}</p>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-2">
+            <div className="flex flex-col gap-4">
+              {/* Rename Section */}
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base text-foreground font-medium text-left">Change Display Name</h3>
+                <div className="flex gap-3">
+                  <Input
+                    placeholder="Enter new name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    className="flex-1"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRename();
+                    }}
+                  />
+                  <Button
+                    onClick={handleRename}
+                    disabled={renamingUser || !newName.trim()}
+                    className="px-6"
+                  >
+                    {renamingUser ? "Updating..." : "Update"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Invite Code Section */}
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base text-foreground font-medium text-left">Enter Invite Code</h3>
+                <div className="flex gap-3">
+                  <Input
+                    placeholder="Enter invite code"
+                    value={inviteCode}
+                    onChange={(e) => setInviteCode(e.target.value)}
+                    className="flex-1"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleInviteCode();
+                    }}
+                  />
+                  <Button
+                    onClick={handleInviteCode}
+                    disabled={applyingCode || !inviteCode.trim()}
+                    className="px-6"
+                  >
+                    {applyingCode ? "Applying..." : "Apply"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Change Event Section */}
+              <div className="flex flex-col gap-2">
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-between"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      navigate({ to: "/events" });
+                    }}
+                  >
+                    Change Event
+                    <span className="text-xs text-muted-foreground">{currentEvent || "None selected"}</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      handleLogout();
+                    }}
+                  >
+                    Log Out
+                  </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -8,12 +9,12 @@
 
 :root {
   --radius: 0.65rem;
-  --background: oklch(100.0% 0 0);
+  --background: oklch(100% 0 0);
   --foreground: oklch(14.5% 0 0);
-  --card: oklch(100.0% 0 0);
+  --card: oklch(100% 0 0);
   --card-foreground: oklch(14.5% 0 0);
   --popover: oklch(0 0 0);
-  --popover-foreground: oklch(100.0% 0 0);
+  --popover-foreground: oklch(100% 0 0);
   --primary: oklch(79.5% 0.184 86.047);
   --primary-foreground: oklch(98.5% 0 0);
   --secondary: oklch(97% 0 0);
@@ -24,7 +25,7 @@
   --accent-foreground: oklch(20.5% 0 0);
   --destructive: oklch(57.7% 0.245 27.325);
   --border: oklch(92.2% 0 0);
-  --input: oklch(100.0% 0 0);
+  --input: oklch(100% 0 0);
   --ring: oklch(0.795 0.184 86.047);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -45,8 +46,8 @@
   --background: oklch(0 0 0);
   --foreground: oklch(98.5% 0 0);
   --card: oklch(20.5% 0 0);
-  --card-foreground: oklch(100.0% 0 0);
-  --popover: oklch(100.0% 0 0);
+  --card-foreground: oklch(100% 0 0);
+  --popover: oklch(100% 0 0);
   --popover-foreground: oklch(0 0 0);
   --primary: oklch(82.8% 0.189 84.429);
   --primary-foreground: oklch(14.5% 0 0);
@@ -120,5 +121,6 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", serif;
   }
 }

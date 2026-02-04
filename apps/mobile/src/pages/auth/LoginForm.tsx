@@ -33,7 +33,7 @@ export function LoginForm() {
       const success = await loginWithPassword(email, password);
       if (success) {
         toast.success("Login successful!");
-        navigate({ to: "/home" });
+        navigate({ to: "/events" });
       } else {
         toast.error("Login Failed");
       }

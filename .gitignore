@@ -34,5 +34,6 @@ Thumbs.db
 .temp
 
 database.db
+.vscode/*
 
 
