@@ -38,10 +38,15 @@ function MatchStart() {
   useEffect(() => {
     let interval = null;
     
+
+
     if (isActive) {
       interval = setInterval(() => {
-        setSeconds(prev => prev + 0.1);
-      }, 100);
+        setSeconds(prev => prev + 0.01);
+      }, 10);
+      const timerId = setTimeout(() => {
+        reset();
+      }, 20*1000-seconds*1000);
     } else if (interval) {
       clearInterval(interval);
     }
