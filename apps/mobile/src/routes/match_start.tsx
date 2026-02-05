@@ -21,7 +21,35 @@ export const Route = createFileRoute("/match_start")({
 function MatchStart() {
   const navigate = useNavigate();
   const { teamNum, matchNum } = Route.useSearch();
+  const [seconds, setSeconds] = useState(0);
+  const [isActive, setIsActive] = useState(false);
+
   
+  const toggle = () => {
+    setIsActive(!isActive);
+  };
+
+  
+  const reset = useCallback(() => {
+    setIsActive(false);
+    setSeconds(0);
+  }, []);
+
+  useEffect(() => {
+    let interval = null;
+    
+    if (isActive) {
+      interval = setInterval(() => {
+        setSeconds(prev => prev + 0.1);
+      }, 100);
+    } else if (interval) {
+      clearInterval(interval);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isActive]);
   return (
     //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
@@ -79,7 +107,8 @@ function MatchStart() {
             Select robot starting position
         </p>
         <Button onClick = {() => {
-          navigate({ to: "/" });
+          //navigate({ to: "/" });
+          setIsActive(!isActive);
         }}>
           <div className="flex flex-col justify-center items-center w-[159px] h-[58px] px-[23px] py-[13px] rounded-[15px] gap-[10px] fill-none">
             
@@ -93,8 +122,20 @@ function MatchStart() {
         </Button>
       </div>
 
-      <div className = "flex flex-col justify-center items-center w-[50] h-[400px] px-[23px] py-[30px] rounded-[10px] gap-[10px] bg-black-950 border-[2px] border-[#1E1E1E]">
+      <div className = "flex flex-col justify-start items-center w-[50px] h-[400px] px-[23px] py-[10px] rounded-[10px] gap-[10px] bg-black-950 border-[2px] border-[#1E1E1E]">
+        <p className="text-xs text-[#CDA745]">
+          {Math.round(seconds) + "/" + "20"}
+        </p>
+        <div className="flex flex-col gap-[0px]">
+          
+          <div style={{ height: `${seconds*300/20}px` }}  className = "flex flex-col w-[5px] bg-[#CDA745]">
 
+          </div>
+          <div style={{ height: `${300-seconds*300/20}px` }}  className = "flex flex-col w-[5px] bg-[#F4F4F4]">
+
+          </div>
+        </div>
+        
       </div>
       
     </div>
