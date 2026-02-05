@@ -160,6 +160,7 @@ export function Match() {
                 setMatchQuery(e.target.value);
                 setShowMatchDropdown(true);
               }}
+              
               onFocus={() => setShowMatchDropdown(true)}
               onBlur={() => {
                 setTimeout(() => setShowMatchDropdown(false), 150);
@@ -178,7 +179,7 @@ export function Match() {
                   .map((match) => (
                     <div
                       key={match}
-                      className={`px-6 py-4 cursor-pointer ${
+                      className={`px-3 py-2 pt-4 cursor-pointer ${
                         selectedMatch === match
                           ? "bg-primary/20"
                           : "hover:bg-muted"
@@ -190,11 +191,13 @@ export function Match() {
                         setShowMatchDropdown(false);
                       }}
                     >
+                    <div className="flex flex-col rounded-lg bg-muted p-5">
                       <p className="text-base">
                         <span className="font-bold text-primary">
                           {formatMatchKey(match)}
                         </span>
                       </p>
+                    </div>
                     </div>
                   ))}
                 {uniqueMatches.filter((match) =>
@@ -270,7 +273,7 @@ export function Match() {
                             >
                               <div className="flex w-full min-w-0 items-center gap-2">
                                 <div className="flex w-full min-w-0 items-center gap-1">
-                                  <span className="shrink-0 text-foreground group-data-[highlighted]:text-primary transition-colors">
+                                  <span className="shrink-0 text-foreground p-3 px-1 group-data-[highlighted]:text-primary transition-colors">
                                     Team {team?.num ?? entry.team} |
                                   </span>
                                   <span className="min-w-0 truncate text-muted-foreground">
@@ -297,7 +300,7 @@ export function Match() {
                             >
                               <div className="flex w-full min-w-0 items-center gap-2">
                                 <div className="flex w-full min-w-0 items-center gap-1">
-                                  <span className="shrink-0 text-foreground group-data-[highlighted]:text-primary transition-colors">
+                                  <span className="shrink-0 text-foreground p-3 px-1 group-data-[highlighted]:text-primary transition-colors">
                                     Team {team?.num ?? entry.team} |
                                   </span>
                                   <span className="min-w-0 truncate text-muted-foreground">
