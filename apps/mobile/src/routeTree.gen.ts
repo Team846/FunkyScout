@@ -13,6 +13,7 @@ import { Route as VerifyRouteImport } from "./routes/verify"
 import { Route as ResetRouteImport } from "./routes/reset"
 import { Route as PitscoutRouteImport } from "./routes/pitscout"
 import { Route as PitRouteImport } from "./routes/pit"
+import { Route as Match_startRouteImport } from "./routes/match_start"
 import { Route as MatchRouteImport } from "./routes/match"
 import { Route as HomeRouteImport } from "./routes/home"
 import { Route as EventsRouteImport } from "./routes/events"
@@ -37,6 +38,11 @@ const PitscoutRoute = PitscoutRouteImport.update({
 const PitRoute = PitRouteImport.update({
   id: "/pit",
   path: "/pit",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Match_startRoute = Match_startRouteImport.update({
+  id: "/match_start",
+  path: "/match_start",
   getParentRoute: () => rootRouteImport,
 } as any)
 const MatchRoute = MatchRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/reset": typeof ResetRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/reset": typeof ResetRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/reset": typeof ResetRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_start"
     | "/pit"
     | "/pitscout"
     | "/reset"
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_start"
     | "/pit"
     | "/pitscout"
     | "/reset"
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_start"
     | "/pit"
     | "/pitscout"
     | "/reset"
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   EventsRoute: typeof EventsRoute
   HomeRoute: typeof HomeRoute
   MatchRoute: typeof MatchRoute
+  Match_startRoute: typeof Match_startRoute
   PitRoute: typeof PitRoute
   PitscoutRoute: typeof PitscoutRoute
   ResetRoute: typeof ResetRoute
@@ -175,6 +188,13 @@ declare module "@tanstack/react-router" {
       path: "/pit"
       fullPath: "/pit"
       preLoaderRoute: typeof PitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/match_start": {
+      id: "/match_start"
+      path: "/match_start"
+      fullPath: "/match_start"
+      preLoaderRoute: typeof Match_startRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/match": {
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   EventsRoute: EventsRoute,
   HomeRoute: HomeRoute,
   MatchRoute: MatchRoute,
+  Match_startRoute: Match_startRoute,
   PitRoute: PitRoute,
   PitscoutRoute: PitscoutRoute,
   ResetRoute: ResetRoute,

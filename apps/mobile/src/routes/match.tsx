@@ -122,6 +122,8 @@ export function Match() {
     navigate({ to: "/home" });
   };
 
+
+
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
       {/* Back Button */}
@@ -322,6 +324,12 @@ export function Match() {
               className="h-8 w-8 shrink-0 rounded-full bg-primary hover:bg-primary/90 p-0"
               variant="default"
               size="icon"
+              onClick = {() => {
+                navigate({ 
+                  to: "/match_start",
+                  search: { teamNum: selectedTeam, matchNum: selectedMatch },
+                });
+              }}
             >
               <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
                 <path
