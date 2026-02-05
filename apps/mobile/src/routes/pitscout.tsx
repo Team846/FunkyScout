@@ -335,7 +335,7 @@ function ScoutPage() {
       <div className="h-px w-full bg-border mb-6" />
 
       {/* Sections */}
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-6">
         {/* Movement Section */}
         <Section title="Movement">
           <div className="grid grid-cols-2 gap-3 px-2">
@@ -495,12 +495,12 @@ function ScoutPage() {
       </div>
 
       {/* Save Button - Fixed at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border p-4">
+      <div className="fixed bottom-0 left-0 right-0 p-4 rounded-lg">
         <Button
           onClick={handleSave}
           className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground"
         >
-          Done
+          Next
         </Button>
       </div>
 

@@ -8,7 +8,18 @@ type EventContextType = {
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export function EventProvider({ children }: { children: ReactNode }) {
-  const [currentEvent, setCurrentEvent] = useState<string | null>(null);
+  const [currentEvent, _setCurrentEvent] = useState<string | null>(() => {
+    return localStorage.getItem("current_event");
+  });
+
+  const setCurrentEvent = (event: string | null) => {
+    if (event) {
+      localStorage.setItem("current_event", event);
+    } else {
+      localStorage.removeItem("current_event");
+    }
+    _setCurrentEvent(event);
+  };
 
   return (
     <EventContext.Provider value={{ currentEvent, setCurrentEvent }}>

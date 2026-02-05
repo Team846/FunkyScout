@@ -1,15 +1,36 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "@shadcn/ui/components/select.tsx";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
 import { getTeams, getSchedule } from "@lib/data";
 import { useEvent } from "@lib/context/EventContext";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+} from "@shadcn/ui/components/select.tsx";
 
 export const Route = createFileRoute("/match")({
   component: Match,
 });
 
 // const CURRENT_EVENT = "2025cada";
+
+import { getNexusEventStatus, type NexusMatch } from "@lib/nexus/event";
+
+// Helper to format match key (e.g. "2025cada_qm1" -> "QM1")
+const formatMatchKey = (key: string) => {
+  const parts = key.split("_");
+  return (parts.length > 1 ? parts[1] : key).toUpperCase();
+};
+
+// Helper to format timestamp to readable time (e.g. "2:30 PM")
+const formatMatchTime = (timestamp: number) => {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
 
 interface Team {
   name: string;
@@ -27,15 +48,21 @@ export function Match() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
   const [teams, setTeams] = useState<Team[]>([]);
+  const [nexusMatches, setNexusMatches] = useState<NexusMatch[]>([]);
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
+  const [showMatchDropdown, setShowMatchDropdown] = useState(false);
+  const [matchQuery, setMatchQuery] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const matchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!currentEvent) return;
 
     setLoading(true);
+
+    // Fetch generic data
     Promise.all([getTeams(currentEvent), getSchedule(currentEvent)])
       .then(([teamsData, scheduleData]) => {
         // Transform teams
@@ -52,20 +79,44 @@ export function Match() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+
+    // Fetch live nexus status for sorting
+    getNexusEventStatus(currentEvent)
+      .then((nexusData) => {
+        if (nexusData && nexusData.matches) {
+          setNexusMatches(nexusData.matches);
+        }
+      })
+      .catch(console.error);
+  }, [currentEvent]);
 
   // Get unique matches from schedule
-  const uniqueMatches = [...new Set(schedule.map((s) => s.match))].sort((a, b) => {
-    // Sort by match type then number (qm1, qm2, ... sf1m1, f1m1)
-    const aNum = parseInt(a.replace(/\D/g, ""), 10) || 0;
-    const bNum = parseInt(b.replace(/\D/g, ""), 10) || 0;
-    return aNum - bNum;
-  });
+  const uniqueMatches = [...new Set(schedule.map((s) => s.match))].sort(
+    (a, b) => {
+      // Check if matches are qualification matches (case-insensitive)
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const aIsQual = aLower.includes("qm");
+      const bIsQual = bLower.includes("qm");
+
+      // If one is qual and other isn't, quals come first
+      if (aIsQual && !bIsQual) return -1;
+      if (!aIsQual && bIsQual) return 1;
+
+      // Extract numbers for numerical sorting
+      const aNum = parseInt(a.replace(/\D/g, ""), 10) || 0;
+      const bNum = parseInt(b.replace(/\D/g, ""), 10) || 0;
+
+      return aNum - bNum;
+    }
+  );
 
   // Get teams for selected match
   const teamsInMatch = selectedMatch
     ? schedule.filter((s) => s.match === selectedMatch)
     : [];
+  const redTeamsInMatch = teamsInMatch.filter((t) => t.alliance === "red");
+  const blueTeamsInMatch = teamsInMatch.filter((t) => t.alliance === "blue");
 
   const handleBackClick = () => {
     navigate({ to: "/home" });
@@ -99,46 +150,167 @@ export function Match() {
 
         {/* Selection Card */}
         <div className="flex flex-col gap-4 rounded-2xl bg-muted px-5 py-3">
-          <Select value={selectedMatch ?? undefined} onValueChange={setSelectedMatch}>
-            <SelectTrigger className="w-full h-14 hover:text-primary">
-              <SelectValue placeholder={loading ? "Loading..." : "Select a Match"} />
-            </SelectTrigger>
-            <SelectContent className="bg-accent">
-              <SelectGroup>
-                {uniqueMatches.map((match) => (
-                  <SelectItem
-                    key={match}
-                    value={match}
-                    className="focus:text-foreground text-muted-foreground focus:bg-ring"
-                  >
-                    {match.toUpperCase()}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <div className="relative">
+            <input
+              ref={matchInputRef}
+              type="text"
+              value={matchQuery}
+              placeholder={loading ? "Loading..." : "Search or select a match"}
+              onChange={(e) => {
+                setMatchQuery(e.target.value);
+                setShowMatchDropdown(true);
+              }}
+              onFocus={() => setShowMatchDropdown(true)}
+              onBlur={() => {
+                setTimeout(() => setShowMatchDropdown(false), 150);
+              }}
+              className="h-14 w-full rounded-xl border border-border px-4 text-base text-foreground placeholder:text-muted-foreground outline-none"
+            />
+
+            {showMatchDropdown && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background shadow-lg">
+                {uniqueMatches
+                  .filter((match) =>
+                    formatMatchKey(match)
+                      .toLowerCase()
+                      .includes(matchQuery.toLowerCase())
+                  )
+                  .map((match) => (
+                    <div
+                      key={match}
+                      className={`px-6 py-4 cursor-pointer ${
+                        selectedMatch === match
+                          ? "bg-primary/20"
+                          : "hover:bg-muted"
+                      }`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSelectedMatch(match);
+                        setMatchQuery(formatMatchKey(match));
+                        setShowMatchDropdown(false);
+                      }}
+                    >
+                      <p className="text-base">
+                        <span className="font-bold text-primary">
+                          {formatMatchKey(match)}
+                        </span>
+                      </p>
+                    </div>
+                  ))}
+                {uniqueMatches.filter((match) =>
+                  formatMatchKey(match)
+                    .toLowerCase()
+                    .includes(matchQuery.toLowerCase())
+                ).length === 0 && (
+                  <div className="px-6 py-4">
+                    <p className="text-muted-foreground">No match found.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <Select value={selectedTeam ?? undefined} onValueChange={setSelectedTeam}>
-                <SelectTrigger className="w-full h-14 hover:text-primary">
-                  <SelectValue placeholder="Select a Team" />
+            <div className="flex-1 truncate">
+              <Select
+                value={selectedTeam ?? ""}
+                onValueChange={(value) => {
+                  setSelectedTeam(value || null);
+                }}
+                disabled={!selectedMatch}
+              >
+                <SelectTrigger className="w-full h-14 hover:text-primary justify-between px-3 font-normal text-base bg-background border border-input">
+                  {selectedTeam
+                    ? (() => {
+                        const entry = teamsInMatch.find(
+                          (e) => e.team === selectedTeam
+                        );
+                        const team = teams.find((t) => t.key === selectedTeam);
+                        return entry ? (
+                          <span className="flex w-full min-w-0 items-center gap-1">
+                            <span className="shrink-0 text-foreground">
+                              Team {team?.num ?? entry.team} |
+                            </span>
+                            <span className="min-w-0 truncate text-muted-foreground">
+                              {team?.name ?? ""}
+                            </span>
+                          </span>
+                        ) : (
+                          "Select a Team"
+                        );
+                      })()
+                    : "Select a Team"}
                 </SelectTrigger>
-                <SelectContent className="bg-accent">
-                  <SelectGroup>
-                    {(selectedMatch ? teamsInMatch : []).map((entry) => {
-                      const team = teams.find((t) => t.key === entry.team);
-                      return (
-                        <SelectItem
-                          key={`${entry.match}-${entry.team}`}
-                          value={entry.team}
-                          className="focus:text-foreground text-muted-foreground focus:bg-ring"
-                        >
-                          {entry.alliance.toUpperCase()} | Team {team?.num ?? entry.team} | {team?.name ?? ""}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectGroup>
+
+                <SelectContent
+                  className="p-0 bg-background text-foreground shadow-md overflow-hidden"
+                  style={{
+                    width: "var(--radix-select-trigger-width)",
+                    minWidth: "var(--radix-select-trigger-width)",
+                  }}
+                  align="start"
+                >
+                  {!selectedMatch ? (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      Select a match first.
+                    </div>
+                  ) : (
+                    <>
+                      <SelectGroup>
+                        <SelectLabel className="px-2 py-2 text-red-500/75 text-md">
+                          Red Alliance
+                        </SelectLabel>
+                        {redTeamsInMatch.map((entry) => {
+                          const team = teams.find((t) => t.key === entry.team);
+                          return (
+                            <SelectItem
+                              key={`${entry.match}-${entry.team}`}
+                              value={entry.team}
+                              className="group px-2 data-[highlighted]:bg-muted data-[highlighted]:text-foreground"
+                            >
+                              <div className="flex w-full min-w-0 items-center gap-2">
+                                <div className="flex w-full min-w-0 items-center gap-1">
+                                  <span className="shrink-0 text-foreground group-data-[highlighted]:text-primary transition-colors">
+                                    Team {team?.num ?? entry.team} |
+                                  </span>
+                                  <span className="min-w-0 truncate text-muted-foreground">
+                                    {team?.name ?? ""}
+                                  </span>
+                                </div>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectGroup>
+
+                      <SelectGroup>
+                        <SelectLabel className="px-2 py-2 text-blue-500/75 text-md">
+                          Blue Alliance
+                        </SelectLabel>
+                        {blueTeamsInMatch.map((entry) => {
+                          const team = teams.find((t) => t.key === entry.team);
+                          return (
+                            <SelectItem
+                              key={`${entry.match}-${entry.team}`}
+                              value={entry.team}
+                              className="group px-2 data-[highlighted]:bg-muted data-[highlighted]:text-foreground"
+                            >
+                              <div className="flex w-full min-w-0 items-center gap-2">
+                                <div className="flex w-full min-w-0 items-center gap-1">
+                                  <span className="shrink-0 text-foreground group-data-[highlighted]:text-primary transition-colors">
+                                    Team {team?.num ?? entry.team} |
+                                  </span>
+                                  <span className="min-w-0 truncate text-muted-foreground">
+                                    {team?.name ?? ""}
+                                  </span>
+                                </div>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectGroup>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -163,56 +335,71 @@ export function Match() {
 
         {loading ? (
           <p className="text-muted-foreground">Loading matches...</p>
-        ) : uniqueMatches.length === 0 ? (
-          <p className="text-muted-foreground">No schedule available yet</p>
+        ) : nexusMatches.length === 0 ? (
+          <p className="text-muted-foreground">No upcoming matches available</p>
         ) : (
-        <div className="flex flex-col">
-          {uniqueMatches.slice(0, 3).map((match) => {
-            const matchTeams = schedule.filter((s) => s.match === match);
-            // Pick the first team from the match
-            const firstTeamEntry = matchTeams[0];
-            const firstTeam = teams.find((t) => t.key === firstTeamEntry?.team);
-            
-            return (
-              <div
-                key={match}
-                className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
-                onClick={() => {
-                  setSelectedMatch(match);
-                  if (firstTeamEntry) setSelectedTeam(firstTeamEntry.team);
-                }}
-              >
-                <div className="flex w-full items-center justify-between">
-                  <div>
-                    <p className="text-base">
-                      <span className="font-bold text-primary">{match.toUpperCase()}</span>
-                      {firstTeam && (
-                        <span className="text-foreground"> | Team {firstTeam.num}</span>
-                      )}
-                    </p>
-                    <p className="mt-1 text-sm text-border">
-                      {firstTeamEntry?.alliance.toUpperCase()} Alliance
-                    </p>
+          <div className="flex flex-col">
+            {nexusMatches.slice(0, 3).map((nexusMatch) => {
+              // Find the corresponding match in schedule
+              const matchKey = uniqueMatches.find((m) =>
+                formatMatchKey(m) === nexusMatch.label
+              );
+              const matchTeams = matchKey
+                ? schedule.filter((s) => s.match === matchKey)
+                : [];
+              // Pick the first team from the match
+              const firstTeamEntry = matchTeams[0];
+              const firstTeam = teams.find(
+                (t) => t.key === firstTeamEntry?.team
+              );
+
+              return (
+                <div
+                  key={nexusMatch.label}
+                  className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
+                  onClick={() => {
+                    if (matchKey) {
+                      setSelectedMatch(matchKey);
+                      if (firstTeamEntry) setSelectedTeam(firstTeamEntry.team);
+                    }
+                  }}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <div>
+                      <p className="text-base">
+                        <span className="font-bold text-primary">
+                          {nexusMatch.label}
+                        </span>
+                        {firstTeam && (
+                          <span className="text-foreground">
+                            {" "}
+                            | Team {firstTeam.num}
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-1 text-sm text-border">
+                        {formatMatchTime(nexusMatch.times.estimatedStartTime)}
+                      </p>
+                    </div>
+                    <svg
+                      viewBox="0 0 24 24"
+                      style={{ width: 20, height: 20 }}
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M9 18L15 12L9 6"
+                        stroke="#FBBF24"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </div>
-                  <svg
-                    viewBox="0 0 24 24"
-                    style={{ width: 20, height: 20 }}
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M9 18L15 12L9 6"
-                      stroke="#FBBF24"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         )}
 
         <p className="text-sm text-muted-foreground text-center mt-4">
@@ -223,4 +410,3 @@ export function Match() {
     </div>
   );
 }
-

@@ -16,7 +16,13 @@ function IndexPage() {
       const userData = getLocalUserData();
 
       if (session && userData.uid) {
-        navigate({ to: "/events", replace: true });
+        // Check for persisted event
+        const savedEvent = localStorage.getItem("current_event");
+        if (savedEvent) {
+          navigate({ to: "/home", replace: true });
+        } else {
+          navigate({ to: "/events", replace: true });
+        }
       } else {
         navigate({ to: "/auth", replace: true });
       }

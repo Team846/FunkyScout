@@ -19,7 +19,10 @@ function EventsPage() {
   useEffect(() => {
     getEvents()
       .then((data) => {
-        setEvents(data || []);
+        const sorted = (data || []).sort((a, b) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+        setEvents(sorted);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -84,10 +87,10 @@ function EventsPage() {
                 className="group relative flex w-full cursor-pointer items-center justify-between rounded-xl border border-border bg-muted px-5 py-4 transition-colors hover:bg-accent/50"
               >
                 <div className="flex flex-col">
-                  <span className="text-lg font-medium text-primary">
+                  <span className="text-md font-medium text-primary ">
                     {event.event}
                   </span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-sm text-muted-foreground max-w-32 truncate">
                     {event.alias}
                   </span>
                 </div>

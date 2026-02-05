@@ -1,7 +1,7 @@
 import supabase from "./supabase";
 import { handleError } from "../../utils/errorHandler";
 
-export type UserRole = "user" | "admin" | "scout"; 
+export type UserRole = "user" | "admin" | "scout";
 export type LocalUserData = {
   uid: string;
   email: string;
@@ -9,11 +9,10 @@ export type LocalUserData = {
   role: UserRole;
 };
 
-
 export function storeLocalUserData(data: LocalUserData) {
   localStorage.setItem("userData", JSON.stringify(data));
 }
- 
+
 export function getLocalUserData(): LocalUserData {
   const userData = localStorage.getItem("userData");
   if (userData) {
@@ -31,9 +30,8 @@ export function getLocalUserData(): LocalUserData {
 
 export function clearLocalUserData() {
   localStorage.removeItem("userData");
+  localStorage.removeItem("current_event");
 }
-
-
 
 export async function fetchAllUserDetails() {
   try {
@@ -49,10 +47,11 @@ export async function fetchAllUserDetails() {
   }
 }
 
-
 export async function getAuthStatus(): Promise<boolean> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     return !!user;
   } catch {
     return false;
@@ -61,7 +60,6 @@ export async function getAuthStatus(): Promise<boolean> {
 
 let fetchProfilePromise: Promise<LocalUserData | false> | null = null;
 
-
 export async function fetchUserProfile(): Promise<LocalUserData | false> {
   if (fetchProfilePromise) {
     return fetchProfilePromise;
@@ -69,7 +67,10 @@ export async function fetchUserProfile(): Promise<LocalUserData | false> {
 
   fetchProfilePromise = (async () => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
       if (authError) throw authError;
       if (!user?.id) {
         clearLocalUserData();
@@ -109,11 +110,12 @@ export async function fetchUserProfile(): Promise<LocalUserData | false> {
   return fetchProfilePromise;
 }
 
-
-
 export async function useInviteCode(code: string): Promise<boolean> {
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
     if (authError || !user?.id) {
       throw new Error("Must be logged in to apply invite code");
     }
@@ -131,10 +133,12 @@ export async function useInviteCode(code: string): Promise<boolean> {
   }
 }
 
-
 export async function changeName(newName: string): Promise<boolean> {
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
     if (authError || !user?.id) {
       throw new Error("Must be logged in to change name");
     }
