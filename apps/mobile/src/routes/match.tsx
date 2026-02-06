@@ -288,10 +288,17 @@ export function Match() {
               variant="default"
               size="icon"
               onClick = {() => {
+
+                let selectedAlliance = null;
+                redTeamsInMatch.forEach(item => {
+                  if(JSON.stringify(item.team) == JSON.stringify(selectedTeam))
+                    selectedAlliance = item.alliance;
+                });
                 navigate({ 
                   to: "/match_start",
-                  search: { teamNum: selectedTeam, matchNum: selectedMatch },
+                  search: { teamNum: selectedTeam, matchNum: selectedMatch, alliance: selectedAlliance},
                 });
+                
               }}
             >
               <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
