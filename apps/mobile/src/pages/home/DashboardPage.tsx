@@ -8,39 +8,250 @@ import {
   CommandItem,
   CommandEmpty,
 } from "@shadcn/ui/components/command.js";
-import { getTeams } from "@lib/data";
-import { useEvent } from "@lib/context/EventContext";
+import { useEventData } from "@lib/context/EventDataContext";
+import { fetchStatboticsMatch } from "@lib/statbotics";
+import type { NexusMatch } from "@lib/nexus";
 
-interface Team {
-  num: number;
-  name: string;
-  key: string;
-  rank: number;
+interface NextMatchData {
+  matchLabel: string;
+  matchTime: string;
+  redTeams: number[];
+  blueTeams: number[];
+  ourAlliance: "red" | "blue";
+  winProbability: number | null;
+  isPastMatch: boolean;
+  // For past matches: actual scores
+  redScore: number | null;
+  blueScore: number | null;
+  // For future matches: predicted scores
+  predictedRedScore: number | null;
+  predictedBlueScore: number | null;
+  // Team ranks
+  teamRanks: Record<number, number>;
 }
+
+const formatMatchTime = (timestamp: number) => {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+};
+
+const formatTimeAgo = (timestamp: number) => {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / (1000 * 60));
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+};
+
+// Convert Nexus label (e.g., "Qualification 24") to Statbotics key suffix (e.g., "qm24")
+const nexusLabelToMatchKey = (label: string): string => {
+  const lower = label.toLowerCase();
+
+  // Qualification matches: "Qualification 24" -> "qm24"
+  const qualMatch = lower.match(/qualification\s*(\d+)/);
+  if (qualMatch) return `qm${qualMatch[1]}`;
+
+  // Playoff/Semifinal matches: "Playoff 1" -> "sf1m1" (simplified)
+  const playoffMatch = lower.match(/playoff\s*(\d+)/);
+  if (playoffMatch) return `sf1m${playoffMatch[1]}`;
+
+  // Finals: "Final 1" -> "f1m1"
+  const finalMatch = lower.match(/final\s*(\d+)/);
+  if (finalMatch) return `f1m${finalMatch[1]}`;
+
+  // Fallback: just remove spaces and lowercase
+  return lower.replace(/\s+/g, "");
+};
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { currentEvent } = useEvent();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [teamsLoading, setTeamsLoading] = useState(true);
+  const {
+    currentEvent,
+    teams,
+    teamsLoading,
+    nexusMatches,
+    tbaTeams,
+    tbaSchedule,
+  } = useEventData();
+  const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
+  const [matchLoading, setMatchLoading] = useState(true);
+
+  const OUR_TEAM = 846;
+
+  // DEV TEST: Set to true to test future match UI with mock data
+  const DEV_TEST_FUTURE = false;
 
   useEffect(() => {
     if (!currentEvent) return;
 
-    getTeams(currentEvent)
-      .then((data) => {
-        const transformed: Team[] = (data ?? []).map((t) => ({
-          key: t.team,
-          num: parseInt(t.team.replace("frc", ""), 10),
-          name: t.team_name ?? `Team ${t.team.replace("frc", "")}`,
-          rank: (t as any).rank ?? 0,
-        }));
-        transformed.sort((a, b) => a.num - b.num);
-        setTeams(transformed);
-      })
+    setMatchLoading(true);
+    const ourTeamStr = OUR_TEAM.toString();
+    const ourTeamKey = `frc${OUR_TEAM}`;
+
+    const fetchMatchData = async () => {
+      // DEV TEST: Mock future match data
+      if (DEV_TEST_FUTURE) {
+        setNextMatch({
+          matchLabel: "QM42",
+          matchTime: formatMatchTime(Date.now() + 1000 * 60 * 15),
+          redTeams: [846, 254, 1678],
+          blueTeams: [971, 88888, 2056],
+          ourAlliance: "red",
+          winProbability: 0.73,
+          isPastMatch: false,
+          redScore: null,
+          blueScore: null,
+          predictedRedScore: 142,
+          predictedBlueScore: 118,
+          teamRanks: { 846: 3, 254: 1, 1678: 5, 971: 8, 88888: 2, 2056: 12 },
+        });
+        return;
+      }
+
+      // Try Nexus first for upcoming matches (using context data)
+      if (nexusMatches.length > 0) {
+        const ourMatches = nexusMatches.filter(
+          (match: NexusMatch) =>
+            match.redTeams.includes(ourTeamStr) ||
+            match.blueTeams.includes(ourTeamStr)
+        );
+
+        // Only look for upcoming matches from Nexus
+        const now = Date.now();
+        const upcomingMatches = ourMatches.filter(
+          (match: NexusMatch) =>
+            !match.times.actualOnFieldTime &&
+            match.times.estimatedStartTime > now
+        );
+
+        if (upcomingMatches.length > 0) {
+          // Get the soonest upcoming match
+          const ourMatch = upcomingMatches.sort(
+            (a: NexusMatch, b: NexusMatch) =>
+              a.times.estimatedStartTime - b.times.estimatedStartTime
+          )[0];
+
+          const isOnRed = ourMatch.redTeams.includes(ourTeamStr);
+          const redTeamNums = ourMatch.redTeams.map((t: string) =>
+            parseInt(t, 10)
+          );
+          const blueTeamNums = ourMatch.blueTeams.map((t: string) =>
+            parseInt(t, 10)
+          );
+
+          // Convert Nexus label to Statbotics key
+          const matchKeySuffix = nexusLabelToMatchKey(ourMatch.label);
+          const matchKey = `${currentEvent}_${matchKeySuffix}`;
+
+          // Fetch predictions from Statbotics
+          let winProb: number | null = null;
+          let predictedRedScore: number | null = null;
+          let predictedBlueScore: number | null = null;
+          try {
+            const statboticsMatch = await fetchStatboticsMatch(matchKey);
+            if (statboticsMatch && statboticsMatch.pred) {
+              winProb = isOnRed
+                ? statboticsMatch.pred.red_win_prob
+                : 1 - statboticsMatch.pred.red_win_prob;
+              predictedRedScore = Math.round(statboticsMatch.pred.red_score);
+              predictedBlueScore = Math.round(statboticsMatch.pred.blue_score);
+            }
+          } catch (e) {
+            console.error("Failed to fetch Statbotics match data:", e);
+          }
+
+          setNextMatch({
+            matchLabel: ourMatch.label,
+            matchTime: formatMatchTime(ourMatch.times.estimatedStartTime),
+            redTeams: redTeamNums,
+            blueTeams: blueTeamNums,
+            ourAlliance: isOnRed ? "red" : "blue",
+            winProbability: winProb,
+            isPastMatch: false,
+            redScore: null,
+            blueScore: null,
+            predictedRedScore,
+            predictedBlueScore,
+            teamRanks: {},
+          });
+          return;
+        }
+      }
+
+      // No upcoming match from Nexus, use TBA data from context for past matches
+      if (tbaTeams.length === 0 || Object.keys(tbaSchedule).length === 0) {
+        setNextMatch(null);
+        return;
+      }
+
+      // Find our team's last match
+      const ourTeam = tbaTeams.find((t) => t.key === ourTeamKey);
+      if (!ourTeam || !ourTeam.lastMatch) {
+        setNextMatch(null);
+        return;
+      }
+
+      const lastMatchKey = ourTeam.lastMatch;
+      const matchData = tbaSchedule[lastMatchKey];
+      if (!matchData) {
+        setNextMatch(null);
+        return;
+      }
+
+      const isOnRed = matchData.redTeams.includes(ourTeamKey);
+      const redTeamNums = matchData.redTeams.map((t: string) =>
+        parseInt(t.replace("frc", ""), 10)
+      );
+      const blueTeamNums = matchData.blueTeams.map((t: string) =>
+        parseInt(t.replace("frc", ""), 10)
+      );
+
+      // Build team ranks map from TBA data
+      const teamRanks: Record<number, number> = {};
+      for (const team of tbaTeams) {
+        if (team.rank > 0) {
+          teamRanks[team.team] = team.rank;
+        }
+      }
+
+      // Extract display label from match key (e.g., "2025cada_qm24" -> "QM24")
+      const matchLabel =
+        lastMatchKey.split("_")[1]?.toUpperCase() || lastMatchKey;
+
+      // Get scores from TBA match data
+      const redScore = matchData.redScore;
+      const blueScore = matchData.blueScore;
+
+      // Format time as relative for past matches
+      const matchTime = matchData.est_time
+        ? formatTimeAgo(matchData.est_time * 1000)
+        : "";
+
+      setNextMatch({
+        matchLabel,
+        matchTime,
+        redTeams: redTeamNums,
+        blueTeams: blueTeamNums,
+        ourAlliance: isOnRed ? "red" : "blue",
+        winProbability: null,
+        isPastMatch: true,
+        redScore,
+        blueScore,
+        predictedRedScore: null,
+        predictedBlueScore: null,
+        teamRanks,
+      });
+    };
+
+    fetchMatchData()
       .catch(console.error)
-      .finally(() => setTeamsLoading(false));
-  }, [currentEvent]);
+      .finally(() => setMatchLoading(false));
+  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,9 +277,218 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Big middle card (matches your original "loading/details" style) */}
-      <div className="flex min-h-[12rem] items-center justify-center rounded-2xl bg-muted p-6 text-center">
-        <p className="text-sm text-border">Loading match details...</p>
+      {/* Next Match Card */}
+      <div className="rounded-2xl bg-muted px-6 py-4">
+        {matchLoading ? (
+          <div className="flex min-h-[10rem] items-center justify-center">
+            <p className="text-sm text-border">Loading match details...</p>
+          </div>
+        ) : !nextMatch ? (
+          <div className="flex min-h-[10rem] items-center justify-center">
+            <p className="text-sm text-border">
+              No matches found for {OUR_TEAM}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col ">
+            {/* Centered heading */}
+            <div className="flex justify-center items-center gap-2">
+              <p className="text-center text-muted-foreground text-sm">
+                {nextMatch.isPastMatch ? "Last Match:" : "Next Match:"}
+              </p>
+              <p className="text-sm font-bold text-primary">
+                {nextMatch.matchLabel}
+              </p>
+            </div>
+            <div className="items-center justify-center mt-1">
+              <p className="text-xs text-border text-center">
+                {nextMatch.matchTime}
+              </p>
+            </div>
+
+            {/* Alliances - colored boxes */}
+            <div className="flex items-stretch gap-3 mt-4">
+              {/* Red Alliance Box */}
+              <div
+                className={`flex-1 min-w-0 rounded-xl border-2 p-5 ${
+                  nextMatch.ourAlliance === "red"
+                    ? "border-chart-5 bg-chart-5/10"
+                    : "border-chart-5/50 bg-chart-5/5"
+                }`}
+              >
+                <div className="flex flex-col gap-1.5">
+                  {nextMatch.redTeams.map((teamNum) => (
+                    <div
+                      key={teamNum}
+                      className="flex justify-between items-center gap-2"
+                    >
+                      <p
+                        className={`text-sm truncate ${
+                          teamNum === OUR_TEAM
+                            ? "font-bold text-primary"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {teamNum}
+                      </p>
+                      {nextMatch.teamRanks[teamNum] !== undefined && (
+                        <span className="text-xs text-muted-foreground/50 bg-background/50 rounded-full px-2 py-0.5 shrink-0">
+                          #{nextMatch.teamRanks[teamNum]}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* VS */}
+              <div className="flex flex-col items-center justify-center shrink-0">
+                <p className="text-sm font-bold text-muted-foreground">VS</p>
+              </div>
+
+              {/* Blue Alliance Box */}
+              <div
+                className={`flex-1 min-w-0 rounded-xl border-2 p-5 ${
+                  nextMatch.ourAlliance === "blue"
+                    ? "border-chart-1 bg-chart-1/10"
+                    : "border-chart-1/50 bg-chart-1/5"
+                }`}
+              >
+                <div className="flex flex-col gap-1.5">
+                  {nextMatch.blueTeams.map((teamNum) => (
+                    <div
+                      key={teamNum}
+                      className="flex justify-between items-center gap-2"
+                    >
+                      {nextMatch.teamRanks[teamNum] !== undefined && (
+                        <span className="text-xs text-muted-foreground/50 bg-background/50 rounded-full px-2 py-0.5 shrink-0">
+                          #{nextMatch.teamRanks[teamNum]}
+                        </span>
+                      )}
+                      <p
+                        className={`text-sm text-right truncate ${
+                          teamNum === OUR_TEAM
+                            ? "font-bold text-primary"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {teamNum}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Scores/Results section */}
+            {nextMatch.isPastMatch
+              ? // Past match: show actual scores and result
+                nextMatch.redScore !== null &&
+                nextMatch.blueScore !== null && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-center">
+                      {/* Red side - fixed width */}
+                      <div className="flex items-center justify-end gap-2 w-16">
+                        <p className="text-lg font-bold text-chart-5">
+                          {nextMatch.redScore}
+                        </p>
+                        <div className="w-4 h-0.5 bg-chart-5/50 rounded-full" />
+                      </div>
+                      {/* Center result */}
+                      <p
+                        className={`text-lg font-bold px-3 py-1 rounded-lg mx-1 ${
+                          (nextMatch.ourAlliance === "red" &&
+                            nextMatch.redScore > nextMatch.blueScore) ||
+                          (nextMatch.ourAlliance === "blue" &&
+                            nextMatch.blueScore > nextMatch.redScore)
+                            ? "bg-chart-2/20 text-chart-2"
+                            : nextMatch.redScore === nextMatch.blueScore
+                              ? "bg-muted-foreground/20 text-muted-foreground"
+                              : "bg-chart-5/20 text-chart-5"
+                        }`}
+                      >
+                        {(nextMatch.ourAlliance === "red" &&
+                          nextMatch.redScore > nextMatch.blueScore) ||
+                        (nextMatch.ourAlliance === "blue" &&
+                          nextMatch.blueScore > nextMatch.redScore)
+                          ? "WIN"
+                          : nextMatch.redScore === nextMatch.blueScore
+                            ? "TIE"
+                            : "LOSS"}
+                      </p>
+                      {/* Blue side - fixed width */}
+                      <div className="flex items-center justify-start gap-2 w-16">
+                        <div className="w-4 h-0.5 bg-chart-1/50 rounded-full" />
+                        <p className="text-lg font-bold text-chart-1">
+                          {nextMatch.blueScore}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-border text-center mt-2">
+                      Results
+                    </p>
+                  </div>
+                )
+              : // Future match: show predicted scores and win probability
+                (nextMatch.predictedRedScore !== null ||
+                  nextMatch.winProbability !== null) && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-center">
+                      {/* Red side - fixed width for symmetry */}
+                      <div className="flex items-center justify-end gap-1 w-20">
+                        <p className="text-lg font-bold text-chart-5">
+                          {nextMatch.predictedRedScore}
+                        </p>
+                        <div className="w-4 h-0.5 bg-chart-5/50 rounded-full" />
+                        {(nextMatch.predictedRedScore ?? 0) >
+                          (nextMatch.predictedBlueScore ?? 0) && (
+                          <svg
+                            className="w-3 h-3 text-chart-5 -ml-1"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                          </svg>
+                        )}
+                      </div>
+
+                      {/* Center percentage */}
+                      {nextMatch.winProbability !== null && (
+                        <p
+                          className={`text-lg font-bold px-3 py-1 rounded-lg mx-1 ${
+                            nextMatch.winProbability >= 0.5
+                              ? "bg-chart-2/20 text-chart-2"
+                              : "bg-chart-5/20 text-chart-5"
+                          }`}
+                        >
+                          {Math.round(nextMatch.winProbability * 100)}%
+                        </p>
+                      )}
+                      {/* Blue side - fixed width for symmetry */}
+                      <div className="flex items-center justify-start gap-1 w-20">
+                        {(nextMatch.predictedBlueScore ?? 0) >
+                          (nextMatch.predictedRedScore ?? 0) && (
+                          <svg
+                            className="w-3 h-3 text-chart-1 -mr-1 rotate-180"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                          </svg>
+                        )}
+                        <div className="w-4 h-0.5 bg-chart-1/50 rounded-full" />
+                        <p className="text-lg font-bold text-chart-1">
+                          {nextMatch.predictedBlueScore}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-border text-center mt-2">
+                      Predictions
+                    </p>
+                  </div>
+                )}
+          </div>
+        )}
       </div>
 
       {/* Scouting section (SQUARE cards, same layout/count/icons) */}
@@ -92,7 +512,7 @@ export function DashboardPage() {
               />
               <path
                 d="M4.16663 10.8333L9.16663 15.8333"
-                stroke="currentColor"
+                stroke="currentCol  or"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -136,7 +556,8 @@ export function DashboardPage() {
                     <g clipPath="url(#clip0_418_367)">
                       <path
                         d="M15 0.46875C23.0273 0.46875 29.5312 6.97266 29.5312 15C29.5312 23.0273 23.0273 29.5312 15 29.5312C6.97266 29.5312 0.46875 23.0273 0.46875 15C0.46875 6.97266 6.97266 0.46875 15 0.46875ZM13.3066 8.88281L17.7305 13.125H7.03125C6.25195 13.125 5.625 13.752 5.625 14.5312V15.4688C5.625 16.248 6.25195 16.875 7.03125 16.875H17.7305L13.3066 21.1172C12.7383 21.6621 12.7266 22.5703 13.2832 23.127L13.9277 23.7656C14.4785 24.3164 15.3691 24.3164 15.9141 23.7656L23.6895 15.9961C24.2402 15.4453 24.2402 14.5547 23.6895 14.0098L15.9141 6.22852C15.3633 5.67773 14.4727 5.67773 13.9277 6.22852L13.2832 6.86719C12.7266 7.42969 12.7383 8.33789 13.3066 8.88281Z"
-                        fill="#FBBF24"
+                        fill="currentColor"
+                        className="text-primary"
                       />
                     </g>
                     <defs>
@@ -170,7 +591,8 @@ export function DashboardPage() {
                     <g clipPath="url(#clip0_418_367)">
                       <path
                         d="M15 0.46875C23.0273 0.46875 29.5312 6.97266 29.5312 15C29.5312 23.0273 23.0273 29.5312 15 29.5312C6.97266 29.5312 0.46875 23.0273 0.46875 15C0.46875 6.97266 6.97266 0.46875 15 0.46875ZM13.3066 8.88281L17.7305 13.125H7.03125C6.25195 13.125 5.625 13.752 5.625 14.5312V15.4688C5.625 16.248 6.25195 16.875 7.03125 16.875H17.7305L13.3066 21.1172C12.7383 21.6621 12.7266 22.5703 13.2832 23.127L13.9277 23.7656C14.4785 24.3164 15.3691 24.3164 15.9141 23.7656L23.6895 15.9961C24.2402 15.4453 24.2402 14.5547 23.6895 14.0098L15.9141 6.22852C15.3633 5.67773 14.4727 5.67773 13.9277 6.22852L13.2832 6.86719C12.7266 7.42969 12.7383 8.33789 13.3066 8.88281Z"
-                        fill="#FBBF24"
+                        fill="currentColor"
+                        className="text-primary"
                       />
                     </g>
                     <defs>
@@ -227,7 +649,8 @@ export function DashboardPage() {
                     <g clipPath="url(#clip0_418_367)">
                       <path
                         d="M15 0.46875C23.0273 0.46875 29.5312 6.97266 29.5312 15C29.5312 23.0273 23.0273 29.5312 15 29.5312C6.97266 29.5312 0.46875 23.0273 0.46875 15C0.46875 6.97266 6.97266 0.46875 15 0.46875ZM13.3066 8.88281L17.7305 13.125H7.03125C6.25195 13.125 5.625 13.752 5.625 14.5312V15.4688C5.625 16.248 6.25195 16.875 7.03125 16.875H17.7305L13.3066 21.1172C12.7383 21.6621 12.7266 22.5703 13.2832 23.127L13.9277 23.7656C14.4785 24.3164 15.3691 24.3164 15.9141 23.7656L23.6895 15.9961C24.2402 15.4453 24.2402 14.5547 23.6895 14.0098L15.9141 6.22852C15.3633 5.67773 14.4727 5.67773 13.9277 6.22852L13.2832 6.86719C12.7266 7.42969 12.7383 8.33789 13.3066 8.88281Z"
-                        fill="#FBBF24"
+                        fill="currentColor"
+                        className="text-primary"
                       />
                     </g>
                     <defs>
@@ -258,7 +681,8 @@ export function DashboardPage() {
                     <g clipPath="url(#clip0_418_367)">
                       <path
                         d="M15 0.46875C23.0273 0.46875 29.5312 6.97266 29.5312 15C29.5312 23.0273 23.0273 29.5312 15 29.5312C6.97266 29.5312 0.46875 23.0273 0.46875 15C0.46875 6.97266 6.97266 0.46875 15 0.46875ZM13.3066 8.88281L17.7305 13.125H7.03125C6.25195 13.125 5.625 13.752 5.625 14.5312V15.4688C5.625 16.248 6.25195 16.875 7.03125 16.875H17.7305L13.3066 21.1172C12.7383 21.6621 12.7266 22.5703 13.2832 23.127L13.9277 23.7656C14.4785 24.3164 15.3691 24.3164 15.9141 23.7656L23.6895 15.9961C24.2402 15.4453 24.2402 14.5547 23.6895 14.0098L15.9141 6.22852C15.3633 5.67773 14.4727 5.67773 13.9277 6.22852L13.2832 6.86719C12.7266 7.42969 12.7383 8.33789 13.3066 8.88281Z"
-                        fill="#FBBF24"
+                        fill="currentColor"
+                        className="text-primary"
                       />
                     </g>
                     <defs>
@@ -314,7 +738,7 @@ export function DashboardPage() {
                   <div className="flex-1">
                     <p className="text-base">
                       <span className="font-bold text-primary">{team.num}</span>
-                      <span className="text-foreground"> | {team.name}</span>
+                      <span className="text-foreground bg"> | {team.name}</span>
                     </p>
                     {team.rank > 0 && (
                       <p className="mt-1 text-sm text-border">
@@ -330,7 +754,8 @@ export function DashboardPage() {
                   >
                     <path
                       d="M9 18L15 12L9 6"
-                      stroke="#FBBF24"
+                      stroke="currentColor"
+                      className="text-primary"
                       strokeWidth="2.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"

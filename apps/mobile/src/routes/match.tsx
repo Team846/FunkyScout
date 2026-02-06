@@ -1,8 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
-import { getTeams, getSchedule } from "@lib/data";
-import { useEvent } from "@lib/context/EventContext";
+import { useEventData } from "@lib/context/EventDataContext";
 import {
   Select,
   SelectContent,
@@ -16,10 +15,6 @@ export const Route = createFileRoute("/match")({
   component: Match,
 });
 
-// const CURRENT_EVENT = "2025cada";
-
-import { getNexusEventStatus, type NexusMatch } from "@lib/nexus/event";
-
 // Helper to format match key (e.g. "2025cada_qm1" -> "QM1")
 const formatMatchKey = (key: string) => {
   const parts = key.split("_");
@@ -32,63 +27,17 @@ const formatMatchTime = (timestamp: number) => {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 };
 
-interface Team {
-  name: string;
-  num: number;
-  key: string;
-}
-
-interface ScheduleEntry {
-  match: string;
-  team: string;
-  alliance: string;
-}
-
 export function Match() {
   const navigate = useNavigate();
-  const { currentEvent } = useEvent();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [nexusMatches, setNexusMatches] = useState<NexusMatch[]>([]);
-  const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { teams, schedule, nexusMatches, teamsLoading, scheduleLoading } =
+    useEventData();
+
+  const loading = teamsLoading || scheduleLoading;
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
   const [showMatchDropdown, setShowMatchDropdown] = useState(false);
   const [matchQuery, setMatchQuery] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const matchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!currentEvent) return;
-
-    setLoading(true);
-
-    // Fetch generic data
-    Promise.all([getTeams(currentEvent), getSchedule(currentEvent)])
-      .then(([teamsData, scheduleData]) => {
-        // Transform teams
-        const transformedTeams: Team[] = (teamsData ?? []).map((t) => ({
-          key: t.team,
-          num: parseInt(t.team.replace("frc", ""), 10),
-          name: t.team_name ?? `Team ${t.team.replace("frc", "")}`,
-        }));
-        transformedTeams.sort((a, b) => a.num - b.num);
-        setTeams(transformedTeams);
-
-        // Store schedule
-        setSchedule(scheduleData ?? []);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-
-    // Fetch live nexus status for sorting
-    getNexusEventStatus(currentEvent)
-      .then((nexusData) => {
-        if (nexusData && nexusData.matches) {
-          setNexusMatches(nexusData.matches);
-        }
-      })
-      .catch(console.error);
-  }, [currentEvent]);
 
   // Get unique matches from schedule
   const uniqueMatches = [...new Set(schedule.map((s) => s.match))].sort(
@@ -162,7 +111,6 @@ export function Match() {
                 setMatchQuery(e.target.value);
                 setShowMatchDropdown(true);
               }}
-              
               onFocus={() => setShowMatchDropdown(true)}
               onBlur={() => {
                 setTimeout(() => setShowMatchDropdown(false), 150);
@@ -171,37 +119,52 @@ export function Match() {
             />
 
             {showMatchDropdown && (
-              <div className="absolute left-0 right-0 top-full mt-2 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background shadow-lg">
+              <div className="absolute left-0 right-0 top-full mt-3 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background  shadow-lg">
                 {uniqueMatches
                   .filter((match) =>
                     formatMatchKey(match)
                       .toLowerCase()
                       .includes(matchQuery.toLowerCase())
                   )
-                  .map((match) => (
-                    <div
-                      key={match}
-                      className={`px-3 py-2 pt-4 cursor-pointer ${
-                        selectedMatch === match
-                          ? "bg-primary/20"
-                          : "hover:bg-muted"
-                      }`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setSelectedMatch(match);
-                        setMatchQuery(formatMatchKey(match));
-                        setShowMatchDropdown(false);
-                      }}
-                    >
-                    <div className="flex flex-col rounded-lg bg-muted p-5">
-                      <p className="text-base">
-                        <span className="font-bold text-primary">
-                          {formatMatchKey(match)}
-                        </span>
-                      </p>
-                    </div>
-                    </div>
-                  ))}
+                  .map((match) => {
+                    // Try to find nexus match for time data
+                    const matchLabel = formatMatchKey(match);
+                    const nexusMatch = nexusMatches.find(
+                      (nm) => nm.label === matchLabel
+                    );
+                    const matchTime = nexusMatch?.times.estimatedStartTime;
+                    return (
+                      <div
+                        key={match}
+                        className={`px-2.5 py-1.5 cursor-pointer ${
+                          selectedMatch === match
+                            ? "bg-primary/20"
+                            : "hover:bg-background/50"
+                        }`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSelectedMatch(match);
+                          setMatchQuery(matchLabel);
+                          setShowMatchDropdown(false);
+                        }}
+                      >
+                        <div className="text-base bg-muted px-3 py-3 rounded-xl">
+                          <p className="text-base">
+                            <span className="font-bold text-primary">
+                              {matchLabel}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              |{" "}
+                              {matchTime
+                                ? formatMatchTime(matchTime)
+                                : "Time not found"}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 {uniqueMatches.filter((match) =>
                   formatMatchKey(match)
                     .toLowerCase()
@@ -262,7 +225,7 @@ export function Match() {
                   ) : (
                     <>
                       <SelectGroup>
-                        <SelectLabel className="px-2 py-2 text-red-500/75 text-md">
+                        <SelectLabel className="px-2 py-2 text-chart-5/75 text-md">
                           Red Alliance
                         </SelectLabel>
                         {redTeamsInMatch.map((entry) => {
@@ -289,7 +252,7 @@ export function Match() {
                       </SelectGroup>
 
                       <SelectGroup>
-                        <SelectLabel className="px-2 py-2 text-blue-500/75 text-md">
+                        <SelectLabel className="px-2 py-2 text-chart-1/75 text-md">
                           Blue Alliance
                         </SelectLabel>
                         {blueTeamsInMatch.map((entry) => {
@@ -352,8 +315,8 @@ export function Match() {
           <div className="flex flex-col">
             {nexusMatches.slice(0, 3).map((nexusMatch) => {
               // Find the corresponding match in schedule
-              const matchKey = uniqueMatches.find((m) =>
-                formatMatchKey(m) === nexusMatch.label
+              const matchKey = uniqueMatches.find(
+                (m) => formatMatchKey(m) === nexusMatch.label
               );
               const matchTeams = matchKey
                 ? schedule.filter((s) => s.match === matchKey)
@@ -400,7 +363,8 @@ export function Match() {
                     >
                       <path
                         d="M9 18L15 12L9 6"
-                        stroke="#FBBF24"
+                        stroke="currentColor"
+                        className="text-primary"
                         strokeWidth="2.5"
                         strokeLinecap="round"
                         strokeLinejoin="round"

@@ -1,54 +1,24 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
-import { getTeams } from "@lib/data";
-import { useEvent } from "@lib/context/EventContext";
+import { useEventData } from "@lib/context/EventDataContext";
 
 export const Route = createFileRoute("/pit")({
   component: Pit,
 });
 
-interface Team {
-  num: number;
-  name: string;
-  key: string;
-  rank: number;
-}
-
 export function Pit() {
   const navigate = useNavigate();
-  const { currentEvent } = useEvent();
+  const { teams, teamsLoading: loading } = useEventData();
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [teams, setTeams] = useState<Team[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleBackClick = () => {
     navigate({ to: "/home" });
   };
-
-
-  useEffect(() => {
-    if (!currentEvent) return;
-
-    getTeams(currentEvent)
-      .then((data) => {
-        const transformed: Team[] = (data ?? []).map((t) => ({
-          key: t.team,
-          num: parseInt(t.team.replace("frc", ""), 10),
-          name: t.team_name ?? `Team ${t.team.replace("frc", "")}`,
-          rank: (t as any).rank ?? 0,
-        }));
-
-        transformed.sort((a, b) => a.num - b.num);
-        setTeams(transformed);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [currentEvent]);
 
   const filteredTeams = teams.filter((team) =>
     `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase())
@@ -132,11 +102,11 @@ export function Pit() {
         </div>
 
         {showDropdown && filteredTeams.length > 0 && (
-          <div className="absolute left-0 right-0 top-full mt-2 z-50 max-h-60 overflow-y-auto rounded-2xl bg-muted shadow-lg">
+          <div className="absolute left-0 right-0 top-full mt-3 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background  shadow-lg">
             {filteredTeams.map((team) => (
               <div
                 key={team.key}
-                className={`px-6 py-4 cursor-pointer ${
+                className={`px-2.5 py-1.5  cursor-pointer ${
                   selectedTeam === team.key
                     ? "bg-primary/20"
                     : "hover:bg-background/50"
@@ -148,7 +118,7 @@ export function Pit() {
                   setShowDropdown(false);
                 }}
               >
-                <p className="text-base">
+                <p className="text-base bg-muted px-3 py-3 rounded-xl">
                   <span className="font-bold text-primary">{team.num}</span>
                   <span className="text-foreground"> | {team.name}</span>
                 </p>
@@ -158,7 +128,7 @@ export function Pit() {
         )}
 
         {showDropdown && query && filteredTeams.length === 0 && (
-          <div className="absolute left-0 right-0 top-full mt-2 z-50 rounded-2xl bg-muted shadow-lg px-6 py-4">
+          <div className="absolute left-0 right-0 top-full mt-2 z-50 rounded-2xl bg-background shadow-lg px-6 py-4">
             <p className="text-muted-foreground">No team found.</p>
           </div>
         )}

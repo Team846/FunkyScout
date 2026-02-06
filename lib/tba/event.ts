@@ -21,6 +21,8 @@ interface EventSchedule {
     redTeams: string[];
     blueTeams: string[];
     est_time: number;
+    redScore: number | null;
+    blueScore: number | null;
   };
 }
 
@@ -111,6 +113,8 @@ async function fetchTBAMatchSchedule(
         match.alliances.blue.team_keys[2],
       ],
       est_time: match.predicted_time,
+      redScore: match.alliances.red.score ?? null,
+      blueScore: match.alliances.blue.score ?? null,
     };
   }
 

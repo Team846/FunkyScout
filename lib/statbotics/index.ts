@@ -8,3 +8,7 @@ export type { StatboticsTeamData, StatboticsTeamEPAs } from "./team";
 // Event-level functions
 export { fetchEventTeamEPAs } from "./event";
 export type { ProgressCallback } from "./event";
+
+// Match-level functions
+export { fetchStatboticsMatch } from "./match";
+export type { StatboticsMatch } from "./match";

@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { getEvents } from "@lib/data/events";
-import { useEvent } from "@lib/context/EventContext";
+import { useEventData } from "@lib/context/EventDataContext";
 import type { EventList } from "@lib/data/schema";
 
 export const Route = createFileRoute("/events")({
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/events")({
 
 function EventsPage() {
   const navigate = useNavigate();
-  const { setCurrentEvent } = useEvent();
+  const { setCurrentEvent } = useEventData();
   const [events, setEvents] = useState<EventList[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -49,7 +49,7 @@ function EventsPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="h-12 w-full rounded-2xl border-border bg-muted pl-4 pr-10 text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary"
         />
-        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-primary">
           <svg
             width="20"
             height="20"
@@ -59,7 +59,7 @@ function EventsPage() {
           >
             <path
               d="M21 21L15.0001 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z"
-              stroke="#FBBF24"
+              stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"

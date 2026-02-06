@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
-import { EventProvider } from "@lib/context/EventContext";
+import { EventDataProvider } from "@lib/context/EventDataContext";
 import "@shadcn/ui/styles.css";
 
 import { routeTree } from "./routeTree.gen";
@@ -20,9 +20,9 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <StrictMode>
-      <EventProvider>
+      <EventDataProvider>
         <RouterProvider router={router} />
-      </EventProvider>
+      </EventDataProvider>
     </StrictMode>
   );
 }
