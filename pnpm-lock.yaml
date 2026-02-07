@@ -42,6 +42,9 @@ importers:
       '@shadcn/ui':
         specifier: workspace:*
         version: link:../../packages/shadcn
+      '@sqlite.org/sqlite-wasm':
+        specifier: ^3.41.2
+        version: 3.41.2
       '@tanstack/react-router':
         specifier: ^1.136.4
         version: 1.136.4(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -94,6 +97,9 @@ importers:
       '@shadcn/ui':
         specifier: workspace:*
         version: link:../../packages/shadcn
+      '@sqlite.org/sqlite-wasm':
+        specifier: ^3.41.2
+        version: 3.41.2
       '@supabase/supabase-js':
         specifier: ^2.90.1
         version: 2.90.1
