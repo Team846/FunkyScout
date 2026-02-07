@@ -1,19 +1,20 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
-import React from "react";
-import red_field from "/red_field.svg";
-import blue_field from "/blue_field.svg";
+import React from 'react';
+import red_field from '/red_field.svg';
+import blue_field from '/blue_field.svg';
 import { Button } from "@shadcn/ui/components/button.tsx";
-import { json } from "@tanstack/react-router/ssr/client";
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+
+
 type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
 };
 
-//make every height fill, width fixed outside of the actions. inside container of field is
-export const Route = createFileRoute("/match_start")({
-  component: MatchStart,
+
+export const Route = createFileRoute("/match_play")({
+  component: MatchPlay,
   validateSearch: (search: Record<string, unknown>): MatchType => {
     return {
       teamNum: search.teamNum as string | undefined | null,
@@ -21,56 +22,45 @@ export const Route = createFileRoute("/match_start")({
       alliance: search.alliance as string | undefined | null,
     };
   },
-});
+})
+
+function MatchPlay() {
+    const navigate = useNavigate();
+    const { teamNum, matchNum, alliance } = Route.useSearch();
+    const [seconds, setSeconds] = useState(0);
+    
+    const [isAuto, setIsAuto] = useState(true);
+
+    const [isRotated, setIsRotated] = useState(false);
 
 
-
-function MatchStart() {
-  const navigate = useNavigate();
-  const { teamNum, matchNum, alliance } = Route.useSearch();
-  const [seconds, setSeconds] = useState(0);
-  const [isActive, setIsActive] = useState(false);
-  const [coordinates, setCoordinates] = useState([1000, 1000]);
-  const handleBackClick = () => {
-    navigate({ to: "/home" });
-  };
-  const toggle = () => {
-    setIsActive(!isActive);
-  };
-
-  const [isRotated, setIsRotated] = useState(false);
-
-  const rotateField = () => {
+    const rotateField = () => {
     setIsRotated(!isRotated);
-  };
-
-  const reset = useCallback(() => {
-    setIsActive(false);
-    setSeconds(0);
-  }, []);
-
-  useEffect(() => {
-    let interval = null;
-
-    if (isActive) {
-      interval = setInterval(() => {
-        setSeconds((prev) => prev + 0.01);
-      }, 10);
-      const timerId = setTimeout(() => {
-        reset();
-      }, 20 * 1000);
-    } else if (interval) {
-      clearInterval(interval);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
     };
-  }, [isActive]);
+    
+    const reset = useCallback(() => {
+    
+    setSeconds(0);
+    }, []);
 
-  useEffect(() => {}, [coordinates]);
+    useEffect(() => {
+        let interval = null;
 
-  return (
+        interval = setInterval(() => {
+        setSeconds(prev => prev + 0.01);
+        }, 10);
+        
+        const timerId = setTimeout(() => {
+            setIsAuto(false);
+        }, 20 * 1000);
+        
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, []);
+
+    
+   return (
     //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
 
@@ -148,12 +138,7 @@ function MatchStart() {
         <div className="relative flex-1 h-full flex items-center justify-center">
           <div className="relative inline-block">
             <img
-            onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const x = e.clientX - rect.left; 
-            const y = e.clientY - rect.top; 
-            setCoordinates([x, y]);
-          }}
+            
             src={alliance == "red" ? red_field : blue_field}
             alt="Field"
             className="max-w-full max-h-full object-contain transition-transform duration-500 ease-in-out"
@@ -162,37 +147,7 @@ function MatchStart() {
             }}
             
           />
-          {JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: `${coordinates[0]}px`,
-                top: `${coordinates[1]}px`,
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <g clipPath="url(#clip0_717_402)">
-                  <path
-                    d="M2 12C0.895431 12 0 11.1046 0 10C0 8.89543 0.895431 8 2 8H18C19.1046 8 20 8.89543 20 10C20 11.1046 19.1046 12 18 12L2 12Z"
-                    fill="#B73E3E"
-                  />
-                  <rect x="8" width="4" height="20" rx="2" fill="#B73E3E" />
-                </g>
-                <defs>
-                  <clipPath id="clip0_717_402">
-                    <rect width="20" height="20" fill="white" />
-                  </clipPath>
-                </defs>
-              </svg>
-            </div>
-          )}
+          
           </div>
         </div>
       
@@ -201,31 +156,13 @@ function MatchStart() {
         <p className="text-outfit text-s w-[159px] h-[55px]">
           Select robot starting position
         </p>
-        {JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
-          <Button
-            className="bg-secondary"
-            onClick={() => {
-              setCoordinates([1000, 1000]);
-            }}
-          >
-            <div className="flex flex-col justify-center items-center w-[159px] h-[58px] px-6 py-3 rounded-[15px] gap-2.5 fill-none">
-              <p className="text-outfit text-s text-foreground">Reset Click</p>
-            </div>
-          </Button>
-        )}
-
+        
+        
         <Button
           disabled={JSON.stringify(coordinates) == JSON.stringify([1000, 1000])}
           onClick={() => {
             //navigate({ to: "/" });
-            navigate({
-              to: "/match_play",
-              search: {
-                teamNum: teamNum,
-                matchNum: matchNum,
-                alliance: alliance,
-              },
-            });
+            setIsActive(!isActive);
           }}
         >
           <div className="flex flex-col justify-center items-center w-[159px] h-[58px] px-6 py-3 rounded-[15px] gap-2.5 fill-none">
@@ -251,4 +188,7 @@ function MatchStart() {
       </div>
     </div>
   );
+  
+
 }
+
