@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
+import { Slider } from "@shadcn/ui/components/slider.tsx";
+import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -19,6 +21,9 @@ import type {
   DrawingData,
 } from "../components/auto-path-drawer/types";
 import { toast } from "sonner";
+import { uploadPitImages } from "@lib/supabase/storage";
+import { cacheEventTeamData } from "@lib/db";
+import { useEvent } from "@lib/context/EventContext";
 
 type ScoutSearch = {
   teamNum?: number;
@@ -270,6 +275,10 @@ function AutosSection({
 function ScoutPage() {
   const navigate = useNavigate();
   const { teamNum, teamName } = Route.useSearch();
+  const { currentEvent } = useEvent();
+
+  // Phase state
+  const [step, setStep] = useState<1 | 2>(1);
 
   // Movement state
   const [movementDepot, setMovementDepot] = useState(false);
@@ -294,10 +303,100 @@ function ScoutPage() {
   // Autos state (lifted from AutosSection)
   const [autoEntries, setAutoEntries] = useState<AutoEntry[]>([]);
 
-  const handleSave = () => {
-    // No save functionality for now - will be implemented with SQLite later
-    toast.success("Pit scouting completed!");
-    navigate({ to: "/pit" });
+  // Phase 2 state
+  const [images, setImages] = useState<File[]>([]);
+  const [rating, setRating] = useState<number>(3);
+  const [notes, setNotes] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleNextPhase = () => {
+    setStep(2);
+  };
+
+  const handleBackToPhase1 = () => {
+    setStep(1);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      setImages([...images, ...newFiles]);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async () => {
+    if (images.length === 0 || !notes.trim()) {
+      toast.error("Please provide at least 1 photo and notes");
+      return;
+    }
+
+    if (!currentEvent || !teamNum) {
+      toast.error("Missing event or team information");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const { urls, errors } = await uploadPitImages({
+        eventKey: currentEvent,
+        teamKey: `frc${teamNum}`,
+        files: images,
+      });
+
+      if (errors.length > 0) {
+        console.warn("Some uploads failed:", errors);
+        toast.warning(`${errors.length} image(s) failed to upload`);
+      }
+
+      const pitData = {
+        movement: { depot: movementDepot, trough: movementTrough },
+        intake: {
+          ground: intakeGround,
+          station: intakeStation,
+          depot: intakeDepot,
+          stocking: intakeStocking,
+        },
+        fuel: { shootMoving: fuelShootMoving, passing: fuelPassing },
+        climb: {
+          level: climbLevel,
+          left: climbLeft,
+          right: climbRight,
+          declimb: climbDeclimb,
+        },
+        autos: autoEntries.map((e) => ({
+          id: e.id,
+          climb: e.climb,
+          drawing: e.drawing,
+        })),
+        rating,
+        notes,
+        image_urls: urls,
+      };
+
+      await cacheEventTeamData([
+        {
+          event: currentEvent,
+          team: `frc${teamNum}`,
+          data: pitData,
+          timestamp: Date.now(),
+          last_modified: Date.now(),
+        },
+      ]);
+
+      toast.success("Pit scouting completed!");
+      navigate({ to: "/pit" });
+    } catch (err) {
+      console.error("Submit error:", err);
+      toast.error("Failed to save pit data");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -334,8 +433,16 @@ function ScoutPage() {
       {/* Divider */}
       <div className="h-px w-full bg-border mb-6" />
 
+      {/* Phase Indicator */}
+      <div className="flex items-center justify-center mb-4">
+        <span className="text-sm text-muted-foreground">
+          Phase {step}/2
+        </span>
+      </div>
+
       {/* Sections */}
-      <div className="flex flex-col gap-6">
+      {step === 1 && (
+        <div className="flex flex-col gap-6">
         {/* Movement Section */}
         <Section title="Movement">
           <div className="grid grid-cols-2 gap-3 px-2">
@@ -492,16 +599,148 @@ function ScoutPage() {
 
         {/* Autos Section */}
         <AutosSection entries={autoEntries} setEntries={setAutoEntries} />
-      </div>
+        </div>
+      )}
 
-      {/* Save Button - Fixed at bottom */}
+      {/* Phase 2 UI */}
+      {step === 2 && (
+        <div className="flex flex-col gap-6">
+          {/* Image Upload Section */}
+          <Section title="Team Photos" defaultOpen={true}>
+            <div className="flex flex-col gap-3 px-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                variant="outline"
+                className="w-full h-10"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-5 mr-2"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                  <circle cx="12" cy="13" r="4" stroke="currentColor" strokeWidth="2" />
+                </svg>
+                Add Photos
+              </Button>
+              {images.length > 0 && (
+                <>
+                  <span className="text-sm text-muted-foreground">
+                    {images.length} photo{images.length !== 1 ? "s" : ""} selected
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {images.map((file, index) => (
+                      <div key={index} className="relative">
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={`Preview ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg border border-border"
+                        />
+                        <button
+                          onClick={() => removeImage(index)}
+                          className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1"
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="size-4"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M18 6L6 18M6 6l12 12"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </Section>
+
+          {/* Rating Section */}
+          <Section title="Team Rating" defaultOpen={true}>
+            <div className="flex flex-col gap-3 px-2">
+              <div className="flex items-center justify-center">
+                <span className="text-6xl font-bold text-primary">{rating}</span>
+              </div>
+              <Slider
+                value={[rating]}
+                onValueChange={(values) => setRating(values[0])}
+                min={1}
+                max={5}
+                step={1}
+                className="w-full"
+              />
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>1</span>
+                <span>2</span>
+                <span>3</span>
+                <span>4</span>
+                <span>5</span>
+              </div>
+            </div>
+          </Section>
+
+          {/* Notes Section */}
+          <Section title="Scouting Notes" defaultOpen={true}>
+            <div className="px-2">
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Enter your observations about this team..."
+                rows={8}
+                className="w-full resize-none"
+              />
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* Action Buttons - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 p-4 rounded-lg">
-        <Button
-          onClick={handleSave}
-          className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground"
-        >
-          Next
-        </Button>
+        {step === 1 ? (
+          <Button
+            onClick={handleNextPhase}
+            className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground"
+          >
+            Next Phase
+          </Button>
+        ) : (
+          <div className="flex gap-3">
+            <Button
+              onClick={handleBackToPhase1}
+              variant="outline"
+              className="flex-1 h-12"
+            >
+              Back
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="flex-1 h-12 bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {submitting ? "Submitting..." : "Submit Pit Scout"}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Bottom padding to prevent content from being hidden behind fixed button */}

@@ -15,11 +15,13 @@ import { Route as PitscoutRouteImport } from "./routes/pitscout"
 import { Route as PitRouteImport } from "./routes/pit"
 import { Route as Match_startRouteImport } from "./routes/match_start"
 import { Route as Match_playRouteImport } from "./routes/match_play"
+import { Route as Match_endRouteImport } from "./routes/match_end"
 import { Route as MatchRouteImport } from "./routes/match"
 import { Route as HomeRouteImport } from "./routes/home"
 import { Route as EventsRouteImport } from "./routes/events"
 import { Route as AuthRouteImport } from "./routes/auth"
 import { Route as IndexRouteImport } from "./routes/index"
+import { Route as TeamTeamKeyRouteImport } from "./routes/team.$teamKey"
 
 const VerifyRoute = VerifyRouteImport.update({
   id: "/verify",
@@ -51,6 +53,11 @@ const Match_playRoute = Match_playRouteImport.update({
   path: "/match_play",
   getParentRoute: () => rootRouteImport,
 } as any)
+const Match_endRoute = Match_endRouteImport.update({
+  id: "/match_end",
+  path: "/match_end",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MatchRoute = MatchRouteImport.update({
   id: "/match",
   path: "/match",
@@ -76,6 +83,11 @@ const IndexRoute = IndexRouteImport.update({
   path: "/",
   getParentRoute: () => rootRouteImport,
 } as any)
+const TeamTeamKeyRoute = TeamTeamKeyRouteImport.update({
+  id: "/team/$teamKey",
+  path: "/team/$teamKey",
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
@@ -83,12 +95,14 @@ export interface FileRoutesByFullPath {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/reset": typeof ResetRoute
   "/verify": typeof VerifyRoute
+  "/team/$teamKey": typeof TeamTeamKeyRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
@@ -96,12 +110,14 @@ export interface FileRoutesByTo {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/reset": typeof ResetRoute
   "/verify": typeof VerifyRoute
+  "/team/$teamKey": typeof TeamTeamKeyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -110,12 +126,14 @@ export interface FileRoutesById {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/reset": typeof ResetRoute
   "/verify": typeof VerifyRoute
+  "/team/$teamKey": typeof TeamTeamKeyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -125,12 +143,14 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_end"
     | "/match_play"
     | "/match_start"
     | "/pit"
     | "/pitscout"
     | "/reset"
     | "/verify"
+    | "/team/$teamKey"
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
@@ -138,12 +158,14 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_end"
     | "/match_play"
     | "/match_start"
     | "/pit"
     | "/pitscout"
     | "/reset"
     | "/verify"
+    | "/team/$teamKey"
   id:
     | "__root__"
     | "/"
@@ -151,12 +173,14 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_end"
     | "/match_play"
     | "/match_start"
     | "/pit"
     | "/pitscout"
     | "/reset"
     | "/verify"
+    | "/team/$teamKey"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,12 +189,14 @@ export interface RootRouteChildren {
   EventsRoute: typeof EventsRoute
   HomeRoute: typeof HomeRoute
   MatchRoute: typeof MatchRoute
+  Match_endRoute: typeof Match_endRoute
   Match_playRoute: typeof Match_playRoute
   Match_startRoute: typeof Match_startRoute
   PitRoute: typeof PitRoute
   PitscoutRoute: typeof PitscoutRoute
   ResetRoute: typeof ResetRoute
   VerifyRoute: typeof VerifyRoute
+  TeamTeamKeyRoute: typeof TeamTeamKeyRoute
 }
 
 declare module "@tanstack/react-router" {
@@ -217,6 +243,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof Match_playRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/match_end": {
+      id: "/match_end"
+      path: "/match_end"
+      fullPath: "/match_end"
+      preLoaderRoute: typeof Match_endRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/match": {
       id: "/match"
       path: "/match"
@@ -252,6 +285,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/team/$teamKey": {
+      id: "/team/$teamKey"
+      path: "/team/$teamKey"
+      fullPath: "/team/$teamKey"
+      preLoaderRoute: typeof TeamTeamKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -261,12 +301,14 @@ const rootRouteChildren: RootRouteChildren = {
   EventsRoute: EventsRoute,
   HomeRoute: HomeRoute,
   MatchRoute: MatchRoute,
+  Match_endRoute: Match_endRoute,
   Match_playRoute: Match_playRoute,
   Match_startRoute: Match_startRoute,
   PitRoute: PitRoute,
   PitscoutRoute: PitscoutRoute,
   ResetRoute: ResetRoute,
   VerifyRoute: VerifyRoute,
+  TeamTeamKeyRoute: TeamTeamKeyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
