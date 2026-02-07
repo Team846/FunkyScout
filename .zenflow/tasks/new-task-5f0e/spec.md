@@ -145,27 +145,45 @@ const [submitting, setSubmitting] = useState(false);
 - Change "Next" button text to "Next Phase"
 - On click: validate Phase 1 inputs (if needed), then `setStep(2)` (do NOT save yet)
 
-**Phase 2 UI** (when `step === 2`):
+**Phase 2 UI** (when `step === 2`) - based on screenshots:
 
-1. **Multi-image Input**:
-   - Use `<input type="file" accept="image/*" multiple />` or custom file picker
-   - Display selected images as thumbnails (grid or list)
-   - Allow removal of individual images before upload
+1. **Section Header**:
+   - Display "Phase 2 - Documentation" or similar
+   - Show progress indicator: "Phase 2/2"
+
+2. **Multi-image Input**:
+   - Use `<input type="file" accept="image/*" multiple />` styled as shadcn/ui `Button`
+   - Button text: "Add Photos" with camera icon
+   - Display selected images as thumbnail grid (2-3 columns)
+   - Each thumbnail has small "X" button to remove
    - Store in `images` state as `File[]`
+   - Show count: "3 photos selected"
 
-2. **Rating Slider**:
-   - Use shadcn/ui `Slider` component (1-5 range)
+3. **Rating Section**:
+   - Label: "Team Rating"
+   - Use shadcn/ui `Slider` component
+   - Range: 1-5 with step of 1
    - Default value: 3
-   - Display current value above slider
+   - Display large number above slider showing current value
+   - Optional: show 5 stars that fill as slider moves
 
-3. **Notes Textarea**:
+4. **Notes Section**:
+   - Label: "Scouting Notes"
    - Use shadcn/ui `Textarea` component
-   - Placeholder: "Observations about this team..."
-   - Rows: 4-6
+   - Placeholder: "Enter your observations about this team..."
+   - Rows: 6-8 (multi-line)
+   - Character counter (optional): "0/500"
 
-4. **Navigation**:
-   - **Back button**: `setStep(1)` (return to Phase 1, preserve data)
-   - **Submit button**: Validate Phase 2, then save all data
+5. **Navigation Buttons**:
+   - **Back button** (bottom left): 
+     - Variant: outline or ghost
+     - Text: "Back to Phase 1"
+     - Action: `setStep(1)`
+   - **Submit button** (bottom right):
+     - Variant: default/primary
+     - Text: "Submit Pit Scout"
+     - Show loading spinner when `submitting === true`
+     - Action: validate + upload + save
 
 **Validation**:
 - At least 1 photo required
@@ -252,10 +270,12 @@ const handleSubmit = async () => {
 - Import `cacheEventTeamData` from `@lib/db`
 - Import `useEvent` from `@lib/context/EventContext` to get `currentEvent`
 
-**UI Components**:
-- Reuse existing `Section`, `ScoutToggle`, `Input`, `Button` components
-- Add shadcn/ui `Slider` component (may need to create if not exists)
-- Use existing `Spinner` or loading state in button during submission
+**UI Components** (use shadcn/ui for consistency):
+- Reuse existing: `Section`, `ScoutToggle`, `Input`, `Button`, `Textarea`
+- New: `Slider` component for rating (check if exists, create if not)
+- Use: `Badge` component for rating display on team details page
+- Use: `Carousel` component (exists) for image display
+- Loading: Show spinner in submit button when `submitting === true`
 
 ---
 
@@ -296,43 +316,61 @@ useEffect(() => {
 
 **Data Structure**: `pitData.data` contains the JSON blob with all Phase 1 and Phase 2 fields
 
-**UI Structure**:
+**UI Structure** (based on provided screenshots):
 
 1. **Header**:
-   - Back button (navigate to previous page)
-   - Team number + name (e.g., "1678 | Citrus Circuits")
+   - Back button (top left, arrow icon)
+   - Team number + name centered (e.g., "1678 | Citrus Circuits")
+   - Edit button (top right, pencil icon) - for auto editing
 
 2. **View Switcher** (Pit/Match tabs):
-   - Two buttons/tabs at top
-   - Highlight active view
-   - On click: `setView("pit")` or `setView("match")`
+   - Use two `Button` components styled as tabs
+   - Horizontal layout at top, below header
+   - Active tab: highlighted with primary color/border
+   - Inactive tab: muted appearance
+   - Pattern: Toggle between `"pit"` and `"match"` views
 
 3. **Pit View** (when `view === "pit"`):
    
    a. **Images Section**:
-      - Start with simple 2-column grid: `<div className="grid grid-cols-2 gap-3">`
-      - Map over `pitData.image_urls` and render `<img src={url} crossOrigin="anonymous" />`
-      - Once stable, optionally refactor to shadcn/ui `Carousel` component
+      - Use shadcn/ui `Carousel` component (already exists in codebase)
+      - Display images as swipeable carousel
+      - Full-width images with navigation dots/arrows
+      - Fallback: if no Carousel, use 2-column grid
+      - Image URLs from `pitData.data.image_urls`
+      - Add `crossOrigin="anonymous"` to `<img>` tags
    
-   b. **Rating Display**:
-      - Number badge: `<Badge>{pitData.data.rating}/5</Badge>`
-      - Or 5-star visual: render 5 stars, fill first N based on rating
+   b. **Rating Section**:
+      - Section header: "Rating" 
+      - Display as number badge: `<Badge variant="secondary">{pitData.data.rating}/5</Badge>`
+      - Alternative: render 5 star icons, fill based on rating value
    
-   c. **Notes Display**:
-      - Simple text block: `<p className="text-sm">{pitData.data.notes}</p>`
+   c. **Notes Section**:
+      - Section header: "Notes"
+      - Display notes in a card or bordered container
+      - Use `<p className="text-sm text-muted-foreground whitespace-pre-wrap">{pitData.data.notes}</p>`
    
-   d. **Phase 1 Data** (optional):
-      - Display existing pit data from `pitData.data`: movement, intake, fuel, climb, autos
-      - Reuse similar UI from pitscout.tsx (read-only toggles or text)
-   
-   e. **Edit Auto Button** (top-right icon):
-      - Open `AutoPathDrawer` in edit mode
-      - Pre-fill with existing auto drawings from `pitData.data.autos`
-      - On save: update local DB via `cacheEventTeamData` with modified `data` blob
+   d. **Phase 1 Data Sections** (collapsible):
+      - **Movement**: Display depot/trough capabilities
+      - **Intake**: Display ground/station/depot/stocking
+      - **Fuel**: Display shooting abilities
+      - **Climb**: Display climb level and position
+      - **Autos**: Display auto path thumbnails (if drawing data exists)
+      - Reuse `Section` component from pitscout.tsx for consistency
+      - Read-only display (no toggles, just text/badges)
 
 4. **Match View** (when `view === "match"`):
-   - For now: large yellow placeholder block with text "Match data coming soon"
-   - Later: implement match scouting data display
+   - Large centered container with yellow/warning background
+   - Text: "Match data coming soon"
+   - Icon: chart or match icon
+   - Placeholder for future match scouting data display
+
+5. **Edit Auto Button** (floating action button or header icon):
+   - Position: top-right of Pit view or floating button
+   - Icon: pencil or edit icon
+   - On click: open `AutoPathDrawer` modal
+   - Pre-populate with `pitData.data.autos` array
+   - On save: merge updated autos back into `data` blob, call `cacheEventTeamData`
 
 **Routing Integration**:
 - Add route in TanStack Router config
@@ -382,6 +420,8 @@ useEffect(() => {
 
 ### Potentially Modified (if not exists)
 1. **`packages/shadcn/src/components/ui/slider.tsx`**: Slider component (create if missing)
+2. **`packages/shadcn/src/components/ui/badge.tsx`**: Already exists, may need variants
+3. **`packages/shadcn/src/components/ui/carousel.tsx`**: Already exists, use for image display
 
 ---
 
@@ -589,17 +629,29 @@ This spec is comprehensive enough to proceed directly to implementation. However
    - Manual test with temp button
 
 2. **Pit Scouting Phase 2 UI** (1 task):
-   - Add multi-step state to pitscout.tsx
-   - Build Phase 2 UI components (image picker, rating slider, notes textarea)
+   - Add multi-step state to pitscout.tsx (step 1/2)
+   - Build Phase 2 UI following screenshot design:
+     - File input with preview thumbnails (2-3 column grid)
+     - Rating slider (1-5) with large number display
+     - Notes textarea (6-8 rows)
+     - Back/Submit button layout
    - Wire up submit logic: upload photos → save to local SQLite via `cacheEventTeamData`
    - Use `useEvent()` hook for `currentEvent`
+   - Check if `Slider` component exists, create if needed
    - Test end-to-end
 
 3. **Team Details Page** (1 task):
-   - Create new route file
-   - Build Pit/Match switcher
-   - Implement Pit view with image grid, rating, notes
-   - Add placeholder Match view
+   - Create new route file `team.$teamKey.tsx`
+   - Build header: back button (left), team info (center), edit button (right)
+   - Build Pit/Match tab switcher (two buttons, toggle state)
+   - Fetch from local DB using `getEventTeamData`
+   - Implement Pit view following screenshot design:
+     - `Carousel` component for images from `pitData.data.image_urls`
+     - Rating badge: "{rating}/5"
+     - Notes section with proper styling
+     - Optional: Phase 1 data sections (collapsible)
+   - Add placeholder Match view (yellow box with text)
+   - Wire up Edit button to open `AutoPathDrawer` with existing auto data
    - Test navigation and data display
 
 4. **COEP/CORS Fixes** (1 task):
@@ -613,7 +665,7 @@ This spec is comprehensive enough to proceed directly to implementation. However
    - Save updates back to event_team_data
    - Test edit flow
 
-**Total Estimated Tasks**: 6 (can be combined or split as needed)
+**Total Estimated Tasks**: 5 (can be combined or split as needed)
 
 ---
 
