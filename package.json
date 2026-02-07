@@ -12,7 +12,7 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "npm:rolldown-vite@7.1.14"
+      "vite": "^6.0.0"
     },
     "onlyBuiltDependencies": [
       "@tailwindcss/oxide",
@@ -22,8 +22,6 @@
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "^3.41.2",
     "@tanstack/react-router": "^1.158.1",
-    "cargo": "^0.8.0",
-    "pnpm": "^10.28.2",
-    "tauri": "^0.15.0"
+    "tauri": "0.15.0"
   }
 }
