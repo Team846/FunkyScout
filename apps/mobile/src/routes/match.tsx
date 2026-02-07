@@ -71,8 +71,6 @@ export function Match() {
     navigate({ to: "/home" });
   };
 
-
-
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
       {/* Back Button */}
@@ -182,7 +180,7 @@ export function Match() {
             <div className="flex-1 truncate">
               <Select
                 value={selectedTeam ?? ""}
-                onValueChange={(value) => {
+                onValueChange={(value: string) => {
                   setSelectedTeam(value || null);
                 }}
                 disabled={!selectedMatch}
