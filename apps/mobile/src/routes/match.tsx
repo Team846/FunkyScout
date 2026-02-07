@@ -292,6 +292,7 @@ export function Match() {
               className="h-8 w-8 shrink-0 rounded-full bg-primary hover:bg-primary/90 p-0"
               variant="default"
               size="icon"
+              disabled={!(selectedMatch && selectedTeam)}
               onClick={() => {
                 let selectedAlliance = null;
                 redTeamsInMatch.forEach((item) => {
