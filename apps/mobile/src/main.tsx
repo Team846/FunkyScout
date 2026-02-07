@@ -1,7 +1,10 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
-import { EventDataProvider } from "@lib/context/EventDataContext";
+import { EventProvider } from "@lib/context/EventContext";
+import { TeamDataProvider } from "@lib/context/TeamDataContext";
+import { CompetitionDataProvider } from "@lib/context/CompetitionDataContext";
+import { AnalyticsDataProvider } from "@lib/context/AnalyticsDataContext";
 import "@shadcn/ui/styles.css";
 
 import { routeTree } from "./routeTree.gen";
@@ -20,9 +23,15 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <StrictMode>
-      <EventDataProvider>
-        <RouterProvider router={router} />
-      </EventDataProvider>
-    </StrictMode>
+      <EventProvider>
+        <TeamDataProvider>
+          <CompetitionDataProvider>
+            <AnalyticsDataProvider>
+              <RouterProvider router={router} />
+            </AnalyticsDataProvider>
+          </CompetitionDataProvider>
+        </TeamDataProvider>
+      </EventProvider>
+    </StrictMode>,
   );
 }

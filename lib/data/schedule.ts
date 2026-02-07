@@ -1,6 +1,7 @@
 import supabase from "../supabase/supabase";
 import { fetchTBAMatchSchedule } from "../tba/event";
 import type { Alliance } from "./schema";
+import { getEventSchedule, cacheEventSchedule } from "../db";
 
 /**
  * Refresh schedule from TBA.
@@ -21,7 +22,7 @@ export async function refreshSchedule(eventKey: string) {
 
   const { error: teamError } = await supabase.from("event_team_data").upsert(
     [...allTeams].map((team) => ({ event: eventKey, team })),
-    { onConflict: "event,team", ignoreDuplicates: true }
+    { onConflict: "event,team", ignoreDuplicates: true },
   );
 
   if (teamError) throw teamError;
@@ -36,10 +37,10 @@ export async function refreshSchedule(eventKey: string) {
 
   for (const [matchKey, match] of Object.entries(schedule)) {
     match.redTeams.forEach((team) =>
-      rows.push({ event: eventKey, match: matchKey, team, alliance: "red" })
+      rows.push({ event: eventKey, match: matchKey, team, alliance: "red" }),
     );
     match.blueTeams.forEach((team) =>
-      rows.push({ event: eventKey, match: matchKey, team, alliance: "blue" })
+      rows.push({ event: eventKey, match: matchKey, team, alliance: "blue" }),
     );
   }
 
@@ -51,16 +52,38 @@ export async function refreshSchedule(eventKey: string) {
 }
 
 /**
- * Get match schedule for an event.
- * Returns empty array if no schedule exists yet.
+ * Get match schedule for an event with local fallback.
  */
 export async function getSchedule(eventKey: string) {
-  const { data, error } = await supabase
-    .from("event_schedule")
-    .select("*")
-    .eq("event", eventKey)
-    .is("deleted_at", null);
+  const cached = await getEventSchedule(eventKey);
 
-  if (error) throw error;
-  return data ?? [];
+  if (!navigator.onLine) {
+    return cached;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("event_schedule")
+      .select("*")
+      .eq("event", eventKey)
+      .is("deleted_at", null);
+
+    if (error) throw error;
+
+    if (data) {
+      await cacheEventSchedule(
+        data.map((d) => ({
+          event: d.event,
+          match: d.match,
+          team: d.team,
+          alliance: d.alliance as "red" | "blue",
+        })),
+      );
+    }
+
+    return data ?? [];
+  } catch (e) {
+    console.warn("[Schedule] Supabase fetch failed, using local cache:", e);
+    return cached;
+  }
 }

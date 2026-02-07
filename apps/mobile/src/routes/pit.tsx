@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
-import { useEventData } from "@lib/context/EventDataContext";
+import { useTeamData } from "@lib/context/TeamDataContext";
 
 export const Route = createFileRoute("/pit")({
   component: Pit,
@@ -9,7 +9,7 @@ export const Route = createFileRoute("/pit")({
 
 export function Pit() {
   const navigate = useNavigate();
-  const { teams, teamsLoading: loading } = useEventData();
+  const { teams, loading } = useTeamData();
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -20,8 +20,8 @@ export function Pit() {
     navigate({ to: "/home" });
   };
 
-  const filteredTeams = teams.filter((team) =>
-    `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase())
+  const filteredTeams = teams.filter((team: any) =>
+    `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase()),
   );
 
   return (
@@ -74,7 +74,7 @@ export function Pit() {
             className="h-10 w-10 rounded-full bg-primary p-0"
             size="icon"
             onClick={() => {
-              const team = teams.find((t) => t.key === selectedTeam);
+              const team = teams.find((t: any) => t.key === selectedTeam);
               if (!team) return;
 
               navigate({
@@ -103,7 +103,7 @@ export function Pit() {
 
         {showDropdown && filteredTeams.length > 0 && (
           <div className="absolute left-0 right-0 top-full mt-3 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background  shadow-lg">
-            {filteredTeams.map((team) => (
+            {filteredTeams.map((team: any) => (
               <div
                 key={team.key}
                 className={`px-2.5 py-1.5  cursor-pointer ${
@@ -140,7 +140,7 @@ export function Pit() {
         <p className="text-muted-foreground">Loading teams...</p>
       ) : (
         <div className="flex flex-col">
-          {teams.slice(0, 3).map((team) => (
+          {teams.slice(0, 3).map((team: any) => (
             <div
               key={team.key}
               className="mt-3 rounded-2xl bg-muted px-6 py-6 cursor-pointer"

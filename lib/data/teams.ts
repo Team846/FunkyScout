@@ -1,53 +1,46 @@
 import supabase from "../supabase/supabase";
-import { fetchTBAEventTeams } from "../tba/event";
+import { getEventTeamData, cacheEventTeamData } from "../db";
 
 /**
- * Get all teams for an event from Supabase, enriched with rank data from TBA.
+ * Get all teams for an event with local cache fallback.
  */
 export async function getTeams(eventKey: string) {
-  const { data, error } = await supabase
-    .from("event_team_data")
-    .select("event, team, data, team_name")
-    .eq("event", eventKey)
-    .is("deleted_at", null);
+  const cached = await getEventTeamData(eventKey);
 
-  if (error) throw error;
-
-  // Fetch rank data from TBA
-  try {
-    const tbaTeams = await fetchTBAEventTeams(eventKey);
-    if (tbaTeams && data) {
-      // Create a map of team key to rank
-      const rankMap = new Map(tbaTeams.map(t => [t.key, t.rank]));
-      
-      // Enrich Supabase data with ranks
-      return data.map(team => ({
-        ...team,
-        rank: rankMap.get(team.team) ?? 0,
-      }));
-    }
-  } catch (e) {
-    console.error("Failed to fetch TBA ranks:", e);
+  if (!navigator.onLine) {
+    // Transform EventTeamData to the format expected by consumption (context)
+    return cached.map((c) => ({
+      event: c.event,
+      team: c.team,
+      data: c.data,
+      team_name: c.team_name,
+      rank: 0, // Rank comes from TBA cache separately in context
+    }));
   }
 
-  // Return data without ranks if TBA fetch fails
-  return data?.map(team => ({ ...team, rank: 0 }));
-}
+  try {
+    const { data, error } = await supabase
+      .from("event_team_data")
+      .select("event, team, data, team_name")
+      .eq("event", eventKey)
+      .is("deleted_at", null);
 
-/**
- * Submit pit scouting data for a team.
- * Updates the `data` column in event_team_data.
- */
-export async function submitPitData(
-  eventKey: string,
-  team: string,
-  pitData: object
-) {
-  const { error } = await supabase
-    .from("event_team_data")
-    .update({ data: pitData })
-    .eq("event", eventKey)
-    .eq("team", team);
+    if (error) throw error;
 
-  if (error) throw error;
+    if (data) {
+      await cacheEventTeamData(
+        data.map((d) => ({
+          event: d.event,
+          team: d.team,
+          data: d.data,
+          team_name: d.team_name,
+        })),
+      );
+    }
+
+    return data;
+  } catch (e) {
+    console.warn("[Teams] Supabase fetch failed, using local cache:", e);
+    return cached;
+  }
 }

@@ -8,8 +8,10 @@ import {
   CommandItem,
   CommandEmpty,
 } from "@shadcn/ui/components/command.js";
-import { useEventData } from "@lib/context/EventDataContext";
-import { fetchStatboticsMatch } from "@lib/statbotics";
+import { useEvent } from "@lib/context/EventContext";
+import { useTeamData } from "@lib/context/TeamDataContext";
+import { useCompetition } from "@lib/context/CompetitionDataContext";
+import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import type { NexusMatch } from "@lib/nexus";
 
 interface NextMatchData {
@@ -70,14 +72,11 @@ const nexusLabelToMatchKey = (label: string): string => {
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const {
-    currentEvent,
-    teams,
-    teamsLoading,
-    nexusMatches,
-    tbaTeams,
-    tbaSchedule,
-  } = useEventData();
+  const { currentEvent } = useEvent();
+  const { teams, tbaTeams, loading: teamsLoading } = useTeamData();
+  const { nexusMatches, tbaSchedule } = useCompetition();
+  const { matchPreds } = useAnalytics();
+
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
   const [matchLoading, setMatchLoading] = useState(true);
 
@@ -89,9 +88,14 @@ export function DashboardPage() {
   useEffect(() => {
     if (!currentEvent) return;
 
-    setMatchLoading(true);
     const ourTeamStr = OUR_TEAM.toString();
     const ourTeamKey = `frc${OUR_TEAM}`;
+
+    // IMPORTANT: Clear match data if the event just changed!
+    // We check if the match label belongs to the current event.
+    // (Actually simpler: just clear it whenever currentEvent changes if we want absolute fresh air)
+
+    setMatchLoading(true);
 
     const fetchMatchData = async () => {
       // DEV TEST: Mock future match data
@@ -118,7 +122,7 @@ export function DashboardPage() {
         const ourMatches = nexusMatches.filter(
           (match: NexusMatch) =>
             match.redTeams.includes(ourTeamStr) ||
-            match.blueTeams.includes(ourTeamStr)
+            match.blueTeams.includes(ourTeamStr),
         );
 
         // Only look for upcoming matches from Nexus
@@ -126,43 +130,40 @@ export function DashboardPage() {
         const upcomingMatches = ourMatches.filter(
           (match: NexusMatch) =>
             !match.times.actualOnFieldTime &&
-            match.times.estimatedStartTime > now
+            match.times.estimatedStartTime > now,
         );
 
         if (upcomingMatches.length > 0) {
           // Get the soonest upcoming match
           const ourMatch = upcomingMatches.sort(
             (a: NexusMatch, b: NexusMatch) =>
-              a.times.estimatedStartTime - b.times.estimatedStartTime
+              a.times.estimatedStartTime - b.times.estimatedStartTime,
           )[0];
 
           const isOnRed = ourMatch.redTeams.includes(ourTeamStr);
           const redTeamNums = ourMatch.redTeams.map((t: string) =>
-            parseInt(t, 10)
+            parseInt(t, 10),
           );
           const blueTeamNums = ourMatch.blueTeams.map((t: string) =>
-            parseInt(t, 10)
+            parseInt(t, 10),
           );
 
           // Convert Nexus label to Statbotics key
           const matchKeySuffix = nexusLabelToMatchKey(ourMatch.label);
           const matchKey = `${currentEvent}_${matchKeySuffix}`;
 
-          // Fetch predictions from Statbotics
+          // Use predictions from context
           let winProb: number | null = null;
           let predictedRedScore: number | null = null;
           let predictedBlueScore: number | null = null;
-          try {
-            const statboticsMatch = await fetchStatboticsMatch(matchKey);
-            if (statboticsMatch && statboticsMatch.pred) {
-              winProb = isOnRed
-                ? statboticsMatch.pred.red_win_prob
-                : 1 - statboticsMatch.pred.red_win_prob;
-              predictedRedScore = Math.round(statboticsMatch.pred.red_score);
-              predictedBlueScore = Math.round(statboticsMatch.pred.blue_score);
-            }
-          } catch (e) {
-            console.error("Failed to fetch Statbotics match data:", e);
+
+          const statboticsMatch = matchPreds[matchKey];
+          if (statboticsMatch && statboticsMatch.pred) {
+            winProb = isOnRed
+              ? statboticsMatch.pred.red_win_prob
+              : 1 - statboticsMatch.pred.red_win_prob;
+            predictedRedScore = Math.round(statboticsMatch.pred.red_score);
+            predictedBlueScore = Math.round(statboticsMatch.pred.blue_score);
           }
 
           setNextMatch({
@@ -191,6 +192,7 @@ export function DashboardPage() {
 
       // Find our team's last match
       const ourTeam = tbaTeams.find((t) => t.key === ourTeamKey);
+
       if (!ourTeam || !ourTeam.lastMatch) {
         setNextMatch(null);
         return;
@@ -205,10 +207,10 @@ export function DashboardPage() {
 
       const isOnRed = matchData.redTeams.includes(ourTeamKey);
       const redTeamNums = matchData.redTeams.map((t: string) =>
-        parseInt(t.replace("frc", ""), 10)
+        parseInt(t.replace("frc", ""), 10),
       );
       const blueTeamNums = matchData.blueTeams.map((t: string) =>
-        parseInt(t.replace("frc", ""), 10)
+        parseInt(t.replace("frc", ""), 10),
       );
 
       // Build team ranks map from TBA data
@@ -251,7 +253,7 @@ export function DashboardPage() {
     fetchMatchData()
       .catch(console.error)
       .finally(() => setMatchLoading(false));
-  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule]);
+  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -512,7 +514,7 @@ export function DashboardPage() {
               />
               <path
                 d="M4.16663 10.8333L9.16663 15.8333"
-                stroke="currentCol  or"
+                stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -729,7 +731,7 @@ export function DashboardPage() {
             <CommandEmpty>
               {teamsLoading ? "Loading teams..." : "No teams found."}
             </CommandEmpty>
-            {teams.map((team) => (
+            {teams.map((team: any) => (
               <CommandItem
                 key={team.key}
                 className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px]"

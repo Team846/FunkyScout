@@ -16,7 +16,7 @@ import {
   useInviteCode,
   fetchUserProfile,
 } from "@lib/supabase/user";
-import { useEventData } from "@lib/context/EventDataContext";
+import { useEvent } from "@lib/context/EventContext";
 import { DashboardPage } from "../pages/home/DashboardPage";
 import { ShiftsPage } from "../pages/home/ShiftsPage";
 import { DataPage } from "../pages/home/DataPage";
@@ -37,7 +37,7 @@ const PAGE_TITLES: Record<PageType, string> = {
 
 function HomePage() {
   const navigate = useNavigate();
-  const { currentEvent } = useEventData();
+  const { currentEvent } = useEvent();
   const [userData, setUserData] = useState(getLocalUserData());
   const [currentPage, setCurrentPage] = useState<PageType>("dashboard");
 

@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
-import { useEventData } from "@lib/context/EventDataContext";
+import { useTeamData } from "@lib/context/TeamDataContext";
+import { useCompetition } from "@lib/context/CompetitionDataContext";
 import {
   Select,
   SelectContent,
@@ -29,8 +30,8 @@ const formatMatchTime = (timestamp: number) => {
 
 export function Match() {
   const navigate = useNavigate();
-  const { teams, schedule, nexusMatches, teamsLoading, scheduleLoading } =
-    useEventData();
+  const { teams, loading: teamsLoading } = useTeamData();
+  const { schedule, nexusMatches, loading: scheduleLoading } = useCompetition();
 
   const loading = teamsLoading || scheduleLoading;
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
@@ -57,7 +58,7 @@ export function Match() {
       const bNum = parseInt(b.replace(/\D/g, ""), 10) || 0;
 
       return aNum - bNum;
-    }
+    },
   );
 
   // Get teams for selected match
@@ -122,13 +123,13 @@ export function Match() {
                   .filter((match) =>
                     formatMatchKey(match)
                       .toLowerCase()
-                      .includes(matchQuery.toLowerCase())
+                      .includes(matchQuery.toLowerCase()),
                   )
                   .map((match) => {
                     // Try to find nexus match for time data
                     const matchLabel = formatMatchKey(match);
                     const nexusMatch = nexusMatches.find(
-                      (nm) => nm.label === matchLabel
+                      (nm) => nm.label === matchLabel,
                     );
                     const matchTime = nexusMatch?.times.estimatedStartTime;
                     return (
@@ -166,7 +167,7 @@ export function Match() {
                 {uniqueMatches.filter((match) =>
                   formatMatchKey(match)
                     .toLowerCase()
-                    .includes(matchQuery.toLowerCase())
+                    .includes(matchQuery.toLowerCase()),
                 ).length === 0 && (
                   <div className="px-6 py-4">
                     <p className="text-muted-foreground">No match found.</p>
@@ -189,9 +190,11 @@ export function Match() {
                   {selectedTeam
                     ? (() => {
                         const entry = teamsInMatch.find(
-                          (e) => e.team === selectedTeam
+                          (e) => e.team === selectedTeam,
                         );
-                        const team = teams.find((t) => t.key === selectedTeam);
+                        const team = teams.find(
+                          (t: any) => t.key === selectedTeam,
+                        );
                         return entry ? (
                           <span className="flex w-full min-w-0 items-center gap-1">
                             <span className="shrink-0 text-foreground">
@@ -227,7 +230,9 @@ export function Match() {
                           Red Alliance
                         </SelectLabel>
                         {redTeamsInMatch.map((entry) => {
-                          const team = teams.find((t) => t.key === entry.team);
+                          const team = teams.find(
+                            (t: any) => t.key === entry.team,
+                          );
                           return (
                             <SelectItem
                               key={`${entry.match}-${entry.team}`}
@@ -254,7 +259,9 @@ export function Match() {
                           Blue Alliance
                         </SelectLabel>
                         {blueTeamsInMatch.map((entry) => {
-                          const team = teams.find((t) => t.key === entry.team);
+                          const team = teams.find(
+                            (t: any) => t.key === entry.team,
+                          );
                           return (
                             <SelectItem
                               key={`${entry.match}-${entry.team}`}
@@ -285,18 +292,20 @@ export function Match() {
               className="h-8 w-8 shrink-0 rounded-full bg-primary hover:bg-primary/90 p-0"
               variant="default"
               size="icon"
-              onClick = {() => {
-
+              onClick={() => {
                 let selectedAlliance = null;
-                redTeamsInMatch.forEach(item => {
-                  if(JSON.stringify(item.team) == JSON.stringify(selectedTeam))
+                redTeamsInMatch.forEach((item) => {
+                  if (JSON.stringify(item.team) == JSON.stringify(selectedTeam))
                     selectedAlliance = item.alliance;
                 });
-                navigate({ 
+                navigate({
                   to: "/match_start",
-                  search: { teamNum: selectedTeam, matchNum: selectedMatch, alliance: selectedAlliance},
+                  search: {
+                    teamNum: selectedTeam,
+                    matchNum: selectedMatch,
+                    alliance: selectedAlliance,
+                  },
                 });
-                
               }}
             >
               <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
@@ -321,7 +330,7 @@ export function Match() {
             {nexusMatches.slice(0, 3).map((nexusMatch) => {
               // Find the corresponding match in schedule
               const matchKey = uniqueMatches.find(
-                (m) => formatMatchKey(m) === nexusMatch.label
+                (m) => formatMatchKey(m) === nexusMatch.label,
               );
               const matchTeams = matchKey
                 ? schedule.filter((s) => s.match === matchKey)
@@ -329,7 +338,7 @@ export function Match() {
               // Pick the first team from the match
               const firstTeamEntry = matchTeams[0];
               const firstTeam = teams.find(
-                (t) => t.key === firstTeamEntry?.team
+                (t: any) => t.key === firstTeamEntry?.team,
               );
 
               return (

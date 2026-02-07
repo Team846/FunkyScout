@@ -1,64 +1,27 @@
-import { fetchStatboticsTeamEPA } from "./team";
-import type { StatboticsTeamEPAs } from "./team";
-import { handleError } from "../../utils/errorHandler";
-
-export type ProgressCallback = (
-  fetched: number,
-  total: number,
-  errors: number
-) => void;
+import { fetchStatboticsData } from "./fetch";
 
 /**
- * Fetch EPA data for all teams at an event.
- * No caching - just fetches fresh data.
+ * Fetch all matches for an event, including predictions.
  */
-export async function fetchEventTeamEPAs(
-  event: string,
-  teamKeys: string[],
-  onProgress?: ProgressCallback
-): Promise<Record<string, StatboticsTeamEPAs>> {
-  console.log("Fetch team EPAs: Started");
-
-  if (!teamKeys || teamKeys.length === 0) {
-    console.warn("Fetch team EPAs: No teams provided");
-    throw new Error("No teams provided");
-  }
-
-  const teamEPAs: Record<string, StatboticsTeamEPAs> = {};
-  let fetchedCount = 0;
-  let errorCount = 0;
-
-  const fetchPromises = teamKeys.map(async (teamKey) => {
-    try {
-      // Extract team number from key (e.g., "frc254" -> "254")
-      const teamNumber = teamKey.startsWith("frc")
-        ? teamKey.substring(3)
-        : teamKey;
-
-      const teamData = await fetchStatboticsTeamEPA(teamNumber, event);
-
-      if (teamData) {
-        teamEPAs[teamKey] = teamData;
-      } else {
-        errorCount++;
-      }
-    } catch (error) {
-      console.error(`Failed to fetch data for team ${teamKey}:`, error);
-      errorCount++;
-    } finally {
-      fetchedCount++;
-      if (onProgress) {
-        onProgress(fetchedCount, teamKeys.length, errorCount);
-      }
-    }
-  });
-
+export async function fetchEventMatches(event: string): Promise<any[]> {
   try {
-    await Promise.all(fetchPromises);
+    const data = await fetchStatboticsData(`/matches?event=${event}`);
+    return data || [];
   } catch (error) {
-    handleError(error);
+    console.error(`Failed to fetch matches for event ${event}:`, error);
+    return [];
   }
+}
 
-  console.log(`Fetch team EPAs: Done (${Object.keys(teamEPAs).length} teams)`);
-  return teamEPAs;
+/**
+ * Fetch all team-year data for an event in one go.
+ */
+export async function fetchEventTeamYears(event: string): Promise<any[]> {
+  try {
+    const data = await fetchStatboticsData(`/team_years?event=${event}`);
+    return data || [];
+  } catch (error) {
+    console.error(`Failed to fetch team-years for event ${event}:`, error);
+    return [];
+  }
 }
