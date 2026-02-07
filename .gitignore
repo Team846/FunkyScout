@@ -14,6 +14,8 @@ tsconfig.tsbuildinfo
 
 # dependencies
 /node_modules
+package-lock.json
+yarn.lock
 
 # IDEs and editors
 /.idea
