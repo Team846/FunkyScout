@@ -3,6 +3,21 @@
 ## Overview
 Implement a comprehensive pit scouting Phase 2 feature that allows scouters to upload team photos, provide ratings and notes, and view this data in a dedicated team details page. This builds upon the existing Phase 1 pit scouting UI.
 
+## Key Architectural Points
+1. **Data Flow**: ALL data writes → LOCAL SQLite → background sync to Supabase
+   - Use `cacheEventTeamData()` to write to local DB
+   - Use `getEventTeamData()` to read from local DB
+   - **Exception**: Photos upload directly to Supabase Storage (online only)
+2. **Storage Structure**: `{eventKey}/team-{teamKey}/{timestamp}-{index}.{ext}`
+   - Example: `2025cada/team-frc1678/1738901234000-0.png`
+   - Bucket `team-images` already exists with policies configured
+3. **Routing Flow**:
+   - **Upload/Create**: Home → `/pit` (select team) → `/pitscout?teamNum=X` (form)
+   - **View**: Home → click team → `/team/$teamKey` (display pit data)
+4. **Data Storage**: All pit scouting data (Phase 1 + Phase 2) stored in `event_team_data.data` JSON blob
+   - No schema changes needed
+   - Photo URLs stored in `data.image_urls` array
+
 ## Complexity Assessment
 **Medium-to-Hard**
 - Involves multiple subsystems: storage, database, UI, file uploads
@@ -26,17 +41,23 @@ Implement a comprehensive pit scouting Phase 2 feature that allows scouters to u
 ### Existing Architecture
 - **Database**: Offline-first with local SQLite (via Web Worker + OPFS) synced to Supabase
   - Local: `lib/db/index.ts` with helper functions like `cacheEventTeamData`, `getEventTeamData`
-  - Remote: Supabase PostgreSQL
+  - Remote: Supabase PostgreSQL (synced automatically in background)
   - `event_team_data` table stores pit scouting data per team/event
     - PK: `(event, team)`
     - Fields: `event`, `team`, `data` (JSON blob), `team_name`, `name`, `uid`, `assigned`, `timestamp`, `last_modified`, `deleted_at`
-- **Storage**: Photos upload directly to Supabase (online only), URLs stored in local `data` blob
+  - **Critical**: ALL data writes go to LOCAL SQLite first, then sync to Supabase
+- **Storage**: Photos are the ONLY exception - uploaded directly to Supabase Storage (online only), URLs stored in local `data` blob
 - **Contexts**: 
   - `EventContext` provides `currentEvent`, `isOnline`, `dbInitialized`
-  - `TeamDataContext` likely exists for team-related data
+  - `TeamDataContext` exists for team list data
+- **Routing**:
+  - `/pit` - Pit list page (select team to scout)
+  - `/pitscout?teamNum=X&teamName=Y` - Pit scouting form (upload/create data)
+  - `/team/$teamKey` - Team details page (view pit data) - **already exists**
+  - Home page team list → navigates to `/team/$teamKey` for viewing
 - **Pit Scouting**: Currently a single-page form in `apps/mobile/src/routes/pitscout.tsx`
   - Phase 1 fields: movement, intake, fuel, climb, autos
-  - No actual save functionality yet (just toast + navigate back)
+  - Has partial save functionality using `cacheEventTeamData`
 - **Auto Drawing**: Existing `AutoPathDrawer` component for drawing autonomous paths
 - **File Structure**:
   - Routes: `apps/mobile/src/routes/`
@@ -281,9 +302,11 @@ const handleSubmit = async () => {
 
 ### Phase 3: Team Details Page
 
-#### File: `apps/mobile/src/routes/team.$teamKey.tsx` (new file)
+#### File: `apps/mobile/src/routes/team.$teamKey.tsx` (modify existing file)
 
-**Route**: `/team/:teamKey` (e.g., `/team/frc1678`)
+**Status**: ✅ **File already exists** with basic structure
+
+**Route**: `/team/$teamKey` (e.g., `/team/frc1678`)
 
 **State**:
 ```typescript
@@ -373,8 +396,9 @@ useEffect(() => {
    - On save: merge updated autos back into `data` blob, call `cacheEventTeamData`
 
 **Routing Integration**:
-- Add route in TanStack Router config
-- Link from pit list page or team search results
+- Route already configured in TanStack Router
+- Home page team list should navigate to `/team/$teamKey` for viewing pit data
+- `/pit` page navigates to `/pitscout` for creating/uploading pit data
 
 ---
 
@@ -412,11 +436,11 @@ useEffect(() => {
 
 ### New Files
 1. **`lib/supabase/storage.ts`**: Upload utility (`uploadPitImages` function)
-2. **`apps/mobile/src/routes/team.$teamKey.tsx`**: Team details page with Pit/Match views
 
 ### Modified Files
 1. **`apps/mobile/src/routes/pitscout.tsx`**: Add Phase 2 UI (multi-step form), integrate with `cacheEventTeamData`
-2. **`.gitignore`**: Already contains good patterns (no changes needed)
+2. **`apps/mobile/src/routes/team.$teamKey.tsx`**: Add Phase 2 fields display (images, rating, notes) to existing Pit view
+3. **`apps/mobile/src/pages/home/DashboardPage.tsx`** (optional): Add click handlers to navigate teams to `/team/$teamKey`
 
 ### Potentially Modified (if not exists)
 1. **`packages/shadcn/src/components/ui/slider.tsx`**: Slider component (create if missing)
@@ -528,33 +552,34 @@ const { currentEvent, isOnline, dbInitialized } = useEvent();
 ## Verification Approach
 
 ### Manual Testing
-1. **Storage Setup**:
-   - Verify bucket exists in Supabase Dashboard
-   - Test upload via Supabase Studio (manual file upload)
-   - Confirm policies allow authenticated uploads
+1. **Storage Setup** (already complete):
+   - ✅ Bucket `team-images` exists in Supabase Dashboard
+   - ✅ Policies allow authenticated uploads and public viewing
 
 2. **Phase 2 UI**:
    - Navigate to `/pitscout?teamNum=1678&teamName=Test`
    - Fill Phase 1 fields → click "Next Phase"
    - Upload 2-3 images, set rating to 4, add notes → click Submit
-   - Verify toast success and navigation
+   - Verify toast success and navigation back to `/pit`
 
-3. **Database**:
-   - Check `event_team_data` table in Supabase Dashboard
-   - Confirm row has `rating`, `notes`, `image_urls` populated
-   - Verify `image_urls` contains valid paths/URLs
+3. **Local Database Verification**:
+   - Open browser DevTools → Application tab → IndexedDB (if using) OR check Worker logs
+   - Use `getEventTeamData(currentEvent)` in console to fetch local data
+   - Confirm row has `data.rating`, `data.notes`, `data.image_urls` populated
+   - Verify `data.image_urls` contains valid Supabase Storage URLs
+   - **Note**: Data syncs to Supabase automatically in background - focus on local verification first
 
 4. **Team Details Page**:
-   - Navigate to `/team/frc1678`
+   - From home page, click a team to navigate to `/team/frc1678`
    - Verify Pit/Match tabs render
-   - In Pit view: confirm images load, rating displays, notes show
-   - Test "Edit Auto" button opens AutoPathDrawer
+   - In Pit view: confirm images load from Supabase URLs, rating displays, notes show
+   - Verify Phase 1 data (movement, intake, fuel, climb, autos) also displays
 
 5. **COEP/CORS**:
    - Open browser DevTools → Network tab
    - Refresh team details page
    - Verify images load without CORS errors
-   - If errors: check console for COEP warnings, adjust headers
+   - If errors: check console for COEP warnings, ensure `crossOrigin="anonymous"` on img tags
 
 ### Automated Tests (if time allows)
 - Unit test `uploadPitImages` function (mock Supabase client)
@@ -641,31 +666,33 @@ This spec is comprehensive enough to proceed directly to implementation. However
    - Test end-to-end
 
 3. **Team Details Page** (1 task):
-   - Create new route file `team.$teamKey.tsx`
-   - Build header: back button (left), team info (center), edit button (right)
-   - Build Pit/Match tab switcher (two buttons, toggle state)
-   - Fetch from local DB using `getEventTeamData`
-   - Implement Pit view following screenshot design:
-     - `Carousel` component for images from `pitData.data.image_urls`
-     - Rating badge: "{rating}/5"
-     - Notes section with proper styling
-     - Optional: Phase 1 data sections (collapsible)
-   - Add placeholder Match view (yellow box with text)
-   - Wire up Edit button to open `AutoPathDrawer` with existing auto data
-   - Test navigation and data display
+   - **Modify existing** route file `team.$teamKey.tsx` (already has basic structure)
+   - Enhance Pit view to display Phase 2 fields following screenshot design:
+     - Add `Carousel` component for images from `pitData.data.image_urls` (if images exist)
+     - Add Rating badge display: "{rating}/5"
+     - Add Notes section with proper styling
+     - Keep existing Phase 1 data sections (movement, intake, fuel, climb, autos already displayed)
+   - Pit/Match tab switcher already exists
+   - Match view placeholder already exists (yellow box)
+   - Test navigation from home page and data display
 
 4. **COEP/CORS Fixes** (1 task):
    - Add crossOrigin to images
    - Configure Supabase CORS (if needed)
    - Test in browser, fix any remaining issues
 
-5. **Auto Edit Integration** (1 task):
+4. **Home Page Navigation** (optional enhancement):
+   - In `DashboardPage.tsx`, add click handlers to team list items
+   - Navigate to `/team/$teamKey` when clicking a team
+   - Currently teams display but may not have click handlers wired
+
+5. **Auto Edit Integration** (future task - not part of Phase 2):
    - Add "Edit Auto" button to team details
    - Wire up AutoPathDrawer with existing auto data
-   - Save updates back to event_team_data
+   - Save updates back to event_team_data via `cacheEventTeamData`
    - Test edit flow
 
-**Total Estimated Tasks**: 5 (can be combined or split as needed)
+**Total Estimated Tasks**: 3 core tasks + 1 optional navigation enhancement
 
 ---
 
