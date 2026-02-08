@@ -47,7 +47,9 @@ interface NextMatchData {
 
 interface NextShiftData {
   matchLabel: string;
+  matchKey: string;
   teamNumber: string;
+  teamKey: string;
   alliance: "red" | "blue";
   timeLabel: string;
   isPastShift: boolean;
@@ -296,15 +298,12 @@ export function DashboardPage() {
 
     const fetchShiftData = async () => {
       try {
-        console.log("[Dashboard] Fetching shifts for:", currentEvent, userData.name);
         const assignments = await getUserEventScheduleAssignments(
           currentEvent,
           userData.name
         );
-        console.log("[Dashboard] Assignments found:", assignments.length);
 
         if (assignments.length === 0) {
-          console.log("[Dashboard] No assignments found");
           setNextShift(null);
           return;
         }
@@ -395,7 +394,9 @@ export function DashboardPage() {
 
           setNextShift({
             matchLabel: getMatchLabel(assignment.match),
+            matchKey: assignment.match,
             teamNumber: assignment.team.replace("frc", ""),
+            teamKey: assignment.team,
             alliance: assignment.alliance,
             timeLabel: formatRelativeTime(matchTime),
             isPastShift: isPast,
@@ -455,6 +456,22 @@ export function DashboardPage() {
                 {nextShift.alliance.toUpperCase()}
               </Badge>
               <p className="text-foreground text-2xl text-border mt-2">{nextShift.timeLabel}</p>
+              <Button
+                className="mt-4 h-12 px-8 bg-primary hover:bg-primary/90 text-background font-semibold rounded-xl"
+                onClick={() => {
+                  navigate({
+                    to: "/match_start",
+                    search: {
+                      teamNum: nextShift.teamKey,
+                      matchNum: nextShift.matchKey,
+                      alliance: nextShift.alliance,
+                      practice: false,
+                    },
+                  });
+                }}
+              >
+                Start Match
+              </Button>
             </div>
           )}
         </div>

@@ -94,12 +94,6 @@ export function ShiftsPage() {
 
     getUserEventScheduleAssignments(currentEvent, userData.name)
       .then((assignments) => {
-        console.log("[ShiftsPage] Current event:", currentEvent);
-        console.log("[ShiftsPage] User name:", userData.name);
-        console.log("[ShiftsPage] Assignments loaded:", assignments.length);
-        console.log("[ShiftsPage] First few assignments:", assignments.slice(0, 3));
-        console.log("[ShiftsPage] TBA Schedule keys:", Object.keys(tbaSchedule).slice(0, 5));
-
         const now = Date.now();
 
         // Map assignments to display format with match times
@@ -125,20 +119,15 @@ export function ShiftsPage() {
           .filter((s) => s.time && s.time > now)
           .sort((a, b) => (a.time || 0) - (b.time || 0));
 
-        console.log("[ShiftsPage] Shifts with times:", shiftsWithTimes.length);
-        console.log("[ShiftsPage] Upcoming shifts:", upcomingShifts.length);
-
         // If there are upcoming shifts, show only those
         // Otherwise, show all shifts sorted by time
         if (upcomingShifts.length > 0) {
-          console.log("[ShiftsPage] Showing upcoming shifts");
           setShifts(upcomingShifts);
         } else {
           // Show all shifts sorted by time (most recent first for past matches)
           const allShiftsSorted = shiftsWithTimes.sort(
             (a, b) => (b.time || 0) - (a.time || 0)
           );
-          console.log("[ShiftsPage] Showing all shifts (past event):", allShiftsSorted.length);
           setShifts(allShiftsSorted);
         }
       })
@@ -178,8 +167,13 @@ export function ShiftsPage() {
               className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
               onSelect={() =>
                 navigate({
-                  to: "/team-info",
-                  search: { teamKey: shift.team },
+                  to: "/match_start",
+                  search: {
+                    teamNum: shift.team,
+                    matchNum: shift.match,
+                    alliance: shift.alliance,
+                    practice: false,
+                  },
                 })
               }
             >

@@ -12,6 +12,30 @@ type MatchType = {
   practice?: boolean | null;
 };
 
+// Helper function to extract match label from match key
+const getMatchLabel = (matchKey: string): string => {
+  // Remove event prefix (e.g., "2025cada_qm24" -> "qm24")
+  const parts = matchKey.split("_");
+  if (parts.length < 2) return matchKey;
+
+  const matchPart = parts[1];
+
+  // Qualification matches: "qm24" -> "QM 24"
+  const qmMatch = matchPart.match(/^qm(\d+)$/i);
+  if (qmMatch) return `QM ${qmMatch[1]}`;
+
+  // Finals: "f1m1" -> "F1M1"
+  const finalMatch = matchPart.match(/^f(\d+)m(\d+)$/i);
+  if (finalMatch) return `F${finalMatch[1]}M${finalMatch[2]}`;
+
+  // Semifinals: "sf1m1" -> "SF1M1"
+  const sfMatch = matchPart.match(/^sf(\d+)m(\d+)$/i);
+  if (sfMatch) return `SF${sfMatch[1]}M${sfMatch[2]}`;
+
+  // Default: uppercase
+  return matchPart.toUpperCase();
+};
+
 //make every height fill, width fixed outside of the actions. inside container of field is
 export const Route = createFileRoute("/match_start")({
   component: MatchStart,
@@ -82,7 +106,7 @@ function MatchStart() {
       <div className="flex flex-col justify-between items-center w-[62px] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
-            {"Q" + matchNum?.substring(matchNum.indexOf("qm") + 2)}
+            {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
 
           <p>
