@@ -148,9 +148,7 @@ export function ShiftsPage() {
 
   return (
     <div className="flex h-full flex-1 flex-col gap-4 min-h-0 overflow-hidden">
-      <div className="flex items-center justify-between">
-        <p className="text-base text-primary">Your Shifts</p>
-      </div>
+
 
       <Command className="flex h-full flex-1 min-h-0 flex-col w-full bg-background [&_[data-slot=command-input-wrapper]]:border-0 [&_[data-slot=command-input-wrapper]]:h-14 [&_[data-slot=command-input-wrapper]]:rounded-2xl [&_[data-slot=command-input-wrapper]]:bg-muted [&_[data-slot=command-input-wrapper]]:px-1 [&_[data-slot=command-input-wrapper]]:sticky [&_[data-slot=command-input-wrapper]]:top-0 [&_[data-slot=command-input-wrapper]]:z-10">
         <CommandInput

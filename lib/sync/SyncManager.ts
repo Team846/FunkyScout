@@ -480,13 +480,14 @@ export class SyncManager {
   private async syncPicklistUpdate(
     payload: UpdatePicklistPayload,
   ): Promise<void> {
-    const { id, event, title, entries } = payload;
+    const { id, event, title, entries, type } = payload;
 
     // Update picklist header
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
         title,
+        ...(type ? { type } : {}),
         last_modified: new Date().toISOString(),
       })
       .eq("id", id);

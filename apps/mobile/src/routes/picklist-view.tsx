@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Badge } from "@shadcn/ui/components/badge.tsx";
+import { Switch } from "@shadcn/ui/components/switch.tsx";
 import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { getPicklistById } from "@lib/db";
@@ -50,6 +51,8 @@ function PicklistViewPage() {
   const [picklist, setPicklist] = useState<EventPicklist | null>(null);
   const [entries, setEntries] = useState<EventPicklistEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [excludedToBottom, setExcludedToBottom] = useState(false);
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -107,19 +110,36 @@ function PicklistViewPage() {
     return null;
   }
 
+  const partitionExcluded = (list: EventPicklistEntry[]) => {
+    const included = list.filter((e) => !e.flags?.excluded);
+    const excluded = list.filter((e) => e.flags?.excluded);
+    return [...included, ...excluded];
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     if (!canEdit || !picklist || !currentEvent) return;
 
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = entries.findIndex((e) => e.team === active.id);
-    const newIndex = entries.findIndex((e) => e.team === over.id);
+    const displayEntries = excludedToBottom
+      ? partitionExcluded(entries)
+      : entries;
+    const oldIndex = displayEntries.findIndex((e) => e.team === active.id);
+    const newIndex = displayEntries.findIndex((e) => e.team === over.id);
 
-    const reordered = arrayMove(entries, oldIndex, newIndex).map((e, idx) => ({
-      ...e,
-      rank: idx + 1,
-    }));
+    let reordered = arrayMove(displayEntries, oldIndex, newIndex).map(
+      (e, idx) => ({
+        ...e,
+        rank: idx + 1,
+      })
+    );
+    if (excludedToBottom) {
+      reordered = partitionExcluded(reordered).map((e, idx) => ({
+        ...e,
+        rank: idx + 1,
+      }));
+    }
 
     setEntries(reordered);
 
@@ -134,7 +154,8 @@ function PicklistViewPage() {
         id,
         currentEvent,
         picklist.title || "",
-        validEntries
+        validEntries,
+        picklist.type as any
       );
     } catch (error) {
       console.error("Failed to update picklist:", error);
@@ -166,9 +187,9 @@ function PicklistViewPage() {
         id,
         currentEvent,
         picklist.title || "",
-        validEntries
+        validEntries,
+        picklist.type as any
       );
-      toast.success("Team exclusion updated");
     } catch (error) {
       console.error("Failed to update picklist:", error);
       toast.error("Failed to save changes");
@@ -177,11 +198,8 @@ function PicklistViewPage() {
     }
   };
 
-  const handleDelete = async () => {
+  const doDelete = async () => {
     if (!isAdmin || !currentEvent) return;
-
-    if (!confirm("Delete this picklist? This cannot be undone.")) return;
-
     try {
       await deletePicklist(id, currentEvent);
       toast.success("Picklist deleted");
@@ -192,10 +210,60 @@ function PicklistViewPage() {
     }
   };
 
+  const handleDelete = () => {
+    if (!isAdmin || !currentEvent) return;
+    toast("Delete this picklist? This cannot be undone.", {
+      action: {
+        label: "Delete",
+        onClick: () => {
+          void doDelete();
+        },
+      },
+      className: "bg-muted text-foreground border border-border",
+      actionButtonStyle: {
+        backgroundColor: "hsl(var(--destructive))",
+        color: "hsl(var(--destructive-foreground))",
+      },
+      duration: 6000,
+    });
+  };
+
+  const handleTypeChange = async (nextType: "public" | "private" | "default") => {
+    if (!picklist || !currentEvent) return;
+    if (picklist.type === nextType) {
+      setTypeMenuOpen(false);
+      return;
+    }
+    try {
+      await updatePicklist(
+        id,
+        currentEvent,
+        picklist.title || "",
+        entries.map((e) => ({
+          team: e.team,
+          rank: e.rank ?? 0,
+          flags: e.flags ?? {},
+        })),
+        nextType
+      );
+      setPicklist({ ...picklist, type: nextType });
+      toast.success("Picklist type updated");
+    } catch (error) {
+      console.error("Failed to update picklist type:", error);
+      toast.error("Failed to update picklist type");
+    } finally {
+      setTypeMenuOpen(false);
+    }
+  };
+
   const getTeamName = (teamKey: string) => {
     const team = teams.find((t) => t.key === teamKey);
     return team?.name || "";
   };
+
+  const displayEntries = excludedToBottom
+    ? partitionExcluded(entries)
+    : entries;
 
   if (loading) {
     return (
@@ -217,35 +285,98 @@ function PicklistViewPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex min-h-dvh w-full flex-col bg-background p-1">
       {/* Header */}
-      <div className="p-4 border-b space-y-2">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">{picklist.title}</h1>
-          <Button variant="ghost" onClick={() => navigate({ to: "/home" })}>
-            Close
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          {picklist.type && <Badge variant="outline">{picklist.type}</Badge>}
-          {picklist.uname && (
-            <span className="text-sm text-muted-foreground">
-              by {picklist.uname}
-            </span>
-          )}
-        </div>
-        {isAdmin && (
-          <div className="flex gap-2">
-            <Button variant="destructive" size="sm" onClick={handleDelete}>
-              Delete Picklist
+      <header className="shrink-0 px-7 py-6">
+        <div className="grid grid-cols-3 items-center">
+          <div className="flex items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-4"
+              onClick={() => navigate({ to: "/home" })}
+            >
+              Close
             </Button>
           </div>
-        )}
+          <div className="flex justify-center">
+            <p className="text-primary text-xl font-medium truncate">
+              {picklist.title}
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            {isAdmin && (
+              <Button variant="destructive" size="sm" onClick={handleDelete}>
+                Delete
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <div className="relative">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-muted px-5 py-2.5 text-sm text-primary"
+              onClick={() => setTypeMenuOpen((v) => !v)}
+            >
+              {picklist.type || "default"}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M6 9L12 15L18 9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            {typeMenuOpen && (
+              <div className="absolute left-0 mt-2 w-44 rounded-xl border border-border bg-background p-2 shadow-lg z-20">
+                {(["public", "private", "default"] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`w-full rounded-lg px-3 py-2.5 text-left text-sm hover:bg-accent ${
+                      picklist.type === type ? "text-primary" : "text-foreground"
+                    }`}
+                    onClick={() => handleTypeChange(type)}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 rounded-xl border-2 border-border bg-muted px-5 py-2.5">
+            <Switch
+              checked={excludedToBottom}
+              onCheckedChange={setExcludedToBottom}
+              className={`ring-2 ring-offset-2 ring-offset-background ${
+                excludedToBottom ? "ring-primary/50" : "ring-muted-foreground/50"
+              }`}
+            />
+            <span className="text-sm text-muted-foreground">
+              Excluded to bottom
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <div className="px-5">
+        <div className="h-px w-full bg-border" />
       </div>
 
       {/* Team List */}
-      <div className="flex-1 overflow-y-auto">
-        {entries.length === 0 ? (
+      <main className="flex-1 overflow-y-auto px-5 pb-6 pt-4">
+        {displayEntries.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
             No teams in this picklist
           </div>
@@ -256,10 +387,10 @@ function PicklistViewPage() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={entries.map((e) => e.team)}
+              items={displayEntries.map((e) => e.team)}
               strategy={verticalListSortingStrategy}
             >
-              {entries.map((entry) => (
+              {displayEntries.map((entry) => (
                 <SortableTeamRow
                   key={entry.team}
                   entry={entry}
@@ -274,21 +405,18 @@ function PicklistViewPage() {
             </SortableContext>
           </DndContext>
         ) : (
-          // Read-only view
-          <div className="divide-y">
-            {entries.map((entry) => (
-              <TeamRow
-                key={entry.team}
-                entry={entry}
-                teamName={getTeamName(entry.team)}
-                onNavigateToTeam={(team) =>
-                  navigate({ to: "/team-info", search: { teamKey: team } })
-                }
-              />
-            ))}
-          </div>
+          displayEntries.map((entry) => (
+            <TeamRow
+              key={entry.team}
+              entry={entry}
+              teamName={getTeamName(entry.team)}
+              onNavigateToTeam={(team) =>
+                navigate({ to: "/team-info", search: { teamKey: team } })
+              }
+            />
+          ))
         )}
-      </div>
+      </main>
     </div>
   );
 }
@@ -307,62 +435,112 @@ function SortableTeamRow({
   canEdit: boolean;
   onNavigateToTeam: (team: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: entry.team });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: entry.team });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const isExcluded = !!entry.flags?.excluded;
+  const teamNumber = entry.team.replace("frc", "");
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 p-4 border-b bg-background"
+      className={`rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 min-h-[80px] ${
+        isDragging ? "ring-2 ring-primary" : ""
+      }`}
     >
-      {canEdit && (
-        <div {...attributes} {...listeners} className="cursor-grab">
-          <svg
-            viewBox="0 0 24 24"
-            className="size-5 text-muted-foreground"
-            fill="currentColor"
-          >
-            <circle cx="9" cy="5" r="1" />
-            <circle cx="9" cy="12" r="1" />
-            <circle cx="9" cy="19" r="1" />
-            <circle cx="15" cy="5" r="1" />
-            <circle cx="15" cy="12" r="1" />
-            <circle cx="15" cy="19" r="1" />
-          </svg>
-        </div>
-      )}
-
-      <div className="w-8 text-sm font-medium text-muted-foreground">
-        {entry.rank}
-      </div>
-
-      <div
-        className="flex-1 cursor-pointer"
-        onClick={() => onNavigateToTeam(entry.team)}
-      >
-        <div className="font-medium">{entry.team}</div>
-        {teamName && (
-          <div className="text-sm text-muted-foreground">{teamName}</div>
-        )}
-      </div>
-
-      {entry.flags?.excluded && <Badge variant="secondary">Excluded</Badge>}
-
-      {canEdit && (
-        <Button
-          variant={entry.flags?.excluded ? "default" : "outline"}
-          size="sm"
-          onClick={() => onToggleExclude(entry.team)}
+      <div className="flex w-full items-center justify-between gap-3">
+        <div
+          className={`flex items-center gap-3 min-w-0 ${
+            isExcluded ? "opacity-60" : ""
+          }`}
         >
-          {entry.flags?.excluded ? "Include" : "Exclude"}
-        </Button>
-      )}
+          {canEdit && (
+            <div
+              {...attributes}
+              {...listeners}
+              className="cursor-grab text-foreground rounded-xl bg-background/60 p-3"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="size-5"
+                fill="currentColor"
+              >
+                <circle cx="9" cy="5" r="1" />
+                <circle cx="9" cy="12" r="1" />
+                <circle cx="9" cy="19" r="1" />
+                <circle cx="15" cy="5" r="1" />
+                <circle cx="15" cy="12" r="1" />
+                <circle cx="15" cy="19" r="1" />
+              </svg>
+            </div>
+          )}
+
+          <div
+            className="flex-1 min-w-0 cursor-pointer"
+            onClick={() => onNavigateToTeam(entry.team)}
+          >
+            <p className="text-base truncate">
+              <span className="font-bold text-primary">{teamNumber}</span>
+              <span className="text-foreground"> | </span>
+              <span className="text-foreground">
+                {teamName || entry.team}
+              </span>
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm text-border">
+                Rank{" "}
+                <span className="text-primary font-semibold">
+                  #{entry.rank}
+                </span>
+              </p>
+              {isExcluded && <Badge variant="destructive">Excluded</Badge>}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onToggleExclude(entry.team)}
+            >
+              {isExcluded ? "Include" : "Exclude"}
+            </Button>
+          )}
+          <button
+            type="button"
+            className="p-1 text-primary"
+            onClick={() => onNavigateToTeam(entry.team)}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              style={{ width: 20, height: 20 }}
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M9 18L15 12L9 6"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -377,23 +555,54 @@ function TeamRow({
   teamName: string;
   onNavigateToTeam: (team: string) => void;
 }) {
+  const isExcluded = !!entry.flags?.excluded;
+  const teamNumber = entry.team.replace("frc", "");
+
   return (
-    <div className="flex items-center gap-3 p-4 border-b bg-background">
-      <div className="w-8 text-sm font-medium text-muted-foreground">
-        {entry.rank}
+    <div
+      className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 min-h-[80px]"
+    >
+      <div className="flex w-full items-center justify-between gap-3">
+        <div
+          className={`flex-1 min-w-0 cursor-pointer ${
+            isExcluded ? "opacity-60" : ""
+          }`}
+          onClick={() => onNavigateToTeam(entry.team)}
+        >
+          <p className="text-base truncate">
+            <span className="font-bold text-primary">{teamNumber}</span>
+            <span className="text-foreground"> | </span>
+            <span className="text-foreground">{teamName || entry.team}</span>
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm text-border">
+              Rank{" "}
+              <span className="text-primary font-semibold">#{entry.rank}</span>
+            </p>
+            {isExcluded && <Badge variant="destructive">Excluded</Badge>}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="p-1 text-primary"
+          onClick={() => onNavigateToTeam(entry.team)}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            style={{ width: 20, height: 20 }}
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M9 18L15 12L9 6"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
       </div>
-
-      <div
-        className="flex-1 cursor-pointer"
-        onClick={() => onNavigateToTeam(entry.team)}
-      >
-        <div className="font-medium">{entry.team}</div>
-        {teamName && (
-          <div className="text-sm text-muted-foreground">{teamName}</div>
-        )}
-      </div>
-
-      {entry.flags?.excluded && <Badge variant="secondary">Excluded</Badge>}
     </div>
   );
 }

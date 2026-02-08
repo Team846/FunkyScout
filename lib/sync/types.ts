@@ -77,6 +77,7 @@ export interface UpdatePicklistPayload extends BaseSyncPayload {
   id: string;
   title: string;
   entries: PicklistEntry[];
+  type?: "public" | "private" | "default";
 }
 
 // Payload for DELETE_PICKLIST

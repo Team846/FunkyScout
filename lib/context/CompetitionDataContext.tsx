@@ -267,7 +267,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       setSchedule([]);
       setTbaSchedule({});
       setNexusMatches([]);
-      return;
+    return;
     }
 
     if (dbInitialized) {

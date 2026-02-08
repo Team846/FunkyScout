@@ -254,6 +254,7 @@ export async function updatePicklist(
   eventKey: string,
   title: string,
   entries: { team: string; rank: number; flags?: any }[],
+  type?: "public" | "private" | "default",
 ): Promise<void> {
   const now = Date.now();
   const nowISO = new Date(now).toISOString();
@@ -263,6 +264,7 @@ export async function updatePicklist(
     id,
     event: eventKey,
     title,
+    ...(type ? { type } : {}),
     picklist: null,
     last_modified: nowISO,
   };
@@ -288,6 +290,7 @@ export async function updatePicklist(
     event: eventKey,
     title,
     entries,
+    ...(type ? { type } : {}),
     timestamp: now,
   });
 

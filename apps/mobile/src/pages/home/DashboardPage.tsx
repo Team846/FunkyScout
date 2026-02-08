@@ -430,48 +430,147 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex min-h-[22rem] flex-1 items-center justify-center rounded-2xl bg-muted p-6">
+        <div className="flex min-h-[22rem] flex-1 items-center justify-center rounded-2xl bg-muted p-8">
           {shiftLoading ? (
             <p className="text-sm text-border">Loading shift...</p>
           ) : !nextShift ? (
             <p className="text-sm text-border">No shifts assigned...</p>
           ) : (
-            <div className="flex flex-col items-center justify-center gap-3 w-full">
-              <p className="text-xl text-muted-foreground">
-                {nextShift.isPastShift ? "Last Shift" : "Next Shift"}
-              </p>
-              <div className="flex flex-col items-center gap-2">
-                <p className="text-2xl font-bold text-primary">
-                  {nextShift.matchLabel} {":"}Team {nextShift.teamNumber}
-                </p>
-              </div>
-              <Badge
-                variant="outline"
-                className={`text-base px-4 py-1 border-2 ${
-                  nextShift.alliance === "red"
-                    ? "border-chart-5 text-chart-5 bg-chart-5/10"
-                    : "border-chart-1 text-chart-1 bg-chart-1/10"
-                }`}
-              >
-                {nextShift.alliance.toUpperCase()}
-              </Badge>
-              <p className="text-foreground text-2xl text-border mt-2">{nextShift.timeLabel}</p>
-              <Button
-                className="mt-4 h-12 px-8 bg-primary hover:bg-primary/90 text-background font-semibold rounded-xl"
-                onClick={() => {
-                  navigate({
-                    to: "/match_start",
-                    search: {
-                      teamNum: nextShift.teamKey,
-                      matchNum: nextShift.matchKey,
-                      alliance: nextShift.alliance,
-                      practice: false,
-                    },
-                  });
-                }}
-              >
-                Start Match
-              </Button>
+            <div className="flex h-full w-full flex-col justify-between gap-3">
+              {(() => {
+                const displayLabel = nextShift.isPastShift
+                  ? "since last shift"
+                  : "until next shift";
+                let displayTime = nextShift.timeLabel;
+                if (displayTime.startsWith("in ")) {
+                  displayTime = displayTime.slice(3);
+                }
+                if (displayTime.endsWith(" ago")) {
+                  displayTime = displayTime.slice(0, -4);
+                }
+                const matchLabel = (() => {
+                  const qmMatch = nextShift.matchLabel.match(/^QM\s*(\d+)$/i);
+                  if (qmMatch) return `Qualification ${qmMatch[1]}`;
+                  return nextShift.matchLabel;
+                })();
+                const teamInfo = teams.find((team: any) => team.key === nextShift.teamKey);
+                const teamName = teamInfo?.name ?? `Team ${nextShift.teamNumber}`;
+                const teamRank =
+                  teamInfo?.rank && teamInfo.rank > 0
+                    ? `Rank # ${teamInfo.rank}`
+                    : "Rank —";
+
+                return (
+                  <>
+                    <div className="flex flex-col items-start min-w-0">
+                      <p className="text-5xl font-semibold text-foreground truncate max-w-full">
+                        {displayTime}
+                      </p>
+                      <p className="text-md text-primary truncate max-w-full">
+                        {displayLabel}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className={`flex w-full items-center justify-between rounded-2xl bg-background/40 px-5 py-4 text-left border-2 ${
+                        nextShift.alliance === "red"
+                          ? "border-chart-5/50"
+                          : "border-chart-1/50"
+                      }`}
+                      onClick={() => {
+                        navigate({
+                          to: "/match_start",
+                          search: {
+                            teamNum: nextShift.teamKey,
+                            matchNum: nextShift.matchKey,
+                            alliance: nextShift.alliance,
+                            practice: false,
+                          },
+                        });
+                      }}
+                    >
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <p className="text-base text-primary truncate">
+                          {matchLabel}
+                        </p>
+                        <p className="text-base text-foreground truncate">
+                          Team {nextShift.teamNumber}
+                        </p>
+                      </div>
+                      <Button className="h-8 w-8 bg-muted p-0">
+                        <svg
+                          viewBox="0 0 30 30"
+                          style={{ width: 30, height: 30 }}
+                          fill="none"
+                          className="h-7 w-7"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <g clipPath="url(#clip0_418_367)">
+                            <path
+                              d="M15 0.46875C23.0273 0.46875 29.5312 6.97266 29.5312 15C29.5312 23.0273 23.0273 29.5312 15 29.5312C6.97266 29.5312 0.46875 23.0273 0.46875 15C0.46875 6.97266 6.97266 0.46875 15 0.46875ZM13.3066 8.88281L17.7305 13.125H7.03125C6.25195 13.125 5.625 13.752 5.625 14.5312V15.4688C5.625 16.248 6.25195 16.875 7.03125 16.875H17.7305L13.3066 21.1172C12.7383 21.6621 12.7266 22.5703 13.2832 23.127L13.9277 23.7656C14.4785 24.3164 15.3691 24.3164 15.9141 23.7656L23.6895 15.9961C24.2402 15.4453 24.2402 14.5547 23.6895 14.0098L15.9141 6.22852C15.3633 5.67773 14.4727 5.67773 13.9277 6.22852L13.2832 6.86719C12.7266 7.42969 12.7383 8.33789 13.3066 8.88281Z"
+                              fill="currentColor"
+                              className="text-primary"
+                            />
+                          </g>
+                          <defs>
+                            <clipPath id="clip0_418_367">
+                              <rect width="30" height="30" fill="white" />
+                            </clipPath>
+                          </defs>
+                        </svg>
+                      </Button>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="border-2 border-primary/50 flex w-full items-center justify-between rounded-2xl bg-background/40 px-5 py-4 text-left"
+                      onClick={() =>
+                        navigate({
+                          to: "/team-info",
+                          search: { teamKey: nextShift.teamKey },
+                        })
+                      }
+                    >
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <p className="text-base text-primary truncate">
+                          {teamName}
+                        </p>
+                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                          <span className="truncate">
+                            Rank{" "}
+                            <span className="text-primary">
+                              {teamRank.replace("Rank ", "")}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <Button className="h-8 w-8 bg-muted p-0">
+                        <svg
+                          viewBox="0 0 30 30"
+                          style={{ width: 30, height: 30 }}
+                          fill="none"
+                          className="h-7 w-7"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <g clipPath="url(#clip0_418_367)">
+                            <path
+                              d="M15 0.46875C23.0273 0.46875 29.5312 6.97266 29.5312 15C29.5312 23.0273 23.0273 29.5312 15 29.5312C6.97266 29.5312 0.46875 23.0273 0.46875 15C0.46875 6.97266 6.97266 0.46875 15 0.46875ZM13.3066 8.88281L17.7305 13.125H7.03125C6.25195 13.125 5.625 13.752 5.625 14.5312V15.4688C5.625 16.248 6.25195 16.875 7.03125 16.875H17.7305L13.3066 21.1172C12.7383 21.6621 12.7266 22.5703 13.2832 23.127L13.9277 23.7656C14.4785 24.3164 15.3691 24.3164 15.9141 23.7656L23.6895 15.9961C24.2402 15.4453 24.2402 14.5547 23.6895 14.0098L15.9141 6.22852C15.3633 5.67773 14.4727 5.67773 13.9277 6.22852L13.2832 6.86719C12.7266 7.42969 12.7383 8.33789 13.3066 8.88281Z"
+                              fill="currentColor"
+                              className="text-primary"
+                            />
+                          </g>
+                          <defs>
+                            <clipPath id="clip0_418_367">
+                              <rect width="30" height="30" fill="white" />
+                            </clipPath>
+                          </defs>
+                        </svg>
+                      </Button>
+                    </button>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>

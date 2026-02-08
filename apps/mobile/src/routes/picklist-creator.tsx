@@ -2,14 +2,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
-import { Label } from "@shadcn/ui/components/label.tsx";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@shadcn/ui/components/select.tsx";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@shadcn/ui/components/dialog.tsx";
 import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { createPicklist } from "@lib/data/writes";
@@ -83,94 +81,65 @@ function PicklistCreatorPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      <div className="flex items-center justify-between p-4 border-b">
-        <h1 className="text-xl font-semibold">New Picklist</h1>
-        <Button
-          variant="ghost"
-          onClick={() => navigate({ to: "/home" })}
-        >
-          Cancel
-        </Button>
-      </div>
+    <Dialog
+      open
+      onOpenChange={() => {
+        navigate({ to: "/home" });
+      }}
+    >
+      <DialogContent className="w-[80vw] max-w-[22rem] p-0">
+        <div className="w-full px-5 py-8 flex flex-col gap-5 mx-auto">
+          <DialogHeader>
+            <DialogTitle className="text-primary text-lg">
+              New Picklist
+            </DialogTitle>
+          </DialogHeader>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Title Input */}
-        <div className="space-y-2">
-          <Label htmlFor="title">Title</Label>
-          <Input
-            id="title"
-            placeholder="Enter picklist title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
+          <div className="flex flex-col gap-3">
+            <Input
+              id="title"
+              placeholder="Enter picklist title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-12 w-full rounded-2xl border-border bg-muted px-4 text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary"
+            />
 
-        {/* Type Selector */}
-        <div className="space-y-2">
-          <Label htmlFor="type">Type</Label>
-          <Select value={type} onValueChange={(v) => setType(v as any)}>
-            <SelectTrigger id="type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="public">
-                <div>
-                  <div className="font-medium">Public</div>
-                  <div className="text-xs text-muted-foreground">
-                    Scouters and admins can view and edit
-                  </div>
-                </div>
-              </SelectItem>
-              <SelectItem value="default">
-                <div>
-                  <div className="font-medium">Default</div>
-                  <div className="text-xs text-muted-foreground">
-                    Scouters can view; admins can edit
-                  </div>
-                </div>
-              </SelectItem>
-              <SelectItem value="private">
-                <div>
-                  <div className="font-medium">Private</div>
-                  <div className="text-xs text-muted-foreground">
-                    Only you can view and edit
-                  </div>
-                </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Team Info */}
-        <div className="space-y-2">
-          <Label>Teams</Label>
-          <div className="border rounded-lg p-4">
-            <div className="text-sm text-muted-foreground">
-              {teams.length > 0 ? (
-                <>
-                  All {teams.length} teams will be automatically included in
-                  this picklist, sorted by their current rank. You can reorder
-                  them after creation.
-                </>
-              ) : (
-                "No teams available for this event"
-              )}
+            <div className="flex items-center gap-2">
+              {(["public", "default", "private"] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-xs capitalize transition-colors ${
+                    type === opt
+                      ? "border-primary text-primary bg-background/40"
+                      : "border-border text-muted-foreground bg-muted"
+                  }`}
+                  onClick={() => setType(opt)}
+                >
+                  {opt}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Create Button */}
-      <div className="p-4 border-t">
-        <Button
-          className="w-full"
-          onClick={handleCreate}
-          disabled={creating || !title.trim() || teams.length === 0}
-        >
-          {creating ? "Creating..." : "Create Picklist"}
-        </Button>
-      </div>
-    </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => navigate({ to: "/home" })}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleCreate}
+              disabled={creating || !title.trim() || teams.length === 0}
+            >
+              {creating ? "Creating..." : "Create"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
