@@ -119,8 +119,18 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             alliance: s.alliance as "red" | "blue",
           }));
           setSchedule(entries);
+          // Cache full schedule entries with name and uid for shift assignments
           await cacheEventSchedule(
-            entries.map((s) => ({ ...s, event: currentEvent }))
+            supabaseSchedule.map((s: any) => ({
+              event: currentEvent,
+              match: s.match,
+              team: s.team,
+              alliance: s.alliance as "red" | "blue",
+              name: s.name,
+              uid: s.uid,
+              last_modified: s.last_modified,
+              deleted_at: s.deleted_at,
+            }))
           );
         }
 

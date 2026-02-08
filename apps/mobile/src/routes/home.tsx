@@ -151,7 +151,11 @@ function HomePage() {
       </header>
 
       {/* Content (scrollable) */}
-      <main className="flex-1 overflow-y-auto px-4 pb-28">
+      <main
+        className={`flex flex-1 min-h-0 flex-col px-4 pb-28 ${
+          currentPage === "shifts" ? "overflow-hidden" : "overflow-y-auto"
+        }`}
+      >
         {currentPage === "dashboard" && <DashboardPage />}
         {currentPage === "shifts" && <ShiftsPage />}
         {currentPage === "data" && <DataPage />}

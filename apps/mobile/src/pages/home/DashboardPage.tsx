@@ -22,6 +22,10 @@ import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import type { NexusMatch } from "@lib/nexus";
 import { PicklistSelector } from "../../components/PicklistSelector";
 import { canCreatePicklist } from "@lib/utils/permissions";
+import {
+  getUserEventScheduleAssignments,
+  type EventScheduleEntry,
+} from "@lib/db";
 
 interface NextMatchData {
   matchLabel: string;
@@ -39,6 +43,14 @@ interface NextMatchData {
   predictedBlueScore: number | null;
   // Team ranks
   teamRanks: Record<number, number>;
+}
+
+interface NextShiftData {
+  matchLabel: string;
+  teamNumber: string;
+  alliance: "red" | "blue";
+  timeLabel: string;
+  isPastShift: boolean;
 }
 
 const formatMatchTime = (timestamp: number) => {
@@ -94,6 +106,8 @@ export function DashboardPage() {
 
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
   const [matchLoading, setMatchLoading] = useState(true);
+  const [nextShift, setNextShift] = useState<NextShiftData | null>(null);
+  const [shiftLoading, setShiftLoading] = useState(true);
   const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
 
   const OUR_TEAM = 846;
@@ -271,6 +285,131 @@ export function DashboardPage() {
       .finally(() => setMatchLoading(false));
   }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds]);
 
+  // Fetch next shift for current user
+  useEffect(() => {
+    if (!currentEvent || !userData.name) {
+      setShiftLoading(false);
+      return;
+    }
+
+    setShiftLoading(true);
+
+    const fetchShiftData = async () => {
+      try {
+        console.log("[Dashboard] Fetching shifts for:", currentEvent, userData.name);
+        const assignments = await getUserEventScheduleAssignments(
+          currentEvent,
+          userData.name
+        );
+        console.log("[Dashboard] Assignments found:", assignments.length);
+
+        if (assignments.length === 0) {
+          console.log("[Dashboard] No assignments found");
+          setNextShift(null);
+          return;
+        }
+
+        const now = Date.now();
+
+        // Map assignments to include match times
+        const shiftsWithTimes = assignments.map((assignment) => {
+          const matchData = tbaSchedule[assignment.match];
+          const matchTime = matchData?.est_time
+            ? matchData.est_time * 1000
+            : null;
+
+          return {
+            assignment,
+            matchTime,
+          };
+        });
+
+        // Find next upcoming shift
+        const upcomingShifts = shiftsWithTimes
+          .filter((s) => s.matchTime && s.matchTime > now)
+          .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
+
+        let shiftToDisplay;
+        let isPast = false;
+
+        if (upcomingShifts.length > 0) {
+          // Use next upcoming shift
+          shiftToDisplay = upcomingShifts[0];
+        } else {
+          // Use most recent past shift
+          const pastShifts = shiftsWithTimes
+            .filter((s) => s.matchTime && s.matchTime <= now)
+            .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
+
+          if (pastShifts.length > 0) {
+            shiftToDisplay = pastShifts[0];
+            isPast = true;
+          } else {
+            // Fallback to first shift if no time data
+            shiftToDisplay = shiftsWithTimes[0];
+          }
+        }
+
+        if (shiftToDisplay) {
+          const { assignment, matchTime } = shiftToDisplay;
+
+          // Helper to format relative time
+          const formatRelativeTime = (timestamp: number | null): string => {
+            if (!timestamp) return "Unknown";
+            const diff = timestamp - now;
+            const absDiff = Math.abs(diff);
+            const minutes = Math.floor(absDiff / (1000 * 60));
+            const hours = Math.floor(absDiff / (1000 * 60 * 60));
+
+            if (diff > 0) {
+              // Future
+              if (minutes < 60) return `in ${minutes}m`;
+              const remainingMins = minutes % 60;
+              return remainingMins > 0
+                ? `in ${hours}h ${remainingMins}m`
+                : `in ${hours}h`;
+            } else {
+              // Past
+              if (minutes < 60) return `${minutes}m ago`;
+              return `${hours}h ago`;
+            }
+          };
+
+          // Helper to extract match label
+          const getMatchLabel = (matchKey: string): string => {
+            const parts = matchKey.split("_");
+            if (parts.length < 2) return matchKey;
+            const matchPart = parts[1];
+
+            const qmMatch = matchPart.match(/^qm(\d+)$/i);
+            if (qmMatch) return `QM ${qmMatch[1]}`;
+
+            const finalMatch = matchPart.match(/^f(\d+)m(\d+)$/i);
+            if (finalMatch) return `F${finalMatch[1]}M${finalMatch[2]}`;
+
+            const sfMatch = matchPart.match(/^sf(\d+)m(\d+)$/i);
+            if (sfMatch) return `SF${sfMatch[1]}M${sfMatch[2]}`;
+
+            return matchPart.toUpperCase();
+          };
+
+          setNextShift({
+            matchLabel: getMatchLabel(assignment.match),
+            teamNumber: assignment.team.replace("frc", ""),
+            alliance: assignment.alliance,
+            timeLabel: formatRelativeTime(matchTime),
+            isPastShift: isPast,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load shift data:", error);
+        setNextShift(null);
+      }
+    };
+
+    fetchShiftData().finally(() => setShiftLoading(false));
+  }, [currentEvent, userData.name, tbaSchedule]);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Top: stat squares + right filler card */}
@@ -290,8 +429,34 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex min-h-[22rem] flex-1 items-center justify-center rounded-2xl bg-muted p-6 text-center">
-          <p className="text-sm text-border">No matches assigned...</p>
+        <div className="flex min-h-[22rem] flex-1 items-center justify-center rounded-2xl bg-muted p-6">
+          {shiftLoading ? (
+            <p className="text-sm text-border">Loading shift...</p>
+          ) : !nextShift ? (
+            <p className="text-sm text-border">No shifts assigned...</p>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 w-full">
+              <p className="text-xl text-muted-foreground">
+                {nextShift.isPastShift ? "Last Shift" : "Next Shift"}
+              </p>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-2xl font-bold text-primary">
+                  {nextShift.matchLabel} {":"}Team {nextShift.teamNumber}
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className={`text-base px-4 py-1 border-2 ${
+                  nextShift.alliance === "red"
+                    ? "border-chart-5 text-chart-5 bg-chart-5/10"
+                    : "border-chart-1 text-chart-1 bg-chart-1/10"
+                }`}
+              >
+                {nextShift.alliance.toUpperCase()}
+              </Badge>
+              <p className="text-foreground text-2xl text-border mt-2">{nextShift.timeLabel}</p>
+            </div>
+          )}
         </div>
       </div>
 

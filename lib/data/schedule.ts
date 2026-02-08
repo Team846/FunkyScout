@@ -77,6 +77,10 @@ export async function getSchedule(eventKey: string) {
           match: d.match,
           team: d.team,
           alliance: d.alliance as "red" | "blue",
+          name: d.name,
+          uid: d.uid,
+          last_modified: d.last_modified,
+          deleted_at: d.deleted_at,
         })),
       );
     }

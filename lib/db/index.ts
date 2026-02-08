@@ -254,6 +254,19 @@ export async function getEventSchedule(
   return rows as EventScheduleEntry[];
 }
 
+export async function getUserEventScheduleAssignments(
+  event: string,
+  userName: string,
+): Promise<EventScheduleEntry[]> {
+  await initDatabase();
+  const rows = await execWorker(
+    `SELECT * FROM event_schedule
+     WHERE event = ? AND name = ? AND deleted_at IS NULL`,
+    [event, userName],
+  );
+  return rows as EventScheduleEntry[];
+}
+
 export async function cacheEventSchedule(
   entries: EventScheduleEntry[],
 ): Promise<void> {
