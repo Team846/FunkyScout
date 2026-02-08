@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useEvent } from "./EventContext";
 import { useSync } from "./SyncContext";
-import { getSchedule } from "@lib/data";
+import { getSchedule, getPicklists } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
 import {
@@ -17,6 +17,8 @@ import {
   cacheEventSchedule,
   getTbaMatches,
   cacheTbaMatches,
+  cacheEventPicklists,
+  cacheEventPicklistEntries,
   type TbaMatch,
   type EventScheduleEntry,
 } from "@lib/db";
@@ -64,10 +66,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
   const schedulePolling = useRef<PollingController | null>(null);
   const nexusPolling = useRef<PollingController | null>(null);
+  const picklistPolling = useRef<PollingController | null>(null);
 
   // Refs for stable access in refresh callback
   const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
   const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchPicklistsRef = useRef<(() => Promise<void>) | null>(null);
 
   const fetchSchedule = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -167,11 +171,40 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, isOnline]);
 
+  const fetchPicklists = useCallback(async () => {
+    if (!currentEvent || !dbInitialized) return;
+
+    // Network refresh from Supabase (source of truth)
+    if (isOnline) {
+      console.log("[CompetitionData] Fetching picklists from Supabase");
+      try {
+        const data = await getPicklists(currentEvent);
+
+        if (data) {
+          // Cache picklists to local SQLite
+          await cacheEventPicklists(data.picklists);
+
+          // Cache picklist entries to local SQLite
+          if (data.entries.length > 0) {
+            await cacheEventPicklistEntries(data.entries);
+          }
+
+          console.log(
+            `[CompetitionData] Synced ${data.picklists.length} picklists with ${data.entries.length} entries from Supabase`,
+          );
+        }
+      } catch (error) {
+        console.error("[CompetitionData] Failed to fetch picklists:", error);
+      }
+    }
+  }, [currentEvent, dbInitialized, isOnline]);
+
   // Keep refs in sync
   useEffect(() => {
     fetchScheduleRef.current = fetchSchedule;
     fetchNexusRef.current = fetchNexus;
-  }, [fetchSchedule, fetchNexus]);
+    fetchPicklistsRef.current = fetchPicklists;
+  }, [fetchSchedule, fetchNexus, fetchPicklists]);
 
   // Stable wrappers for polling - always call latest fetch functions
   const fetchScheduleStable = useCallback(async () => {
@@ -183,6 +216,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const fetchNexusStable = useCallback(async () => {
     if (fetchNexusRef.current) {
       await fetchNexusRef.current();
+    }
+  }, []); // Never changes!
+
+  const fetchPicklistsStable = useCallback(async () => {
+    if (fetchPicklistsRef.current) {
+      await fetchPicklistsRef.current();
     }
   }, []); // Never changes!
 
@@ -206,12 +245,21 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       );
       nexusPolling.current.start();
     }
+    if (!picklistPolling.current) {
+      picklistPolling.current = new PollingController(
+        "Picklists",
+        fetchPicklistsStable,
+        DEFAULT_POLLING_CONFIG
+      );
+      picklistPolling.current.start();
+    }
 
     return () => {
       schedulePolling.current?.stop();
       nexusPolling.current?.stop();
+      picklistPolling.current?.stop();
     };
-  }, [dbInitialized, fetchScheduleStable, fetchNexusStable]);
+  }, [dbInitialized, fetchScheduleStable, fetchNexusStable, fetchPicklistsStable]);
 
   // Handle event changes - fetch data immediately
   useEffect(() => {
@@ -227,11 +275,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       setSchedule([]);
       setTbaSchedule({});
       setNexusMatches([]);
-      // Fetch schedule and nexus data immediately when event changes
+      // Fetch schedule, nexus, and picklist data immediately when event changes
       fetchSchedule();
       fetchNexus();
+      fetchPicklists();
     }
-  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus]);
+  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus, fetchPicklists]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");
@@ -239,6 +288,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     const promises = [];
     if (fetchScheduleRef.current) promises.push(fetchScheduleRef.current());
     if (fetchNexusRef.current) promises.push(fetchNexusRef.current());
+    if (fetchPicklistsRef.current) promises.push(fetchPicklistsRef.current());
     await Promise.all(promises);
   }, []); // Empty dependencies - callback never changes!
 
