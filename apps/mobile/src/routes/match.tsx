@@ -305,6 +305,7 @@ export function Match() {
                     teamNum: selectedTeam,
                     matchNum: selectedMatch,
                     alliance: selectedAlliance,
+                    practice: false,
                   },
                 });
               }}

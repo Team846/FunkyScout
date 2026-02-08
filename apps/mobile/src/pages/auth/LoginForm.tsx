@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { loginWithPassword, sendPasswordReset } from "@lib/supabase/auth";
+import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
 
 export function LoginForm() {
   const navigate = useNavigate();
@@ -12,6 +13,24 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
+  const [isPracticePopup, showPracticePopup] = useState(false);
+
+  const handlePractie = () => {
+    showPracticePopup(true);
+  }
+
+  function practiceNav(AllianceColor : string) {
+    navigate({
+      to: "/match_start",
+      search: {
+        teamNum: "test",
+        matchNum: "test",
+        alliance: AllianceColor,
+        practice: true
+      }
+    })
+    return
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,6 +152,26 @@ export function LoginForm() {
       noValidate
       className="w-full flex flex-col gap-3 bg-accent rounded-md px-3 py-4"
     >
+      <Dialog open={isPracticePopup}>
+          <DialogContent className="flex w-[80vw] gap-2.5 p-2.5 justify-center items-center h-[80vw]">
+            <div className="flex-1 w-full bg-black h-[40vw]">
+              <Button 
+              className="w-full h-full bg-background border-2 border-[#246190]"
+              onClick={() => practiceNav("blue")}
+              >
+                <p className="text-[15px] text-[#246190]">Blue Alliance</p>
+              </Button>
+            </div>
+            <div className="flex-1 w-full h-[40vw]">
+              <Button 
+              className="w-full h-full bg-background border-2 border-[#B73E3E]"
+              onClick={() => practiceNav("red")}
+              >
+                <p className="text-[15px] text-[#B73E3E]">Red Alliance</p>
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       <Input
         type="email"
         value={email}
@@ -182,6 +221,7 @@ export function LoginForm() {
         type="button"
         variant="secondary"
         disabled={loading}
+        onClick={handlePractie}
         className="h-11 w-full bg-accent border border-border text-primary text-sm"
       >
         Practice Mode

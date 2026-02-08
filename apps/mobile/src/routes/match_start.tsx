@@ -9,6 +9,7 @@ type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
+  practice?: boolean | null;
 };
 
 //make every height fill, width fixed outside of the actions. inside container of field is
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/match_start")({
       teamNum: search.teamNum as string | undefined | null,
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
+      practice: search.practice as boolean | undefined | null,
     };
   },
 });
