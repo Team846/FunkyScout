@@ -54,16 +54,20 @@ const CompetitionDataContext = createContext<
 
 export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
-  const { forceSyncNow } = useSync();
+  const { registerRefreshCallback } = useSync();
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
   const [tbaSchedule, setTbaSchedule] = useState<Record<string, TBAMatchData>>(
-    {},
+    {}
   );
   const [nexusMatches, setNexusMatches] = useState<NexusMatch[]>([]);
   const [loading, setLoading] = useState(false);
 
   const schedulePolling = useRef<PollingController | null>(null);
   const nexusPolling = useRef<PollingController | null>(null);
+
+  // Refs for stable access in refresh callback
+  const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
 
   const fetchSchedule = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -80,7 +84,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           match: s.match,
           team: s.team,
           alliance: s.alliance as "red" | "blue",
-        })),
+        }))
       );
     }
 
@@ -116,7 +120,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           }));
           setSchedule(entries);
           await cacheEventSchedule(
-            entries.map((s) => ({ ...s, event: currentEvent })),
+            entries.map((s) => ({ ...s, event: currentEvent }))
           );
         }
 
@@ -132,7 +136,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
               red_score: m.redScore ?? undefined,
               blue_score: m.blueScore ?? undefined,
               last_synced: Date.now(),
-            }),
+            })
           );
           await cacheTbaMatches(currentEvent, tbaMatches);
         }
@@ -153,50 +157,93 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, isOnline]);
 
+  // Keep refs in sync
   useEffect(() => {
-    if (!currentEvent || !dbInitialized) {
+    fetchScheduleRef.current = fetchSchedule;
+    fetchNexusRef.current = fetchNexus;
+  }, [fetchSchedule, fetchNexus]);
+
+  // Stable wrappers for polling - always call latest fetch functions
+  const fetchScheduleStable = useCallback(async () => {
+    if (fetchScheduleRef.current) {
+      await fetchScheduleRef.current();
+    }
+  }, []); // Never changes!
+
+  const fetchNexusStable = useCallback(async () => {
+    if (fetchNexusRef.current) {
+      await fetchNexusRef.current();
+    }
+  }, []); // Never changes!
+
+  // Start controllers once when dbInitialized (never stop/start on event changes)
+  useEffect(() => {
+    if (!dbInitialized) return;
+
+    if (!schedulePolling.current) {
+      schedulePolling.current = new PollingController(
+        "Schedule",
+        fetchScheduleStable,
+        DEFAULT_POLLING_CONFIG
+      );
+      schedulePolling.current.start();
+    }
+    if (!nexusPolling.current) {
+      nexusPolling.current = new PollingController(
+        "Nexus",
+        fetchNexusStable,
+        LIVE_POLLING_CONFIG
+      );
+      nexusPolling.current.start();
+    }
+
+    return () => {
       schedulePolling.current?.stop();
       nexusPolling.current?.stop();
+    };
+  }, [dbInitialized, fetchScheduleStable, fetchNexusStable]);
+
+  // Handle event changes - clear state only (SyncContext handles refresh)
+  useEffect(() => {
+    if (!currentEvent) {
       setSchedule([]);
       setTbaSchedule({});
       setNexusMatches([]);
       return;
     }
 
-    if (!schedulePolling.current) {
-      schedulePolling.current = new PollingController(
-        "Schedule",
-        fetchSchedule,
-        DEFAULT_POLLING_CONFIG,
-      );
+    if (dbInitialized) {
+      // Clear state to show empty UI while new data loads
+      setSchedule([]);
+      setTbaSchedule({});
+      setNexusMatches([]);
+      // NOTE: No forceRefresh() - SyncContext triggers via callbacks
     }
-    if (!nexusPolling.current) {
-      nexusPolling.current = new PollingController(
-        "Nexus",
-        fetchNexus,
-        LIVE_POLLING_CONFIG,
-      );
-    }
-
-    schedulePolling.current.start();
-    schedulePolling.current.forceRefresh();
-    nexusPolling.current.start();
-    nexusPolling.current.forceRefresh();
-
-    return () => {
-      schedulePolling.current?.stop();
-      nexusPolling.current?.stop();
-    };
-  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus]);
+  }, [currentEvent, dbInitialized]);
 
   const refresh = useCallback(async () => {
-    // Trigger sync first, then refresh data
-    await forceSyncNow();
-    await Promise.all([
-      schedulePolling.current?.forceRefresh(),
-      nexusPolling.current?.forceRefresh(),
-    ]);
-  }, [forceSyncNow]);
+    console.log("[CompetitionDataContext] Refresh callback triggered");
+    // Use refs to call current fetch functions without changing callback identity
+    const promises = [];
+    if (fetchScheduleRef.current) promises.push(fetchScheduleRef.current());
+    if (fetchNexusRef.current) promises.push(fetchNexusRef.current());
+    await Promise.all(promises);
+  }, []); // Empty dependencies - callback never changes!
+
+  // Register refresh callback with SyncContext
+  useEffect(() => {
+    if (!registerRefreshCallback) return;
+
+    console.log(
+      "[CompetitionDataContext] Registering refresh callback with SyncContext"
+    );
+    const unregister = registerRefreshCallback(refresh);
+
+    return () => {
+      console.log("[CompetitionDataContext] Unregistering refresh callback");
+      unregister();
+    };
+  }, [registerRefreshCallback, refresh]);
 
   return (
     <CompetitionDataContext.Provider
@@ -211,7 +258,7 @@ export function useCompetition() {
   const context = useContext(CompetitionDataContext);
   if (context === undefined) {
     throw new Error(
-      "useCompetition must be used within a CompetitionDataProvider",
+      "useCompetition must be used within a CompetitionDataProvider"
     );
   }
   return context;

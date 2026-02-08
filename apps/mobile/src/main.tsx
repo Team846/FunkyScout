@@ -26,7 +26,7 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <EventProvider>
-        <SyncProvider>
+        <SyncProvider router={router}>
           <PitScoutFormProvider>
             <TeamDataProvider>
               <CompetitionDataProvider>

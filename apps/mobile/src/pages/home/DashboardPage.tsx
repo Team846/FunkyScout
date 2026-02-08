@@ -74,8 +74,12 @@ const nexusLabelToMatchKey = (label: string): string => {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
-  const { teams, tbaTeams, loading: teamsLoading, scoutedTeams } =
-    useTeamData();
+  const {
+    teams,
+    tbaTeams,
+    loading: teamsLoading,
+    scoutedTeams,
+  } = useTeamData();
   const { nexusMatches, tbaSchedule } = useCompetition();
   const { matchPreds } = useAnalytics();
 
@@ -124,7 +128,7 @@ export function DashboardPage() {
         const ourMatches = nexusMatches.filter(
           (match: NexusMatch) =>
             match.redTeams.includes(ourTeamStr) ||
-            match.blueTeams.includes(ourTeamStr),
+            match.blueTeams.includes(ourTeamStr)
         );
 
         // Only look for upcoming matches from Nexus
@@ -132,22 +136,22 @@ export function DashboardPage() {
         const upcomingMatches = ourMatches.filter(
           (match: NexusMatch) =>
             !match.times.actualOnFieldTime &&
-            match.times.estimatedStartTime > now,
+            match.times.estimatedStartTime > now
         );
 
         if (upcomingMatches.length > 0) {
           // Get the soonest upcoming match
           const ourMatch = upcomingMatches.sort(
             (a: NexusMatch, b: NexusMatch) =>
-              a.times.estimatedStartTime - b.times.estimatedStartTime,
+              a.times.estimatedStartTime - b.times.estimatedStartTime
           )[0];
 
           const isOnRed = ourMatch.redTeams.includes(ourTeamStr);
           const redTeamNums = ourMatch.redTeams.map((t: string) =>
-            parseInt(t, 10),
+            parseInt(t, 10)
           );
           const blueTeamNums = ourMatch.blueTeams.map((t: string) =>
-            parseInt(t, 10),
+            parseInt(t, 10)
           );
 
           // Convert Nexus label to Statbotics key
@@ -209,10 +213,10 @@ export function DashboardPage() {
 
       const isOnRed = matchData.redTeams.includes(ourTeamKey);
       const redTeamNums = matchData.redTeams.map((t: string) =>
-        parseInt(t.replace("frc", ""), 10),
+        parseInt(t.replace("frc", ""), 10)
       );
       const blueTeamNums = matchData.blueTeams.map((t: string) =>
-        parseInt(t.replace("frc", ""), 10),
+        parseInt(t.replace("frc", ""), 10)
       );
 
       // Build team ranks map from TBA data
@@ -670,7 +674,7 @@ export function DashboardPage() {
 
           <div className="flex-1 rounded-2xl bg-muted p-6">
             <div className="flex h-full flex-col justify-between">
-              <p className="text-primary text-base">View Shifts</p>
+              <p className="text-primary text-base">New Picklist</p>
 
               <div className="mt-6 flex items-end justify-between">
                 <p className="text-[15px]">Start</p>
@@ -761,7 +765,6 @@ export function DashboardPage() {
                       variant="outline"
                       className="ml-2 border-primary text-primary"
                     >
-
                       Scouted
                     </Badge>
                   )}

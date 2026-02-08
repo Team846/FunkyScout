@@ -13,9 +13,9 @@ import {
   useEffect,
   useRef,
   useState,
+  useCallback,
   type ReactNode,
 } from "react";
-import { useRouter } from "@tanstack/react-router";
 import { useEvent } from "./EventContext";
 import { SyncManager } from "@lib/sync/SyncManager";
 import supabase from "@lib/supabase/supabase";
@@ -25,17 +25,26 @@ interface SyncContextType {
   syncManager: SyncManager | null;
   forceSyncNow: () => Promise<void>;
   isSyncing: boolean;
+  registerRefreshCallback: (callback: () => void) => () => void;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
-export function SyncProvider({ children }: { children: ReactNode }) {
+export function SyncProvider({
+  children,
+  router,
+}: {
+  children: ReactNode;
+  router: any; // Router instance from createRouter
+}) {
   const { currentEvent, isOnline, dbInitialized } = useEvent();
-  const router = useRouter();
   const syncManagerRef = useRef<SyncManager | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const prevEventRef = useRef<string | null>(null);
   const prevOnlineRef = useRef<boolean>(isOnline);
+
+  // Callback registry for data context refresh functions
+  const refreshCallbacks = useRef<Set<() => void>>(new Set());
 
   // Initialize SyncManager
   useEffect(() => {
@@ -62,6 +71,41 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     };
   }, [dbInitialized]);
 
+  // Manual sync function for UI (with loading state and data refresh)
+  const forceSyncNow = useCallback(async () => {
+    if (!syncManagerRef.current || !isOnline) {
+      console.log("[SyncContext] Cannot sync: manager not ready or offline");
+      return;
+    }
+
+    console.log("[SyncContext] Force sync triggered");
+    setIsSyncing(true);
+
+    try {
+      // Step 1: Push local changes to Supabase
+      await syncManagerRef.current.forceSyncNow();
+      console.log("[SyncContext] Sync completed, triggering data refresh");
+
+      // Step 2: Refresh all data contexts
+      refreshCallbacks.current.forEach((callback) => {
+        try {
+          callback();
+        } catch (error) {
+          console.error("[SyncContext] Error in refresh callback:", error);
+        }
+      });
+
+      console.log(
+        `[SyncContext] Triggered ${refreshCallbacks.current.size} refresh callbacks`,
+      );
+    } catch (error) {
+      console.error("[SyncContext] Sync failed:", error);
+      throw error;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isOnline]);
+
   // Trigger 1: Event Switch
   useEffect(() => {
     if (
@@ -72,12 +116,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       console.log(
         `[SyncContext] Event switched from ${prevEventRef.current} to ${currentEvent}, triggering sync`,
       );
-      syncManagerRef.current?.forceSyncNow().catch((error) => {
+      forceSyncNow().catch((error) => {
         console.error("[SyncContext] Event switch sync failed:", error);
       });
     }
     prevEventRef.current = currentEvent;
-  }, [currentEvent]);
+  }, [currentEvent, forceSyncNow]);
 
   // Trigger 2: Online/Offline transitions
   useEffect(() => {
@@ -89,23 +133,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       syncManagerRef.current
     ) {
       console.log("[SyncContext] Back online, triggering sync");
-      syncManagerRef.current.forceSyncNow().catch((error) => {
+      forceSyncNow().catch((error) => {
         console.error("[SyncContext] Online sync failed:", error);
       });
     }
     prevOnlineRef.current = isOnline;
-  }, [isOnline, dbInitialized]);
+  }, [isOnline, dbInitialized, forceSyncNow]);
 
   // Trigger 3: Route changes
   useEffect(() => {
     if (!syncManagerRef.current) return;
 
-    const unsubscribe = router.subscribe("onBeforeLoad", ({ toLocation }) => {
+    const unsubscribe = router.subscribe("onBeforeLoad", ({ toLocation }: any) => {
       console.log(
         `[SyncContext] Route changing to ${toLocation.pathname}, triggering sync`,
       );
       // Note: This is fire-and-forget - we don't block navigation
-      syncManagerRef.current?.forceSyncNow().catch((error) => {
+      forceSyncNow().catch((error) => {
         console.error("[SyncContext] Route change sync failed:", error);
       });
     });
@@ -115,7 +159,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         unsubscribe();
       }
     };
-  }, [router]);
+  }, [router, forceSyncNow]);
 
   // Trigger 4: Auth changes (login/logout)
   useEffect(() => {
@@ -126,13 +170,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
         console.log("[SyncContext] User signed in, triggering sync");
-        syncManagerRef.current?.forceSyncNow().catch((error) => {
+        forceSyncNow().catch((error) => {
           console.error("[SyncContext] Sign-in sync failed:", error);
         });
       } else if (event === "SIGNED_OUT") {
         console.log("[SyncContext] User signed out, triggering final sync");
         // Trigger sync before logout to push any pending data
-        syncManagerRef.current?.forceSyncNow().catch((error) => {
+        forceSyncNow().catch((error) => {
           console.error("[SyncContext] Sign-out sync failed:", error);
         });
       }
@@ -141,25 +185,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
+  }, [forceSyncNow]);
+
+  // Register a refresh callback from data contexts
+  const registerRefreshCallback = useCallback((callback: () => void) => {
+    refreshCallbacks.current.add(callback);
+    console.log(
+      `[SyncContext] Registered refresh callback (total: ${refreshCallbacks.current.size})`,
+    );
+
+    // Return cleanup function
+    return () => {
+      refreshCallbacks.current.delete(callback);
+      console.log(
+        `[SyncContext] Unregistered refresh callback (total: ${refreshCallbacks.current.size})`,
+      );
+    };
   }, []);
-
-  // Manual sync function for UI (with loading state)
-  const forceSyncNow = async () => {
-    if (!syncManagerRef.current) {
-      console.warn("[SyncContext] SyncManager not initialized");
-      return;
-    }
-
-    setIsSyncing(true);
-    try {
-      await syncManagerRef.current.forceSyncNow();
-    } catch (error) {
-      console.error("[SyncContext] Manual sync failed:", error);
-      throw error;
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   return (
     <SyncContext.Provider
@@ -167,6 +209,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         syncManager: syncManagerRef.current,
         forceSyncNow,
         isSyncing,
+        registerRefreshCallback,
       }}
     >
       {children}

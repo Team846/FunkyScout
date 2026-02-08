@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import React, { useRef, useEffect, useCallback, useState } from "react";
 import type { Path, Point } from "./types";
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
@@ -13,7 +13,7 @@ interface DrawingCanvasProps {
   alliance?: "red" | "blue";
 }
 
-export function DrawingCanvas({
+function DrawingCanvasComponent({
   currentPaths,
   onPathComplete,
   className = "",
@@ -23,6 +23,29 @@ export function DrawingCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
+
+  // Refs for stable access to state values in callbacks
+  const isDrawingRef = useRef(isDrawing);
+  const currentPathRef = useRef(currentPath);
+  const currentPathsRef = useRef(currentPaths);
+  const onPathCompleteRef = useRef(onPathComplete);
+
+  // Keep refs in sync with state/props
+  useEffect(() => {
+    isDrawingRef.current = isDrawing;
+  }, [isDrawing]);
+
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
+
+  useEffect(() => {
+    currentPathsRef.current = currentPaths;
+  }, [currentPaths]);
+
+  useEffect(() => {
+    onPathCompleteRef.current = onPathComplete;
+  }, [onPathComplete]);
 
   // Setup canvas with proper sizing for retina displays
   useEffect(() => {
@@ -93,7 +116,7 @@ export function DrawingCanvas({
     [],
   );
 
-  // Redraw all paths
+  // Redraw all paths - stabilized with refs to prevent render loops
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -107,17 +130,17 @@ export function DrawingCanvas({
 
     ctx.clearRect(0, 0, width, height);
 
-    // Draw all completed paths
-    for (const path of currentPaths) {
+    // Draw all completed paths using ref
+    for (const path of currentPathsRef.current) {
       drawPath(ctx, path, width, height);
     }
 
-    // Draw current path being drawn
-    if (currentPath.length > 0) {
+    // Draw current path being drawn using ref
+    if (currentPathRef.current.length > 0) {
       drawPath(
         ctx,
         {
-          points: currentPath,
+          points: currentPathRef.current,
           color: DRAWING_COLOR,
           lineWidth: LINE_WIDTH,
         },
@@ -125,14 +148,14 @@ export function DrawingCanvas({
         height,
       );
     }
-  }, [currentPaths, currentPath, drawPath]);
+  }, [drawPath]); // Only depends on drawPath (which is stable)
 
   // Redraw when paths change
   useEffect(() => {
     redrawCanvas();
   }, [redrawCanvas]);
 
-  // Low-level touch handling to avoid passive listener issues
+  // Low-level touch handling - stabilized with refs to prevent listener re-registration
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -143,12 +166,13 @@ export function DrawingCanvas({
       e.preventDefault();
       const touch = e.touches[0];
       const point = getNormalizedPoint(touch.clientX, touch.clientY);
+      isDrawingRef.current = true;
       setIsDrawing(true);
       setCurrentPath([point]);
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!isDrawing) return;
+      if (!isDrawingRef.current) return;
       e.preventDefault();
       const touch = e.touches[0];
       const point = getNormalizedPoint(touch.clientX, touch.clientY);
@@ -175,6 +199,7 @@ export function DrawingCanvas({
           }
           return prev;
         });
+        redrawCanvas();
       });
     };
 
@@ -183,13 +208,14 @@ export function DrawingCanvas({
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
-      if (currentPath.length > 1) {
-        onPathComplete({
-          points: currentPath,
+      if (currentPathRef.current.length > 1) {
+        onPathCompleteRef.current({
+          points: currentPathRef.current,
           color: DRAWING_COLOR,
           lineWidth: LINE_WIDTH,
         });
       }
+      isDrawingRef.current = false;
       setIsDrawing(false);
       setCurrentPath([]);
     };
@@ -206,12 +232,13 @@ export function DrawingCanvas({
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [getNormalizedPoint, isDrawing, currentPath, onPathComplete]);
+  }, [getNormalizedPoint, redrawCanvas]); // Only stable dependencies
 
-  // Mouse handlers (for desktop testing)
+  // Mouse handlers (for desktop testing) - stabilized with refs
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const point = getNormalizedPoint(e.clientX, e.clientY);
+      isDrawingRef.current = true;
       setIsDrawing(true);
       setCurrentPath([point]);
     },
@@ -220,7 +247,7 @@ export function DrawingCanvas({
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!isDrawing) return;
+      if (!isDrawingRef.current) return;
       const point = getNormalizedPoint(e.clientX, e.clientY);
       setCurrentPath((prev) => {
         // Only add point if it's far enough from the last point
@@ -240,32 +267,34 @@ export function DrawingCanvas({
         return prev;
       });
     },
-    [isDrawing, getNormalizedPoint],
+    [getNormalizedPoint],
   );
 
   const handleMouseUp = useCallback(() => {
-    if (currentPath.length > 1) {
-      onPathComplete({
-        points: currentPath,
+    if (currentPathRef.current.length > 1) {
+      onPathCompleteRef.current({
+        points: currentPathRef.current,
         color: DRAWING_COLOR,
         lineWidth: LINE_WIDTH,
       });
     }
+    isDrawingRef.current = false;
     setIsDrawing(false);
     setCurrentPath([]);
-  }, [currentPath, onPathComplete]);
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
-    if (isDrawing && currentPath.length > 1) {
-      onPathComplete({
-        points: currentPath,
+    if (isDrawingRef.current && currentPathRef.current.length > 1) {
+      onPathCompleteRef.current({
+        points: currentPathRef.current,
         color: DRAWING_COLOR,
         lineWidth: LINE_WIDTH,
       });
     }
+    isDrawingRef.current = false;
     setIsDrawing(false);
     setCurrentPath([]);
-  }, [isDrawing, currentPath, onPathComplete]);
+  }, []);
 
   return (
     <div
@@ -288,3 +317,6 @@ export function DrawingCanvas({
     </div>
   );
 }
+
+// Wrap in React.memo to prevent unnecessary re-renders from parent
+export const DrawingCanvas = React.memo(DrawingCanvasComponent);

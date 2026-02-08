@@ -50,6 +50,10 @@ export function AutoPathDrawer({
       <DialogContent
         className="max-w-[90vw] max-h-[85vh] p-4 flex flex-col gap-4"
         showCloseButton={false}
+        style={{
+          transitionDuration: "150ms",
+          willChange: "transform",
+        }}
       >
         {/* Custom close button - top left */}
         <DialogClose className="absolute top-4 left-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">

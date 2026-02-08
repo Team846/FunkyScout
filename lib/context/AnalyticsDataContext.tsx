@@ -41,7 +41,7 @@ const AnalyticsDataContext = createContext<
 
 export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
-  const { forceSyncNow } = useSync();
+  const { registerRefreshCallback } = useSync();
   const { teams } = useTeamData();
   const { tbaSchedule } = useCompetition();
 
@@ -53,6 +53,9 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
   );
   const [loading, setLoading] = useState(false);
   const pollingController = useRef<PollingController | null>(null);
+
+  // Ref for stable access in refresh callback
+  const fetchAnalyticsRef = useRef<(() => Promise<void>) | null>(null);
 
   const fetchAnalytics = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -111,33 +114,72 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, dbInitialized, isOnline, teams.length]);
 
+  // Keep ref in sync
   useEffect(() => {
-    if (!currentEvent || !dbInitialized) {
-      pollingController.current?.stop();
+    fetchAnalyticsRef.current = fetchAnalytics;
+  }, [fetchAnalytics]);
+
+  // Stable wrapper for polling - always calls latest fetch function
+  const fetchAnalyticsStable = useCallback(async () => {
+    if (fetchAnalyticsRef.current) {
+      await fetchAnalyticsRef.current();
+    }
+  }, []); // Never changes!
+
+  // Start controller once when dbInitialized (never stop/start on event changes)
+  useEffect(() => {
+    if (!dbInitialized) return;
+
+    if (!pollingController.current) {
+      pollingController.current = new PollingController(
+        "Analytics",
+        fetchAnalyticsStable,
+        DEFAULT_POLLING_CONFIG,
+      );
+      pollingController.current.start();
+    }
+
+    return () => pollingController.current?.stop();
+  }, [dbInitialized, fetchAnalyticsStable]);
+
+  // Handle event changes - clear state only (SyncContext handles refresh)
+  useEffect(() => {
+    if (!currentEvent) {
       setTeamEPAs({});
       setMatchPreds({});
       return;
     }
 
-    if (!pollingController.current) {
-      pollingController.current = new PollingController(
-        "Analytics",
-        fetchAnalytics,
-        DEFAULT_POLLING_CONFIG,
-      );
+    if (dbInitialized) {
+      // Clear state to show empty UI while new data loads
+      setTeamEPAs({});
+      setMatchPreds({});
+      // NOTE: No forceRefresh() - SyncContext triggers via callbacks
     }
-
-    pollingController.current.start();
-    pollingController.current.forceRefresh();
-
-    return () => pollingController.current?.stop();
-  }, [currentEvent, dbInitialized, fetchAnalytics]);
+  }, [currentEvent, dbInitialized]);
 
   const refresh = useCallback(async () => {
-    // Trigger sync first, then refresh data
-    await forceSyncNow();
-    await pollingController.current?.forceRefresh();
-  }, [forceSyncNow]);
+    console.log("[AnalyticsDataContext] Refresh callback triggered");
+    // Use ref to call current fetch function without changing callback identity
+    if (fetchAnalyticsRef.current) {
+      await fetchAnalyticsRef.current();
+    }
+  }, []); // Empty dependencies - callback never changes!
+
+  // Register refresh callback with SyncContext
+  useEffect(() => {
+    if (!registerRefreshCallback) return;
+
+    console.log(
+      "[AnalyticsDataContext] Registering refresh callback with SyncContext",
+    );
+    const unregister = registerRefreshCallback(refresh);
+
+    return () => {
+      console.log("[AnalyticsDataContext] Unregistering refresh callback");
+      unregister();
+    };
+  }, [registerRefreshCallback, refresh]);
 
   return (
     <AnalyticsDataContext.Provider

@@ -48,17 +48,21 @@ interface TeamDataContextType {
 }
 
 const TeamDataContext = createContext<TeamDataContextType | undefined>(
-  undefined,
+  undefined
 );
 
 export function TeamDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
-  const { forceSyncNow } = useSync();
+  const { registerRefreshCallback } = useSync();
   const [teams, setTeams] = useState<Team[]>([]);
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
   const [loading, setLoading] = useState(false);
   const [scoutedTeams, setScoutedTeams] = useState<Set<string>>(new Set());
   const pollingController = useRef<PollingController | null>(null);
+
+  // Refs for stable access in refresh callback
+  const fetchTeamsRef = useRef<(() => Promise<void>) | null>(null);
+  const currentEventRef = useRef(currentEvent);
 
   const fetchTeams = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -72,7 +76,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           num: t.team_number,
           name: t.name ?? "",
           rank: t.rank ?? 0,
-        })),
+        }))
       );
       setTbaTeams(
         cached.map((t) => ({
@@ -87,7 +91,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           },
           nextMatch: t.next_match || null,
           lastMatch: t.last_match || null,
-        })),
+        }))
       );
     }
 
@@ -125,7 +129,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
         // Handle B-teams or teams only in TBA
         const supabaseKeys = new Set(
-          (supabaseTeams ?? []).map((t: any) => t.team),
+          (supabaseTeams ?? []).map((t: any) => t.team)
         );
         for (const tbaTeam of tbaTeamsData ?? []) {
           if (!supabaseKeys.has(tbaTeam.key)) {
@@ -154,7 +158,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               num: t.team_number,
               name: t.name ?? "",
               rank: t.rank ?? 0,
-            })),
+            }))
           );
           setTbaTeams(
             merged.map((t) => ({
@@ -169,7 +173,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               },
               nextMatch: t.next_match || null,
               lastMatch: t.last_match || null,
-            })),
+            }))
           );
         }
       } finally {
@@ -178,27 +182,50 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, dbInitialized, isOnline]);
 
+  // Keep refs in sync
   useEffect(() => {
-    if (!currentEvent || !dbInitialized) {
-      pollingController.current?.stop();
+    fetchTeamsRef.current = fetchTeams;
+    currentEventRef.current = currentEvent;
+  }, [fetchTeams, currentEvent]);
+
+  // Stable wrapper for polling - always calls latest fetch function
+  const fetchTeamsStable = useCallback(async () => {
+    if (fetchTeamsRef.current) {
+      await fetchTeamsRef.current();
+    }
+  }, []); // Never changes!
+
+  // Start controller once when dbInitialized (never stop/start on event changes)
+  useEffect(() => {
+    if (!dbInitialized) return;
+
+    if (!pollingController.current) {
+      pollingController.current = new PollingController(
+        "Teams",
+        fetchTeamsStable,
+        DEFAULT_POLLING_CONFIG
+      );
+      pollingController.current.start();
+    }
+
+    return () => pollingController.current?.stop();
+  }, [dbInitialized, fetchTeamsStable]);
+
+  // Handle event changes - clear state only (SyncContext handles refresh)
+  useEffect(() => {
+    if (!currentEvent) {
       setTeams([]);
       setTbaTeams([]);
       return;
     }
 
-    if (!pollingController.current) {
-      pollingController.current = new PollingController(
-        "Teams",
-        fetchTeams,
-        DEFAULT_POLLING_CONFIG,
-      );
+    if (dbInitialized) {
+      // Clear state to show empty UI while new data loads
+      setTeams([]);
+      setTbaTeams([]);
+      // NOTE: No forceRefresh() - SyncContext triggers via callbacks
     }
-
-    pollingController.current.start();
-    pollingController.current.forceRefresh(); // Initial fetch
-
-    return () => pollingController.current?.stop();
-  }, [currentEvent, dbInitialized, fetchTeams]);
+  }, [currentEvent, dbInitialized]);
 
   // Fetch scouted teams when event changes
   useEffect(() => {
@@ -218,7 +245,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               return Object.keys(t.data).length > 0;
             return false;
           })
-          .map((t) => t.team),
+          .map((t) => t.team)
       );
       setScoutedTeams(scouted);
       console.log(`[TeamData] Found ${scouted.size} scouted teams`);
@@ -226,13 +253,15 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   }, [currentEvent, dbInitialized]);
 
   const refresh = useCallback(async () => {
-    // Trigger sync first, then refresh data
-    await forceSyncNow();
-    await pollingController.current?.forceRefresh();
+    console.log("[TeamDataContext] Refresh callback triggered");
+    // Use ref to call current fetch function without changing callback identity
+    if (fetchTeamsRef.current) {
+      await fetchTeamsRef.current();
+    }
 
     // Also refresh scouted teams
-    if (currentEvent) {
-      const data = await getEventTeamData(currentEvent);
+    if (currentEventRef.current) {
+      const data = await getEventTeamData(currentEventRef.current);
       const scouted = new Set(
         data
           .filter((t) => {
@@ -243,11 +272,26 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               return Object.keys(t.data).length > 0;
             return false;
           })
-          .map((t) => t.team),
+          .map((t) => t.team)
       );
       setScoutedTeams(scouted);
     }
-  }, [forceSyncNow, currentEvent]);
+  }, []); // Empty dependencies - callback never changes!
+
+  // Register refresh callback with SyncContext
+  useEffect(() => {
+    if (!registerRefreshCallback) return;
+
+    console.log(
+      "[TeamDataContext] Registering refresh callback with SyncContext"
+    );
+    const unregister = registerRefreshCallback(refresh);
+
+    return () => {
+      console.log("[TeamDataContext] Unregistering refresh callback");
+      unregister();
+    };
+  }, [registerRefreshCallback, refresh]);
 
   return (
     <TeamDataContext.Provider

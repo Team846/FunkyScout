@@ -116,6 +116,9 @@ function HomePage() {
             <p className="text-xs text-background bg-primary px-2 py-1 rounded-md max-w-18 truncate">
               {userData.name || "User"}
             </p>
+            <p className="text-xs text-background bg-muted-foreground px-2 py-1 rounded-md max-w-18 truncate">
+              {userData.role || "user"}
+            </p>
             {currentEvent && (
               <p className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
                 {currentEvent}

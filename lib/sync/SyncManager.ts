@@ -58,7 +58,7 @@ export class SyncManager {
       return;
     }
 
-    console.log("[SyncManager] Starting sync polling");
+    console.log("[SyncManager] Starting with 30s polling interval");
     this.syncTimer = setInterval(() => {
       this.processSyncQueue().catch((error) => {
         console.error("[SyncManager] Polling error:", error);
