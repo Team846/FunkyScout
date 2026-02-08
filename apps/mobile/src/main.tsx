@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { EventProvider } from "@lib/context/EventContext";
+import { SyncProvider } from "@lib/context/SyncContext";
+import { PitScoutFormProvider } from "@lib/context/PitScoutFormContext";
 import { TeamDataProvider } from "@lib/context/TeamDataContext";
 import { CompetitionDataProvider } from "@lib/context/CompetitionDataContext";
 import { AnalyticsDataProvider } from "@lib/context/AnalyticsDataContext";
@@ -24,13 +26,17 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <EventProvider>
-        <TeamDataProvider>
-          <CompetitionDataProvider>
-            <AnalyticsDataProvider>
-              <RouterProvider router={router} />
-            </AnalyticsDataProvider>
-          </CompetitionDataProvider>
-        </TeamDataProvider>
+        <SyncProvider>
+          <PitScoutFormProvider>
+            <TeamDataProvider>
+              <CompetitionDataProvider>
+                <AnalyticsDataProvider>
+                  <RouterProvider router={router} />
+                </AnalyticsDataProvider>
+              </CompetitionDataProvider>
+            </TeamDataProvider>
+          </PitScoutFormProvider>
+        </SyncProvider>
       </EventProvider>
     </StrictMode>,
   );

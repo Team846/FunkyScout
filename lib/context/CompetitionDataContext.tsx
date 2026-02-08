@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useEvent } from "./EventContext";
+import { useSync } from "./SyncContext";
 import { getSchedule } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
@@ -53,6 +54,7 @@ const CompetitionDataContext = createContext<
 
 export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
+  const { forceSyncNow } = useSync();
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
   const [tbaSchedule, setTbaSchedule] = useState<Record<string, TBAMatchData>>(
     {},
@@ -188,11 +190,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus]);
 
   const refresh = useCallback(async () => {
+    // Trigger sync first, then refresh data
+    await forceSyncNow();
     await Promise.all([
       schedulePolling.current?.forceRefresh(),
       nexusPolling.current?.forceRefresh(),
     ]);
-  }, []);
+  }, [forceSyncNow]);
 
   return (
     <CompetitionDataContext.Provider

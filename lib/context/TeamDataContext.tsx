@@ -8,9 +8,15 @@ import {
   type ReactNode,
 } from "react";
 import { useEvent } from "./EventContext";
+import { useSync } from "./SyncContext";
 import { getTeams } from "@lib/data";
 import { fetchTBAEventTeams } from "@lib/tba";
-import { getTbaTeams, cacheTbaTeams, type TbaTeam } from "@lib/db";
+import {
+  getTbaTeams,
+  cacheTbaTeams,
+  getEventTeamData,
+  type TbaTeam,
+} from "@lib/db";
 import {
   PollingController,
   DEFAULT_POLLING_CONFIG,
@@ -38,6 +44,7 @@ interface TeamDataContextType {
   tbaTeams: TBATeam[];
   loading: boolean;
   refresh: () => Promise<void>;
+  scoutedTeams: Set<string>; // Team keys that have been pit scouted
 }
 
 const TeamDataContext = createContext<TeamDataContextType | undefined>(
@@ -46,9 +53,11 @@ const TeamDataContext = createContext<TeamDataContextType | undefined>(
 
 export function TeamDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
+  const { forceSyncNow } = useSync();
   const [teams, setTeams] = useState<Team[]>([]);
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
   const [loading, setLoading] = useState(false);
+  const [scoutedTeams, setScoutedTeams] = useState<Set<string>>(new Set());
   const pollingController = useRef<PollingController | null>(null);
 
   const fetchTeams = useCallback(async () => {
@@ -191,12 +200,59 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     return () => pollingController.current?.stop();
   }, [currentEvent, dbInitialized, fetchTeams]);
 
+  // Fetch scouted teams when event changes
+  useEffect(() => {
+    if (!currentEvent || !dbInitialized) {
+      setScoutedTeams(new Set());
+      return;
+    }
+
+    getEventTeamData(currentEvent).then((data) => {
+      const scouted = new Set(
+        data
+          .filter((t) => {
+            // Only count as scouted if data exists and is not empty
+            if (!t.data) return false;
+            if (Array.isArray(t.data)) return t.data.length > 0;
+            if (typeof t.data === "object")
+              return Object.keys(t.data).length > 0;
+            return false;
+          })
+          .map((t) => t.team),
+      );
+      setScoutedTeams(scouted);
+      console.log(`[TeamData] Found ${scouted.size} scouted teams`);
+    });
+  }, [currentEvent, dbInitialized]);
+
   const refresh = useCallback(async () => {
+    // Trigger sync first, then refresh data
+    await forceSyncNow();
     await pollingController.current?.forceRefresh();
-  }, []);
+
+    // Also refresh scouted teams
+    if (currentEvent) {
+      const data = await getEventTeamData(currentEvent);
+      const scouted = new Set(
+        data
+          .filter((t) => {
+            // Only count as scouted if data exists and is not empty
+            if (!t.data) return false;
+            if (Array.isArray(t.data)) return t.data.length > 0;
+            if (typeof t.data === "object")
+              return Object.keys(t.data).length > 0;
+            return false;
+          })
+          .map((t) => t.team),
+      );
+      setScoutedTeams(scouted);
+    }
+  }, [forceSyncNow, currentEvent]);
 
   return (
-    <TeamDataContext.Provider value={{ teams, tbaTeams, loading, refresh }}>
+    <TeamDataContext.Provider
+      value={{ teams, tbaTeams, loading, refresh, scoutedTeams }}
+    >
       {children}
     </TeamDataContext.Provider>
   );

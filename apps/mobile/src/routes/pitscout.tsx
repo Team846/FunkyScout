@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
@@ -18,6 +18,7 @@ import type {
   AutoEntry,
   DrawingData,
 } from "../components/auto-path-drawer/types";
+import { usePitScoutForm } from "@lib/context/PitScoutFormContext";
 import { toast } from "sonner";
 
 type ScoutSearch = {
@@ -270,6 +271,7 @@ function AutosSection({
 function ScoutPage() {
   const navigate = useNavigate();
   const { teamNum, teamName } = Route.useSearch();
+  const { formData, setFormData } = usePitScoutForm();
 
   // Movement state
   const [movementDepot, setMovementDepot] = useState(false);
@@ -294,10 +296,63 @@ function ScoutPage() {
   // Autos state (lifted from AutosSection)
   const [autoEntries, setAutoEntries] = useState<AutoEntry[]>([]);
 
+  // Restore form data from context if available (for back navigation)
+  useEffect(() => {
+    if (formData && formData.teamNum === teamNum) {
+      setMovementDepot(formData.movement.depot);
+      setMovementTrough(formData.movement.trough);
+      setIntakeGround(formData.intake.ground);
+      setIntakeStation(formData.intake.station);
+      setIntakeDepot(formData.intake.depot);
+      setIntakeStocking(formData.intake.stocking);
+      setFuelShootMoving(formData.fuel.shootMoving);
+      setFuelPassing(formData.fuel.passing);
+      setClimbLevel(formData.climb.level);
+      setClimbLeft(formData.climb.left);
+      setClimbRight(formData.climb.right);
+      setClimbDeclimb(formData.climb.declimb);
+      setAutoEntries(formData.autos);
+    }
+  }, [formData, teamNum]);
+
   const handleSave = () => {
-    // No save functionality for now - will be implemented with SQLite later
-    toast.success("Pit scouting completed!");
-    navigate({ to: "/pit" });
+    if (!teamNum || !teamName) {
+      toast.error("Missing team information");
+      return;
+    }
+
+    // Collect all form data
+    const formData = {
+      teamNum,
+      teamName,
+      movement: {
+        depot: movementDepot,
+        trough: movementTrough,
+      },
+      intake: {
+        ground: intakeGround,
+        station: intakeStation,
+        depot: intakeDepot,
+        stocking: intakeStocking,
+      },
+      fuel: {
+        shootMoving: fuelShootMoving,
+        passing: fuelPassing,
+      },
+      climb: {
+        level: climbLevel,
+        left: climbLeft,
+        right: climbRight,
+        declimb: climbDeclimb,
+      },
+      autos: autoEntries,
+    };
+
+    // Save to context
+    setFormData(formData);
+
+    // Navigate to images page
+    navigate({ to: "/pitscout-images", search: { teamNum, teamName } });
   };
 
   return (

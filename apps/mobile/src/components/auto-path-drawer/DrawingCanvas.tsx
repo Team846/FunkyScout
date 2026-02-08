@@ -1,5 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import type { Path, Point } from "./types";
+import red_field from "/red_field.svg";
+import blue_field from "/blue_field.svg";
 
 const DRAWING_COLOR = "#737373"; // muted-foreground approximation
 const LINE_WIDTH = 3;
@@ -8,12 +10,14 @@ interface DrawingCanvasProps {
   currentPaths: Path[];
   onPathComplete: (path: Path) => void;
   className?: string;
+  alliance?: "red" | "blue";
 }
 
 export function DrawingCanvas({
   currentPaths,
   onPathComplete,
   className = "",
+  alliance = "red",
 }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,7 +62,7 @@ export function DrawingCanvas({
         y: (clientY - rect.top) / rect.height,
       };
     },
-    []
+    [],
   );
 
   // Draw a single path on canvas
@@ -67,7 +71,7 @@ export function DrawingCanvas({
       ctx: CanvasRenderingContext2D,
       path: Path,
       width: number,
-      height: number
+      height: number,
     ) => {
       if (path.points.length < 2) return;
 
@@ -86,7 +90,7 @@ export function DrawingCanvas({
 
       ctx.stroke();
     },
-    []
+    [],
   );
 
   // Redraw all paths
@@ -118,7 +122,7 @@ export function DrawingCanvas({
           lineWidth: LINE_WIDTH,
         },
         width,
-        height
+        height,
       );
     }
   }, [currentPaths, currentPath, drawPath]);
@@ -128,40 +132,81 @@ export function DrawingCanvas({
     redrawCanvas();
   }, [redrawCanvas]);
 
-  // Touch handlers
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
+  // Low-level touch handling to avoid passive listener issues
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let animationFrameId: number | null = null;
+
+    const onTouchStart = (e: TouchEvent) => {
       e.preventDefault();
       const touch = e.touches[0];
       const point = getNormalizedPoint(touch.clientX, touch.clientY);
       setIsDrawing(true);
       setCurrentPath([point]);
-    },
-    [getNormalizedPoint]
-  );
+    };
 
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+    const onTouchMove = (e: TouchEvent) => {
       if (!isDrawing) return;
       e.preventDefault();
       const touch = e.touches[0];
       const point = getNormalizedPoint(touch.clientX, touch.clientY);
-      setCurrentPath((prev) => [...prev, point]);
-    },
-    [isDrawing, getNormalizedPoint]
-  );
 
-  const handleTouchEnd = useCallback(() => {
-    if (currentPath.length > 1) {
-      onPathComplete({
-        points: currentPath,
-        color: DRAWING_COLOR,
-        lineWidth: LINE_WIDTH,
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      animationFrameId = requestAnimationFrame(() => {
+        setCurrentPath((prev) => {
+          // Only add point if it's far enough from the last point
+          // This reduces data size by ~90% and improves performance
+          if (prev.length === 0) return [point];
+
+          const last = prev[prev.length - 1];
+          const distance = Math.sqrt(
+            Math.pow(point.x - last.x, 2) + Math.pow(point.y - last.y, 2)
+          );
+
+          // Minimum distance threshold (normalized, ~5 pixels on a 300px canvas)
+          const MIN_DISTANCE = 0.015;
+
+          if (distance >= MIN_DISTANCE) {
+            return [...prev, point];
+          }
+          return prev;
+        });
       });
-    }
-    setIsDrawing(false);
-    setCurrentPath([]);
-  }, [currentPath, onPathComplete]);
+    };
+
+    const onTouchEnd = () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      if (currentPath.length > 1) {
+        onPathComplete({
+          points: currentPath,
+          color: DRAWING_COLOR,
+          lineWidth: LINE_WIDTH,
+        });
+      }
+      setIsDrawing(false);
+      setCurrentPath([]);
+    };
+
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
+
+    return () => {
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [getNormalizedPoint, isDrawing, currentPath, onPathComplete]);
 
   // Mouse handlers (for desktop testing)
   const handleMouseDown = useCallback(
@@ -170,16 +215,32 @@ export function DrawingCanvas({
       setIsDrawing(true);
       setCurrentPath([point]);
     },
-    [getNormalizedPoint]
+    [getNormalizedPoint],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (!isDrawing) return;
       const point = getNormalizedPoint(e.clientX, e.clientY);
-      setCurrentPath((prev) => [...prev, point]);
+      setCurrentPath((prev) => {
+        // Only add point if it's far enough from the last point
+        if (prev.length === 0) return [point];
+
+        const last = prev[prev.length - 1];
+        const distance = Math.sqrt(
+          Math.pow(point.x - last.x, 2) + Math.pow(point.y - last.y, 2)
+        );
+
+        // Minimum distance threshold
+        const MIN_DISTANCE = 0.015;
+
+        if (distance >= MIN_DISTANCE) {
+          return [...prev, point];
+        }
+        return prev;
+      });
     },
-    [isDrawing, getNormalizedPoint]
+    [isDrawing, getNormalizedPoint],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -209,20 +270,16 @@ export function DrawingCanvas({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full aspect-[3/2] bg-muted rounded-lg overflow-hidden ${className}`}
-      style={{
-        // Placeholder grid pattern for field map
-        backgroundImage:
-          "linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border)) 1px, transparent 1px)",
-        backgroundSize: "20px 20px",
-      }}
+      className={`relative w-full aspect-[3/2] bg-muted rounded-xl overflow-hidden border border-border ${className}`}
     >
+      <img
+        src={alliance === "red" ? red_field : blue_field}
+        alt="Field"
+        className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
+      />
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full touch-none cursor-crosshair"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

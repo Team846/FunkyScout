@@ -10,11 +10,14 @@
 
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as VerifyRouteImport } from "./routes/verify"
+import { Route as TeamInfoRouteImport } from "./routes/team-info"
 import { Route as ResetRouteImport } from "./routes/reset"
+import { Route as PitscoutImagesRouteImport } from "./routes/pitscout-images"
 import { Route as PitscoutRouteImport } from "./routes/pitscout"
 import { Route as PitRouteImport } from "./routes/pit"
 import { Route as Match_startRouteImport } from "./routes/match_start"
 import { Route as Match_playRouteImport } from "./routes/match_play"
+import { Route as Match_endRouteImport } from "./routes/match_end"
 import { Route as MatchRouteImport } from "./routes/match"
 import { Route as HomeRouteImport } from "./routes/home"
 import { Route as EventsRouteImport } from "./routes/events"
@@ -26,9 +29,19 @@ const VerifyRoute = VerifyRouteImport.update({
   path: "/verify",
   getParentRoute: () => rootRouteImport,
 } as any)
+const TeamInfoRoute = TeamInfoRouteImport.update({
+  id: "/team-info",
+  path: "/team-info",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetRoute = ResetRouteImport.update({
   id: "/reset",
   path: "/reset",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PitscoutImagesRoute = PitscoutImagesRouteImport.update({
+  id: "/pitscout-images",
+  path: "/pitscout-images",
   getParentRoute: () => rootRouteImport,
 } as any)
 const PitscoutRoute = PitscoutRouteImport.update({
@@ -49,6 +62,11 @@ const Match_startRoute = Match_startRouteImport.update({
 const Match_playRoute = Match_playRouteImport.update({
   id: "/match_play",
   path: "/match_play",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Match_endRoute = Match_endRouteImport.update({
+  id: "/match_end",
+  path: "/match_end",
   getParentRoute: () => rootRouteImport,
 } as any)
 const MatchRoute = MatchRouteImport.update({
@@ -83,11 +101,14 @@ export interface FileRoutesByFullPath {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
+  "/pitscout-images": typeof PitscoutImagesRoute
   "/reset": typeof ResetRoute
+  "/team-info": typeof TeamInfoRoute
   "/verify": typeof VerifyRoute
 }
 export interface FileRoutesByTo {
@@ -96,11 +117,14 @@ export interface FileRoutesByTo {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
+  "/pitscout-images": typeof PitscoutImagesRoute
   "/reset": typeof ResetRoute
+  "/team-info": typeof TeamInfoRoute
   "/verify": typeof VerifyRoute
 }
 export interface FileRoutesById {
@@ -110,11 +134,14 @@ export interface FileRoutesById {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
+  "/pitscout-images": typeof PitscoutImagesRoute
   "/reset": typeof ResetRoute
+  "/team-info": typeof TeamInfoRoute
   "/verify": typeof VerifyRoute
 }
 export interface FileRouteTypes {
@@ -125,11 +152,14 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_end"
     | "/match_play"
     | "/match_start"
     | "/pit"
     | "/pitscout"
+    | "/pitscout-images"
     | "/reset"
+    | "/team-info"
     | "/verify"
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -138,11 +168,14 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_end"
     | "/match_play"
     | "/match_start"
     | "/pit"
     | "/pitscout"
+    | "/pitscout-images"
     | "/reset"
+    | "/team-info"
     | "/verify"
   id:
     | "__root__"
@@ -151,11 +184,14 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_end"
     | "/match_play"
     | "/match_start"
     | "/pit"
     | "/pitscout"
+    | "/pitscout-images"
     | "/reset"
+    | "/team-info"
     | "/verify"
   fileRoutesById: FileRoutesById
 }
@@ -165,11 +201,14 @@ export interface RootRouteChildren {
   EventsRoute: typeof EventsRoute
   HomeRoute: typeof HomeRoute
   MatchRoute: typeof MatchRoute
+  Match_endRoute: typeof Match_endRoute
   Match_playRoute: typeof Match_playRoute
   Match_startRoute: typeof Match_startRoute
   PitRoute: typeof PitRoute
   PitscoutRoute: typeof PitscoutRoute
+  PitscoutImagesRoute: typeof PitscoutImagesRoute
   ResetRoute: typeof ResetRoute
+  TeamInfoRoute: typeof TeamInfoRoute
   VerifyRoute: typeof VerifyRoute
 }
 
@@ -182,11 +221,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof VerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/team-info": {
+      id: "/team-info"
+      path: "/team-info"
+      fullPath: "/team-info"
+      preLoaderRoute: typeof TeamInfoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/reset": {
       id: "/reset"
       path: "/reset"
       fullPath: "/reset"
       preLoaderRoute: typeof ResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/pitscout-images": {
+      id: "/pitscout-images"
+      path: "/pitscout-images"
+      fullPath: "/pitscout-images"
+      preLoaderRoute: typeof PitscoutImagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/pitscout": {
@@ -215,6 +268,13 @@ declare module "@tanstack/react-router" {
       path: "/match_play"
       fullPath: "/match_play"
       preLoaderRoute: typeof Match_playRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/match_end": {
+      id: "/match_end"
+      path: "/match_end"
+      fullPath: "/match_end"
+      preLoaderRoute: typeof Match_endRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/match": {
@@ -261,11 +321,14 @@ const rootRouteChildren: RootRouteChildren = {
   EventsRoute: EventsRoute,
   HomeRoute: HomeRoute,
   MatchRoute: MatchRoute,
+  Match_endRoute: Match_endRoute,
   Match_playRoute: Match_playRoute,
   Match_startRoute: Match_startRoute,
   PitRoute: PitRoute,
   PitscoutRoute: PitscoutRoute,
+  PitscoutImagesRoute: PitscoutImagesRoute,
   ResetRoute: ResetRoute,
+  TeamInfoRoute: TeamInfoRoute,
   VerifyRoute: VerifyRoute,
 }
 export const routeTree = rootRouteImport

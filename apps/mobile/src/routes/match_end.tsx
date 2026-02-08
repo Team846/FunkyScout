@@ -98,7 +98,7 @@ function MatchEnd() {
           <svg
                 
                 viewBox="0 0 25 20"
-                onClick={()=>{}}
+                onClick={handleBackClick}
                 fill="currentColor"
                 style={{ width: 25, height: 25 }}
                 xmlns="http://www.w3.org/2000/svg"

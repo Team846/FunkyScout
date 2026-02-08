@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
+import { Badge } from "@shadcn/ui/components/badge.js";
 import { useTeamData } from "@lib/context/TeamDataContext";
 
 export const Route = createFileRoute("/pit")({
@@ -9,7 +10,7 @@ export const Route = createFileRoute("/pit")({
 
 export function Pit() {
   const navigate = useNavigate();
-  const { teams, loading } = useTeamData();
+  const { teams, loading, scoutedTeams } = useTeamData();
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -21,7 +22,7 @@ export function Pit() {
   };
 
   const filteredTeams = teams.filter((team: any) =>
-    `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase()),
+    `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -118,10 +119,34 @@ export function Pit() {
                   setShowDropdown(false);
                 }}
               >
-                <p className="text-base bg-muted px-3 py-3 rounded-xl">
-                  <span className="font-bold text-primary">{team.num}</span>
-                  <span className="text-foreground"> | {team.name}</span>
-                </p>
+                <div className="flex items-center justify-between bg-muted px-3 py-3 rounded-xl">
+                  <p className="text-base">
+                    <span className="font-bold text-primary">{team.num}</span>
+                    <span className="text-foreground"> | {team.name}</span>
+                  </p>
+                  {scoutedTeams.has(team.key) && (
+                    <Badge
+                      variant="default"
+                      className="ml-2 bg-primary/20 text-primary border-primary"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="size-3 mr-1"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M20 6L9 17L4 12"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      Scouted
+                    </Badge>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -151,13 +176,39 @@ export function Pit() {
                 })
               }
             >
-              <p className="text-base">
-                <span className="font-bold text-primary">{team.num}</span>
-                <span> | {team.name}</span>
-              </p>
-              {team.rank > 0 && (
-                <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
-              )}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-base">
+                    <span className="font-bold text-primary">{team.num}</span>
+                    <span> | {team.name}</span>
+                  </p>
+                  {team.rank > 0 && (
+                    <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+                  )}
+                </div>
+                {scoutedTeams.has(team.key) && (
+                  <Badge
+                    variant="outline"
+                    className="ml-2 border-primary text-primary"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="size-3 mr-1"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M20 6L9 17L4 12"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Scouted
+                  </Badge>
+                )}
+              </div>
             </div>
           ))}
         </div>

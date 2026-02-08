@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useEvent } from "./EventContext";
+import { useSync } from "./SyncContext";
 import { useTeamData } from "./TeamDataContext";
 import { useCompetition } from "./CompetitionDataContext";
 import {
@@ -40,6 +41,7 @@ const AnalyticsDataContext = createContext<
 
 export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
+  const { forceSyncNow } = useSync();
   const { teams } = useTeamData();
   const { tbaSchedule } = useCompetition();
 
@@ -132,8 +134,10 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
   }, [currentEvent, dbInitialized, fetchAnalytics]);
 
   const refresh = useCallback(async () => {
+    // Trigger sync first, then refresh data
+    await forceSyncNow();
     await pollingController.current?.forceRefresh();
-  }, []);
+  }, [forceSyncNow]);
 
   return (
     <AnalyticsDataContext.Provider

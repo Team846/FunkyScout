@@ -231,6 +231,8 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   last_error TEXT
 );
 
+
+
 CREATE INDEX IF NOT EXISTS idx_sync_queue_created
   ON sync_queue(created_at);
       `);

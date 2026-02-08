@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
+import { Badge } from "@shadcn/ui/components/badge.js";
 import {
   Command,
   CommandInput,
@@ -73,7 +74,8 @@ const nexusLabelToMatchKey = (label: string): string => {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
-  const { teams, tbaTeams, loading: teamsLoading } = useTeamData();
+  const { teams, tbaTeams, loading: teamsLoading, scoutedTeams } =
+    useTeamData();
   const { nexusMatches, tbaSchedule } = useCompetition();
   const { matchPreds } = useAnalytics();
 
@@ -734,9 +736,15 @@ export function DashboardPage() {
             {teams.map((team: any) => (
               <CommandItem
                 key={team.key}
-                className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px]"
+                className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
+                onSelect={() =>
+                  navigate({
+                    to: "/team-info",
+                    search: { teamKey: team.key },
+                  })
+                }
               >
-                <div className="flex w-full items-center justify-between">
+                <div className="flex w-full items-center justify-between gap-3">
                   <div className="flex-1">
                     <p className="text-base">
                       <span className="font-bold text-primary">{team.num}</span>
@@ -748,6 +756,15 @@ export function DashboardPage() {
                       </p>
                     )}
                   </div>
+                  {scoutedTeams.has(team.key) && (
+                    <Badge
+                      variant="outline"
+                      className="ml-2 border-primary text-primary"
+                    >
+
+                      Scouted
+                    </Badge>
+                  )}
                   <svg
                     viewBox="0 0 24 24"
                     style={{ width: 20, height: 20 }}
