@@ -15,6 +15,8 @@ import { Route as ResetRouteImport } from "./routes/reset"
 import { Route as PitscoutImagesRouteImport } from "./routes/pitscout-images"
 import { Route as PitscoutRouteImport } from "./routes/pitscout"
 import { Route as PitRouteImport } from "./routes/pit"
+import { Route as PicklistViewRouteImport } from "./routes/picklist-view"
+import { Route as PicklistCreatorRouteImport } from "./routes/picklist-creator"
 import { Route as Match_startRouteImport } from "./routes/match_start"
 import { Route as Match_playRouteImport } from "./routes/match_play"
 import { Route as Match_endRouteImport } from "./routes/match_end"
@@ -52,6 +54,16 @@ const PitscoutRoute = PitscoutRouteImport.update({
 const PitRoute = PitRouteImport.update({
   id: "/pit",
   path: "/pit",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PicklistViewRoute = PicklistViewRouteImport.update({
+  id: "/picklist-view",
+  path: "/picklist-view",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PicklistCreatorRoute = PicklistCreatorRouteImport.update({
+  id: "/picklist-creator",
+  path: "/picklist-creator",
   getParentRoute: () => rootRouteImport,
 } as any)
 const Match_startRoute = Match_startRouteImport.update({
@@ -104,6 +116,8 @@ export interface FileRoutesByFullPath {
   "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
+  "/picklist-creator": typeof PicklistCreatorRoute
+  "/picklist-view": typeof PicklistViewRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/pitscout-images": typeof PitscoutImagesRoute
@@ -120,6 +134,8 @@ export interface FileRoutesByTo {
   "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
+  "/picklist-creator": typeof PicklistCreatorRoute
+  "/picklist-view": typeof PicklistViewRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/pitscout-images": typeof PitscoutImagesRoute
@@ -137,6 +153,8 @@ export interface FileRoutesById {
   "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
+  "/picklist-creator": typeof PicklistCreatorRoute
+  "/picklist-view": typeof PicklistViewRoute
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/pitscout-images": typeof PitscoutImagesRoute
@@ -155,6 +173,8 @@ export interface FileRouteTypes {
     | "/match_end"
     | "/match_play"
     | "/match_start"
+    | "/picklist-creator"
+    | "/picklist-view"
     | "/pit"
     | "/pitscout"
     | "/pitscout-images"
@@ -171,6 +191,8 @@ export interface FileRouteTypes {
     | "/match_end"
     | "/match_play"
     | "/match_start"
+    | "/picklist-creator"
+    | "/picklist-view"
     | "/pit"
     | "/pitscout"
     | "/pitscout-images"
@@ -187,6 +209,8 @@ export interface FileRouteTypes {
     | "/match_end"
     | "/match_play"
     | "/match_start"
+    | "/picklist-creator"
+    | "/picklist-view"
     | "/pit"
     | "/pitscout"
     | "/pitscout-images"
@@ -204,6 +228,8 @@ export interface RootRouteChildren {
   Match_endRoute: typeof Match_endRoute
   Match_playRoute: typeof Match_playRoute
   Match_startRoute: typeof Match_startRoute
+  PicklistCreatorRoute: typeof PicklistCreatorRoute
+  PicklistViewRoute: typeof PicklistViewRoute
   PitRoute: typeof PitRoute
   PitscoutRoute: typeof PitscoutRoute
   PitscoutImagesRoute: typeof PitscoutImagesRoute
@@ -254,6 +280,20 @@ declare module "@tanstack/react-router" {
       path: "/pit"
       fullPath: "/pit"
       preLoaderRoute: typeof PitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/picklist-view": {
+      id: "/picklist-view"
+      path: "/picklist-view"
+      fullPath: "/picklist-view"
+      preLoaderRoute: typeof PicklistViewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/picklist-creator": {
+      id: "/picklist-creator"
+      path: "/picklist-creator"
+      fullPath: "/picklist-creator"
+      preLoaderRoute: typeof PicklistCreatorRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/match_start": {
@@ -324,6 +364,8 @@ const rootRouteChildren: RootRouteChildren = {
   Match_endRoute: Match_endRoute,
   Match_playRoute: Match_playRoute,
   Match_startRoute: Match_startRoute,
+  PicklistCreatorRoute: PicklistCreatorRoute,
+  PicklistViewRoute: PicklistViewRoute,
   PitRoute: PitRoute,
   PitscoutRoute: PitscoutRoute,
   PitscoutImagesRoute: PitscoutImagesRoute,

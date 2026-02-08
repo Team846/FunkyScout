@@ -435,23 +435,20 @@ export class SyncManager {
     // Insert picklist header
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
-      .upsert(
-        {
-          id,
-          event,
-          title,
-          uname,
-          uid,
-          type,
-          timestamp,
-          last_modified: Date.now(),
-        },
-        {
-          onConflict: "id",
-        },
-      );
+      .upsert({
+        id,
+        event,
+        title,
+        picklist: [], // deprecated field - send empty array
+        uname,
+        uid,
+        type,
+        timestamp: new Date(timestamp).toISOString(),
+        last_modified: new Date().toISOString(),
+      });
 
     if (picklistError) {
+      console.error("[SyncManager] Picklist creation error:", picklistError);
       throw picklistError;
     }
 
@@ -466,14 +463,12 @@ export class SyncManager {
             team: entry.team,
             rank: entry.rank,
             flags: entry.flags,
-            last_modified: Date.now(),
-          })),
-          {
-            onConflict: "event,id,team",
-          },
+            last_modified: new Date().toISOString(),
+          }))
         );
 
       if (entriesError) {
+        console.error("[SyncManager] Picklist entries error:", entriesError);
         throw entriesError;
       }
     }
@@ -492,7 +487,7 @@ export class SyncManager {
       .from("event_picklist")
       .update({
         title,
-        last_modified: Date.now(),
+        last_modified: new Date().toISOString(),
       })
       .eq("id", id);
 
@@ -521,11 +516,8 @@ export class SyncManager {
             team: entry.team,
             rank: entry.rank,
             flags: entry.flags,
-            last_modified: Date.now(),
-          })),
-          {
-            onConflict: "event,id,team",
-          },
+            last_modified: new Date().toISOString(),
+          }))
         );
 
       if (entriesError) {
@@ -546,7 +538,7 @@ export class SyncManager {
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
-        deleted_at: Date.now(),
+        deleted_at: new Date().toISOString(),
       })
       .eq("id", id);
 
@@ -558,7 +550,7 @@ export class SyncManager {
     const { error: entriesError } = await this.supabaseClient
       .from("event_picklist_entries")
       .update({
-        deleted_at: Date.now(),
+        deleted_at: new Date().toISOString(),
       })
       .eq("id", id);
 

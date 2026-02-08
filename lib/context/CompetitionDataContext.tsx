@@ -203,7 +203,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     };
   }, [dbInitialized, fetchScheduleStable, fetchNexusStable]);
 
-  // Handle event changes - clear state only (SyncContext handles refresh)
+  // Handle event changes - fetch data immediately
   useEffect(() => {
     if (!currentEvent) {
       setSchedule([]);
@@ -217,9 +217,11 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       setSchedule([]);
       setTbaSchedule({});
       setNexusMatches([]);
-      // NOTE: No forceRefresh() - SyncContext triggers via callbacks
+      // Fetch schedule and nexus data immediately when event changes
+      fetchSchedule();
+      fetchNexus();
     }
-  }, [currentEvent, dbInitialized]);
+  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");

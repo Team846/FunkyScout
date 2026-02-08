@@ -142,7 +142,7 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     return () => pollingController.current?.stop();
   }, [dbInitialized, fetchAnalyticsStable]);
 
-  // Handle event changes - clear state only (SyncContext handles refresh)
+  // Handle event changes - fetch data immediately
   useEffect(() => {
     if (!currentEvent) {
       setTeamEPAs({});
@@ -154,9 +154,10 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
       // Clear state to show empty UI while new data loads
       setTeamEPAs({});
       setMatchPreds({});
-      // NOTE: No forceRefresh() - SyncContext triggers via callbacks
+      // Fetch analytics immediately when event changes
+      fetchAnalytics();
     }
-  }, [currentEvent, dbInitialized]);
+  }, [currentEvent, dbInitialized, fetchAnalytics]);
 
   const refresh = useCallback(async () => {
     console.log("[AnalyticsDataContext] Refresh callback triggered");

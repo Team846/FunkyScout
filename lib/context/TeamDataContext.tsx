@@ -211,7 +211,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     return () => pollingController.current?.stop();
   }, [dbInitialized, fetchTeamsStable]);
 
-  // Handle event changes - clear state only (SyncContext handles refresh)
+  // Handle event changes - fetch teams immediately
   useEffect(() => {
     if (!currentEvent) {
       setTeams([]);
@@ -223,9 +223,10 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       // Clear state to show empty UI while new data loads
       setTeams([]);
       setTbaTeams([]);
-      // NOTE: No forceRefresh() - SyncContext triggers via callbacks
+      // Fetch teams immediately when event changes
+      fetchTeams();
     }
-  }, [currentEvent, dbInitialized]);
+  }, [currentEvent, dbInitialized, fetchTeams]);
 
   // Fetch scouted teams when event changes
   useEffect(() => {

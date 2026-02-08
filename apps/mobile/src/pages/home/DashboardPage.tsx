@@ -10,10 +10,18 @@ import {
   CommandEmpty,
 } from "@shadcn/ui/components/command.js";
 import { useEvent } from "@lib/context/EventContext";
+import {
+  getLocalUserData,
+  changeName,
+  useInviteCode,
+  fetchUserProfile,
+} from "@lib/supabase/user";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import type { NexusMatch } from "@lib/nexus";
+import { PicklistSelector } from "../../components/PicklistSelector";
+import { canCreatePicklist } from "@lib/utils/permissions";
 
 interface NextMatchData {
   matchLabel: string;
@@ -73,7 +81,8 @@ const nexusLabelToMatchKey = (label: string): string => {
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { currentEvent } = useEvent();
+  const { currentEvent} = useEvent();
+  const [userData, setUserData] = useState(getLocalUserData());
   const {
     teams,
     tbaTeams,
@@ -85,6 +94,7 @@ export function DashboardPage() {
 
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
   const [matchLoading, setMatchLoading] = useState(true);
+  const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
 
   const OUR_TEAM = 846;
 
@@ -640,7 +650,10 @@ export function DashboardPage() {
         </div>
 
         <div className="flex gap-4">
-          <div className="flex-1 rounded-2xl bg-muted p-6 aspect-square">
+          <div
+            className="flex-1 rounded-2xl bg-muted p-6 aspect-square cursor-pointer"
+            onClick={() => setPicklistSelectorOpen(true)}
+          >
             <div className="flex h-full flex-col justify-between">
               <p className="text-primary text-base">Open Picklist</p>
 
@@ -672,7 +685,14 @@ export function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex-1 rounded-2xl bg-muted p-6">
+          <div
+            className={`flex-1 rounded-2xl bg-muted p-6 ${canCreatePicklist(userData.role || "user") ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+            onClick={() => {
+              if (canCreatePicklist(userData.role || "user")) {
+                navigate({ to: "/picklist-creator" });
+              }
+            }}
+          >
             <div className="flex h-full flex-col justify-between">
               <p className="text-primary text-base">New Picklist</p>
 
@@ -789,6 +809,13 @@ export function DashboardPage() {
           </CommandList>
         </Command>
       </div>
+
+      {/* Picklist Selector Dialog */}
+      <PicklistSelector
+        open={picklistSelectorOpen}
+        onClose={() => setPicklistSelectorOpen(false)}
+        onSelect={(id) => navigate({ to: "/picklist-view", search: { id } })}
+      />
     </div>
   );
 }

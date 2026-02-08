@@ -198,6 +198,7 @@ export async function createPicklist(
 ): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
+  const nowISO = new Date(now).toISOString();
 
   // Cache picklist header locally
   const picklist: EventPicklist = {
@@ -208,8 +209,9 @@ export async function createPicklist(
     uname,
     uid,
     type,
-    timestamp: now,
-    last_modified: now,
+    timestamp: nowISO,
+    last_modified: nowISO,
+    deleted_at: null,
   };
 
   await cacheEventPicklists([picklist]);
@@ -221,7 +223,8 @@ export async function createPicklist(
     team: e.team,
     rank: e.rank,
     flags: e.flags,
-    last_modified: now,
+    last_modified: nowISO,
+    deleted_at: null,
   }));
 
   await cacheEventPicklistEntries(picklistEntries);
@@ -253,17 +256,18 @@ export async function updatePicklist(
   entries: { team: string; rank: number; flags?: any }[],
 ): Promise<void> {
   const now = Date.now();
+  const nowISO = new Date(now).toISOString();
 
   // Update picklist header locally (just the title and last_modified)
-  const picklist: EventPicklist = {
+  const picklist: Partial<EventPicklist> & { id: string; event: string } = {
     id,
     event: eventKey,
     title,
     picklist: null,
-    last_modified: now,
+    last_modified: nowISO,
   };
 
-  await cacheEventPicklists([picklist]);
+  await cacheEventPicklists([picklist as EventPicklist]);
 
   // Delete old entries and cache new ones
   const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
@@ -272,7 +276,8 @@ export async function updatePicklist(
     team: e.team,
     rank: e.rank,
     flags: e.flags,
-    last_modified: now,
+    last_modified: nowISO,
+    deleted_at: null,
   }));
 
   await cacheEventPicklistEntries(picklistEntries);
@@ -297,23 +302,24 @@ export async function deletePicklist(
   eventKey: string,
 ): Promise<void> {
   const now = Date.now();
+  const nowISO = new Date(now).toISOString();
 
   // Soft delete picklist locally
-  const picklist: EventPicklist = {
+  const picklist: Partial<EventPicklist> & { id: string; event: string } = {
     id,
     event: eventKey,
-    deleted_at: now,
-    last_modified: now,
+    deleted_at: nowISO,
+    last_modified: nowISO,
   };
 
-  await cacheEventPicklists([picklist]);
+  await cacheEventPicklists([picklist as EventPicklist]);
 
   // Soft delete entries locally
   const existingEntries = await getEventPicklistEntries(eventKey, id);
   const deletedEntries = existingEntries.map((e) => ({
     ...e,
-    deleted_at: now,
-    last_modified: now,
+    deleted_at: nowISO,
+    last_modified: nowISO,
   }));
 
   await cacheEventPicklistEntries(deletedEntries);

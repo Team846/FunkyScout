@@ -411,13 +411,43 @@ export async function getEventPicklistEntries(
 ): Promise<EventPicklistEntry[]> {
   await initDatabase();
   const rows = await execWorker(
-    "SELECT * FROM event_picklist_entries WHERE event = ? AND id = ? AND deleted_at IS NULL",
+    "SELECT * FROM event_picklist_entries WHERE event = ? AND id = ? AND deleted_at IS NULL ORDER BY rank ASC",
     [event, id],
   );
   return (rows as any[]).map((row) => ({
     ...row,
     flags: row.flags ? JSON.parse(row.flags) : null,
   }));
+}
+
+export async function getPicklistById(
+  eventKey: string,
+  picklistId: string,
+): Promise<{
+  picklist: EventPicklist | null;
+  entries: EventPicklistEntry[];
+}> {
+  await initDatabase();
+
+  // Get picklist metadata
+  const picklistRows = await execWorker(
+    "SELECT * FROM event_picklist WHERE event = ? AND id = ? AND deleted_at IS NULL",
+    [eventKey, picklistId],
+  );
+
+  const picklist = picklistRows.length > 0
+    ? {
+        ...(picklistRows[0] as any),
+        picklist: (picklistRows[0] as any).picklist
+          ? JSON.parse((picklistRows[0] as any).picklist)
+          : null,
+      }
+    : null;
+
+  // Get picklist entries sorted by rank
+  const entries = await getEventPicklistEntries(eventKey, picklistId);
+
+  return { picklist, entries };
 }
 
 export async function cacheEventPicklistEntries(

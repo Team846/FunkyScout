@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { toast } from "sonner";
@@ -61,7 +61,6 @@ interface PitData {
 
 function TeamInfoPage() {
   const { teamKey } = Route.useSearch();
-  const navigate = useNavigate();
   const { currentEvent } = useEvent();
   const [pitData, setPitData] = useState<PitData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,13 +168,13 @@ function TeamInfoPage() {
       <div className="mb-4 flex items-center gap-3">
         {/* Back Button */}
         <button
-          onClick={() => navigate({ to: "/home" })}
+          onClick={() => window.history.back()}
           className="text-primary"
           aria-label="Back"
         >
           <svg
             viewBox="0 0 24 24"
-            style = {{width:30, height:30}}
+            style={{ width: 30, height: 30 }}
             className="size-6"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -197,7 +196,7 @@ function TeamInfoPage() {
             onClick={() => setActiveTab("pit")}
             className={`rounded-lg w-full px-3 py-1.5 text-sm font-semibold transition ${
               activeTab === "pit"
-               ? "bg-primary text-muted shadow-sm"
+                ? "bg-primary text-muted shadow-sm"
                 : "bg-muted text-muted-foreground "
             }`}
           >
@@ -286,18 +285,18 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Depot</p>
                     <p
-                      className={`font-semibold ${pitData.movement.depot ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.movement?.depot ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.movement.depot ? "Yes" : "No"}
+                      {pitData.movement?.depot ? "Yes" : "No"}
                     </p>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Trough</p>
                     <p
-                      className={`font-semibold ${pitData.movement.trough ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.movement?.trough ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.movement.trough ? "Yes" : "No"}
+                      {pitData.movement?.trough ? "Yes" : "No"}
                     </p>
                   </div>
                 </div>
@@ -312,27 +311,27 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Ground</p>
                     <p
-                      className={`font-semibold ${pitData.intake.ground ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.intake?.ground ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.intake.ground ? "Yes" : "No"}
+                      {pitData.intake?.ground ? "Yes" : "No"}
                     </p>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Depot Intake</p>
                     <p
-                      className={`font-semibold ${pitData.intake.depot ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.intake?.depot ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.intake.depot ? "Yes" : "No"}
+                      {pitData.intake?.depot ? "Yes" : "No"}
                     </p>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Station</p>
                     <p
-                      className={`font-semibold ${pitData.intake.station ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.intake.station ? "Yes" : "No"}
+                      {pitData.intake?.station ? "Yes" : "No"}
                     </p>
                   </div>
                 </div>
@@ -347,18 +346,18 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Shoot while moving</p>
                     <p
-                      className={`font-semibold ${pitData.fuel.shootMoving ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.fuel.shootMoving ? "Yes" : "No"}
+                      {pitData.fuel?.shootMoving ? "Yes" : "No"}
                     </p>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Passing</p>
                     <p
-                      className={`font-semibold ${pitData.fuel.passing ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.fuel?.passing ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.fuel.passing ? "Yes" : "No"}
+                      {pitData.fuel?.passing ? "Yes" : "No"}
                     </p>
                   </div>
                 </div>
@@ -373,7 +372,7 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Max Level</p>
                     <p className="font-semibold text-foreground">
-                      {pitData.climb.level || "None"}
+                      {pitData.climb?.level || "None"}
                     </p>
                   </div>
                 </div>
