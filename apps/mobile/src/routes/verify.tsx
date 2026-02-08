@@ -39,7 +39,7 @@ function VerifyPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-dvh flex items-center justify-center bg-background p-4">
       <div className="flex flex-col items-center gap-4">
         {status === "loading" && (
           <p className="text-muted-foreground">Verifying your email...</p>

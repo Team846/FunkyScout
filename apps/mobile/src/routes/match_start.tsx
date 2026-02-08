@@ -5,35 +5,12 @@ import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { json } from "@tanstack/react-router/ssr/client";
+import { getMatchLabel } from "@lib/utils/match";
 type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
   practice?: boolean | null;
-};
-
-// Helper function to extract match label from match key
-const getMatchLabel = (matchKey: string): string => {
-  // Remove event prefix (e.g., "2025cada_qm24" -> "qm24")
-  const parts = matchKey.split("_");
-  if (parts.length < 2) return matchKey;
-
-  const matchPart = parts[1];
-
-  // Qualification matches: "qm24" -> "QM 24"
-  const qmMatch = matchPart.match(/^qm(\d+)$/i);
-  if (qmMatch) return `QM ${qmMatch[1]}`;
-
-  // Finals: "f1m1" -> "F1M1"
-  const finalMatch = matchPart.match(/^f(\d+)m(\d+)$/i);
-  if (finalMatch) return `F${finalMatch[1]}M${finalMatch[2]}`;
-
-  // Semifinals: "sf1m1" -> "SF1M1"
-  const sfMatch = matchPart.match(/^sf(\d+)m(\d+)$/i);
-  if (sfMatch) return `SF${sfMatch[1]}M${sfMatch[2]}`;
-
-  // Default: uppercase
-  return matchPart.toUpperCase();
 };
 
 //make every height fill, width fixed outside of the actions. inside container of field is
@@ -65,7 +42,7 @@ function MatchStart() {
   const toggle = () => {
     setIsActive(!isActive);
   };
-
+  
   const [isRotated, setIsRotated] = useState(false);
 
   const rotateField = () => {
@@ -232,26 +209,7 @@ function MatchStart() {
                 transform: "translate(-50%, -50%)",
               }}
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <g clipPath="url(#clip0_717_402)">
-                  <path
-                    d="M2 12C0.895431 12 0 11.1046 0 10C0 8.89543 0.895431 8 2 8H18C19.1046 8 20 8.89543 20 10C20 11.1046 19.1046 12 18 12L2 12Z"
-                    fill="#658f6eff"
-                  />
-                  <rect x="8" width="4" height="20" rx="2" fill="#658f6eff" />
-                </g>
-                <defs>
-                  <clipPath id="clip0_717_402">
-                    <rect width="20" height="20" fill="white" />
-                  </clipPath>
-                </defs>
-              </svg>
+              <div className="h-5 w-5 bg-[#658f6e]" />
             </div>
           )}
         </div>

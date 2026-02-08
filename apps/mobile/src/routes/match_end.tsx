@@ -4,6 +4,7 @@ import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
+import { getMatchLabel } from "@lib/utils/match";
 
 type MatchType = {
   teamNum?: string | null;
@@ -11,6 +12,7 @@ type MatchType = {
   alliance?: string | null;
   practice?: boolean | null;
 };
+
 
 export const Route = createFileRoute("/match_end")({
   component: MatchEnd,
@@ -95,7 +97,7 @@ function MatchEnd() {
         </Dialog>
         <div className="flex flex-col text-outfit text-xs justify-start items-centergap-[5px]">
           <p className="text-[#CDA745]">
-            {"Q" + matchNum?.substring(matchNum.indexOf("qm") + 2)}
+            {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
 
           <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>

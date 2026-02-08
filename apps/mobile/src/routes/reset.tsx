@@ -69,7 +69,7 @@ function ResetPasswordPage() {
   };
   if (!ready && !invalid) {
     return (
-      <div className="min-h-screen w-full bg-background flex items-center justify-center">
+      <div className="min-h-dvh w-full bg-background flex items-center justify-center">
         <p className="text-xl font-bold text-muted-foreground">
           Verifying reset link…
         </p>
@@ -79,7 +79,7 @@ function ResetPasswordPage() {
 
   if (invalid) {
     return (
-      <div className="min-h-screen w-full bg-background flex items-center justify-center p-4">
+      <div className="min-h-dvh w-full bg-background flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4">
           <p className="text-xl font-bold text-destructive text-center">
             This reset link is invalid or has expired.
@@ -98,7 +98,7 @@ function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen w-full bg-background flex items-center justify-center p-4">
+      <div className="min-h-dvh w-full bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4 text-center">
           <h1 className="text-xl font-bold text-primary">Password Updated!</h1>
           <p className="text-muted-foreground">Your password has been successfully changed.</p>
@@ -115,7 +115,7 @@ function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-background flex items-center justify-center p-4">
+    <div className="min-h-dvh w-full bg-background flex items-center justify-center p-4">
       <div className="w-72 px-5 py-6 flex flex-col gap-4">
         <form onSubmit={handleSubmit} noValidate className="w-full flex flex-col gap-3 bg-accent rounded-md px-3 py-4">
           <h1 className="text-xl font-bold text-primary text-center pb-1">Reset Password</h1>

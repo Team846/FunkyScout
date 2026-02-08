@@ -32,7 +32,7 @@ function IndexPage() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen w-full bg-background flex items-center justify-center">
+    <div className="min-h-dvh w-full bg-background flex items-center justify-center">
       <p className="text-muted-foreground">Loading...</p>
     </div>
   );

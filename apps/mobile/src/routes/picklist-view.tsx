@@ -267,7 +267,7 @@ function PicklistViewPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background">
+      <div className="flex items-center justify-center min-h-dvh bg-background">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     );
@@ -275,7 +275,7 @@ function PicklistViewPage() {
 
   if (!picklist) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-background">
+      <div className="flex flex-col items-center justify-center min-h-dvh bg-background">
         <div className="text-muted-foreground mb-4">Picklist not found</div>
         <Button onClick={() => navigate({ to: "/home" })}>
           Back to Dashboard

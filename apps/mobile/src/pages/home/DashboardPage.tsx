@@ -22,6 +22,7 @@ import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import type { NexusMatch } from "@lib/nexus";
 import { PicklistSelector } from "../../components/PicklistSelector";
 import { canCreatePicklist } from "@lib/utils/permissions";
+import { getMatchLabel } from "@lib/utils/match";
 import {
   getUserEventScheduleAssignments,
   type EventScheduleEntry,
@@ -374,24 +375,6 @@ export function DashboardPage() {
             }
           };
 
-          // Helper to extract match label
-          const getMatchLabel = (matchKey: string): string => {
-            const parts = matchKey.split("_");
-            if (parts.length < 2) return matchKey;
-            const matchPart = parts[1];
-
-            const qmMatch = matchPart.match(/^qm(\d+)$/i);
-            if (qmMatch) return `QM ${qmMatch[1]}`;
-
-            const finalMatch = matchPart.match(/^f(\d+)m(\d+)$/i);
-            if (finalMatch) return `F${finalMatch[1]}M${finalMatch[2]}`;
-
-            const sfMatch = matchPart.match(/^sf(\d+)m(\d+)$/i);
-            if (sfMatch) return `SF${sfMatch[1]}M${sfMatch[2]}`;
-
-            return matchPart.toUpperCase();
-          };
-
           setNextShift({
             matchLabel: getMatchLabel(assignment.match),
             matchKey: assignment.match,
@@ -412,9 +395,9 @@ export function DashboardPage() {
   }, [currentEvent, userData.name, tbaSchedule]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex h-full flex-col gap-4 overflow-hidden">
       {/* Top: stat squares + right filler card */}
-      <div className="flex gap-4">
+      <div className="flex gap-4 min-h-0">
         <div className="flex w-28 shrink-0 flex-col gap-4">
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
             <p className="text-4xl leading-none">846</p>
@@ -430,13 +413,13 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex min-h-[22rem] flex-1 items-center justify-center rounded-2xl bg-muted p-8">
+        <div className="flex min-h-[18rem] max-h-[60vh] flex-1 items-center justify-center rounded-2xl bg-muted p-6 overflow-hidden">
           {shiftLoading ? (
             <p className="text-sm text-border">Loading shift...</p>
           ) : !nextShift ? (
             <p className="text-sm text-border">No shifts assigned...</p>
           ) : (
-            <div className="flex h-full w-full flex-col justify-between gap-3">
+            <div className="flex h-full w-full flex-col justify-center gap-4">
               {(() => {
                 const displayLabel = nextShift.isPastShift
                   ? "since last shift"
@@ -462,8 +445,8 @@ export function DashboardPage() {
 
                 return (
                   <>
-                    <div className="flex flex-col items-start min-w-0">
-                      <p className="text-5xl font-semibold text-foreground truncate max-w-full">
+                    <div className="flex w-full flex-col items-start min-w-0 overflow-hidden">
+                      <p className="text-[clamp(2rem,8vw,3.25rem)] leading-none font-semibold text-foreground truncate max-w-full">
                         {displayTime}
                       </p>
                       <p className="text-md text-primary truncate max-w-full">
@@ -473,7 +456,7 @@ export function DashboardPage() {
 
                     <button
                       type="button"
-                      className={`flex w-full items-center justify-between rounded-2xl bg-background/40 px-5 py-4 text-left border-2 ${
+                      className={`flex w-full items-center justify-between rounded-2xl bg-background/40 px-4 py-3 text-left border-2 ${
                         nextShift.alliance === "red"
                           ? "border-chart-5/50"
                           : "border-chart-1/50"
@@ -524,7 +507,7 @@ export function DashboardPage() {
 
                     <button
                       type="button"
-                      className="border-2 border-primary/50 flex w-full items-center justify-between rounded-2xl bg-background/40 px-5 py-4 text-left"
+                      className="border-2 border-primary/50 flex w-full items-center justify-between rounded-2xl bg-background/40 px-4 py-3 text-left"
                       onClick={() =>
                         navigate({
                           to: "/team-info",
@@ -606,23 +589,23 @@ export function DashboardPage() {
             </div>
 
             {/* Alliances - colored boxes */}
-            <div className="flex items-stretch gap-3 mt-4">
+            <div className="flex items-stretch gap-2 mt-4">
               {/* Red Alliance Box */}
               <div
-                className={`flex-1 min-w-0 rounded-xl border-2 p-5 ${
+                className={`flex-1 min-w-0 rounded-xl border-2 p-3 ${
                   nextMatch.ourAlliance === "red"
                     ? "border-chart-5 bg-chart-5/10"
                     : "border-chart-5/50 bg-chart-5/5"
                 }`}
               >
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   {nextMatch.redTeams.map((teamNum) => (
                     <div
                       key={teamNum}
                       className="flex justify-between items-center gap-2"
                     >
                       <p
-                        className={`text-sm truncate ${
+                        className={`text-xs truncate ${
                           teamNum === OUR_TEAM
                             ? "font-bold text-primary"
                             : "text-foreground"
@@ -631,7 +614,7 @@ export function DashboardPage() {
                         {teamNum}
                       </p>
                       {nextMatch.teamRanks[teamNum] !== undefined && (
-                        <span className="text-xs text-muted-foreground/50 bg-background/50 rounded-full px-2 py-0.5 shrink-0">
+                        <span className="text-[10px] text-muted-foreground/60 bg-background/50 rounded-full px-1.5 py-0.5 shrink-0">
                           #{nextMatch.teamRanks[teamNum]}
                         </span>
                       )}
@@ -647,25 +630,25 @@ export function DashboardPage() {
 
               {/* Blue Alliance Box */}
               <div
-                className={`flex-1 min-w-0 rounded-xl border-2 p-5 ${
+                className={`flex-1 min-w-0 rounded-xl border-2 p-3 ${
                   nextMatch.ourAlliance === "blue"
                     ? "border-chart-1 bg-chart-1/10"
                     : "border-chart-1/50 bg-chart-1/5"
                 }`}
               >
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   {nextMatch.blueTeams.map((teamNum) => (
                     <div
                       key={teamNum}
                       className="flex justify-between items-center gap-2"
                     >
                       {nextMatch.teamRanks[teamNum] !== undefined && (
-                        <span className="text-xs text-muted-foreground/50 bg-background/50 rounded-full px-2 py-0.5 shrink-0">
+                        <span className="text-[10px] text-muted-foreground/60 bg-background/50 rounded-full px-1.5 py-0.5 shrink-0">
                           #{nextMatch.teamRanks[teamNum]}
                         </span>
                       )}
                       <p
-                        className={`text-sm text-right truncate ${
+                        className={`text-xs text-right truncate ${
                           teamNum === OUR_TEAM
                             ? "font-bold text-primary"
                             : "text-foreground"

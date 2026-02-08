@@ -4,6 +4,7 @@ import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { getMatchLabel } from "@lib/utils/match";
 
 type MatchType = {
   teamNum?: string | null;
@@ -11,6 +12,7 @@ type MatchType = {
   alliance?: string | null;
   practice?: boolean | null;
 };
+
 
 export const Route = createFileRoute("/match_play")({
   component: MatchPlay,
@@ -72,7 +74,7 @@ function MatchPlay() {
       <div className="flex flex-col justify-between items-center w-[62px] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
-            {"Q" + matchNum?.substring(matchNum.indexOf("qm") + 2)}
+            {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
 
           <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>

@@ -40,7 +40,7 @@ function EventsPage() {
   );
 
   return (
-    <div className="min-h-screen w-full bg-background flex items-center justify-center">
+    <div className="min-h-dvh w-full bg-background flex items-center justify-center">
       <div className="w-72 px-5 py-16 flex flex-col gap-4">
         {/* Search Bar */}
         <div className="relative mb-6">

@@ -17,7 +17,7 @@ function AuthPage() {
   const [authMode, setAuthMode] = useState<AuthMode>(AuthMode.SignIn);
 
   return (
-    <div className="min-h-screen w-full bg-background flex items-center justify-center">
+    <div className="min-h-dvh w-full bg-background flex items-center justify-center">
       <div className="w-72 px-5 py-6 flex flex-col gap-4">
         {/* Tab buttons for switching auth mode */}
         <div className="w-full h-11 flex gap-0">

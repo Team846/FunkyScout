@@ -11,6 +11,7 @@ import { Badge } from "@shadcn/ui/components/badge.tsx";
 import { useEvent } from "@lib/context/EventContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { getLocalUserData } from "@lib/supabase/user";
+import { getMatchLabel } from "@lib/utils/match";
 import {
   getUserEventScheduleAssignments,
   type EventScheduleEntry,
@@ -50,30 +51,6 @@ const formatRelativeTime = (timestamp: number): string => {
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
   }
-};
-
-// Helper function to extract match label from match key
-const getMatchLabel = (matchKey: string): string => {
-  // Remove event prefix (e.g., "2025cada_qm24" -> "qm24")
-  const parts = matchKey.split("_");
-  if (parts.length < 2) return matchKey;
-
-  const matchPart = parts[1];
-
-  // Qualification matches: "qm24" -> "QM 24"
-  const qmMatch = matchPart.match(/^qm(\d+)$/i);
-  if (qmMatch) return `QM ${qmMatch[1]}`;
-
-  // Finals: "f1m1" -> "F1M1"
-  const finalMatch = matchPart.match(/^f(\d+)m(\d+)$/i);
-  if (finalMatch) return `F${finalMatch[1]}M${finalMatch[2]}`;
-
-  // Semifinals: "sf1m1" -> "SF1M1"
-  const sfMatch = matchPart.match(/^sf(\d+)m(\d+)$/i);
-  if (sfMatch) return `SF${sfMatch[1]}M${sfMatch[2]}`;
-
-  // Default: uppercase
-  return matchPart.toUpperCase();
 };
 
 export function ShiftsPage() {
