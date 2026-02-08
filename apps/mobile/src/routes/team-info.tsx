@@ -1,9 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { Button } from "@shadcn/ui/components/button.tsx";
+import { toast } from "sonner";
 import { useEvent } from "@lib/context/EventContext";
-import { getEventTeamData } from "@lib/db";
+import { getEventTeamData, cacheEventTeamData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
+import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
+import type { DrawingData } from "../components/auto-path-drawer/types";
 
 type TeamInfoSearch = {
   teamKey?: string;
@@ -61,6 +65,8 @@ function TeamInfoPage() {
   const { currentEvent } = useEvent();
   const [pitData, setPitData] = useState<PitData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingAutoIndex, setEditingAutoIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!currentEvent || !teamKey) {
@@ -76,6 +82,74 @@ function TeamInfoPage() {
       setLoading(false);
     });
   }, [currentEvent, teamKey]);
+
+  const handleEditAuto = (index: number) => {
+    setEditingAutoIndex(index);
+    setDrawerOpen(true);
+  };
+
+  const handleSaveAutoDrawing = async (drawing: DrawingData | null) => {
+    if (!pitData || editingAutoIndex === null || !currentEvent || !teamKey) {
+      return;
+    }
+
+    try {
+      // Check if we're adding a new auto or updating existing
+      const isNewAuto = editingAutoIndex >= pitData.autos.length;
+
+      let updatedAutos;
+      if (isNewAuto) {
+        // Add new auto entry
+        updatedAutos = [
+          ...pitData.autos,
+          {
+            description: `${pitData.autos.length + 1}`,
+            climbDuringAuto: false,
+            drawing,
+          },
+        ];
+      } else {
+        // Update existing auto
+        updatedAutos = [...pitData.autos];
+        updatedAutos[editingAutoIndex] = {
+          ...updatedAutos[editingAutoIndex],
+          drawing,
+        };
+      }
+
+      const updatedData = {
+        ...pitData,
+        autos: updatedAutos,
+      };
+
+      // Save to local DB (correct function signature - one parameter)
+      await cacheEventTeamData([
+        {
+          event: currentEvent,
+          team: teamKey,
+          data: updatedData,
+          last_modified: Date.now(),
+        },
+      ]);
+
+      // Update local state
+      setPitData(updatedData);
+
+      toast.success(isNewAuto ? "New auto added!" : "Auto path updated!");
+      setDrawerOpen(false);
+      setEditingAutoIndex(null);
+
+      // Reload data to ensure consistency
+      const refreshedData = await getEventTeamData(currentEvent);
+      const teamData = refreshedData.find((t) => t.team === teamKey);
+      if (teamData && teamData.data) {
+        setPitData(teamData.data as PitData);
+      }
+    } catch (error) {
+      console.error("Failed to save auto drawing:", error);
+      toast.error("Failed to save auto path");
+    }
+  };
 
   if (!teamKey) {
     return (
@@ -130,6 +204,33 @@ function TeamInfoPage() {
             <p className="text-2xl font-bold text-primary">Team {teamNum}</p>
             <p className="text-lg text-foreground mt-1">{pitData.teamName}</p>
           </div>
+          {/* Images Section */}
+          {pitData.images &&
+            pitData.images.files &&
+            pitData.images.files.length > 0 && (
+              <div>
+                <p className="text-base text-primary font-semibold mb-3">
+                  IMAGES
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {pitData.images.files
+                    .filter((img) => img.uploaded)
+                    .map((img, idx) => (
+                      <div
+                        key={idx}
+                        className="aspect-square rounded-xl overflow-hidden bg-muted"
+                      >
+                        <img
+                          src={getImageUrl(img.path)}
+                          alt={`Team ${teamNum} - ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                          crossOrigin="anonymous"
+                        />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
 
           {/* Movement Section */}
           <div>
@@ -254,20 +355,65 @@ function TeamInfoPage() {
                     </div>
                     {auto.drawing && (
                       <div className="mt-4">
-                        <p className="text-sm text-muted-foreground mb-2">
-                          Path Visualization
-                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm text-muted-foreground">
+                            Path Visualization
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditAuto(idx)}
+                            className="h-7 text-xs"
+                          >
+                            Edit Path
+                          </Button>
+                        </div>
                         <div className="w-full bg-background rounded-xl border border-border p-4 flex items-center justify-center">
                           <AutoPathDisplay
                             drawing={auto.drawing}
+                            alliance="red"
                             className="max-w-full"
                           />
                         </div>
                       </div>
                     )}
+                    {!auto.drawing && (
+                      <div className="mt-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditAuto(idx)}
+                          className="w-full"
+                        >
+                          Add Auto Path
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
+              {/* Add New Auto Button */}
+              <Button
+                variant="outline"
+                onClick={() => handleEditAuto(pitData.autos.length)}
+                className="w-full mt-2"
+              >
+                + Add New Auto
+              </Button>
+            </div>
+          )}
+
+          {/* If no autos yet, show add button */}
+          {(!pitData.autos || pitData.autos.length === 0) && (
+            <div>
+              <p className="text-base text-primary font-semibold mb-3">AUTOS</p>
+              <Button
+                variant="outline"
+                onClick={() => handleEditAuto(0)}
+                className="w-full"
+              >
+                + Add First Auto
+              </Button>
             </div>
           )}
 
@@ -315,36 +461,21 @@ function TeamInfoPage() {
               </div>
             </div>
           )}
-
-          {/* Images Section */}
-          {pitData.images &&
-            pitData.images.files &&
-            pitData.images.files.length > 0 && (
-              <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  IMAGES
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  {pitData.images.files
-                    .filter((img) => img.uploaded)
-                    .map((img, idx) => (
-                      <div
-                        key={idx}
-                        className="aspect-square rounded-xl overflow-hidden bg-muted"
-                      >
-                        <img
-                          src={getImageUrl(img.path)}
-                          alt={`Team ${teamNum} - ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                          crossOrigin="anonymous"
-                        />
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
         </div>
       )}
+
+      {/* Auto Path Drawer */}
+      <AutoPathDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        autoIndex={editingAutoIndex ?? 0}
+        initialDrawing={
+          editingAutoIndex !== null && pitData?.autos[editingAutoIndex]
+            ? pitData.autos[editingAutoIndex].drawing
+            : null
+        }
+        onSave={handleSaveAutoDrawing}
+      />
     </div>
   );
 }

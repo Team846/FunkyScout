@@ -27,12 +27,16 @@ export const Route = createFileRoute("/match_start")({
 
 function MatchStart() {
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [coordinates, setCoordinates] = useState([1000, 1000]);
   const handleBackClick = () => {
-    navigate({ to: "/home" });
+    if (practice) {
+      navigate({ to: "/auth" });
+    } else {
+      navigate({ to: "/home" });
+    }
   };
   const toggle = () => {
     setIsActive(!isActive);
@@ -81,7 +85,9 @@ function MatchStart() {
             {"Q" + matchNum?.substring(matchNum.indexOf("qm") + 2)}
           </p>
 
-          <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>
+          <p>
+            {teamNum?.substring(teamNum.indexOf("frc") + 3)}
+          </p>
         </div>
         <div className="flex flex-col items-center gap-[30px]">
           <svg
@@ -254,6 +260,7 @@ function MatchStart() {
                 teamNum: teamNum,
                 matchNum: matchNum,
                 alliance: alliance,
+                practice: practice,
               },
             });
           }}

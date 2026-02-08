@@ -149,8 +149,9 @@ export class SyncManager {
     // Check if we've exceeded max retries
     if (item.retries >= DEFAULT_RETRY_CONFIG.maxRetries) {
       console.error(
-        `[SyncManager] Item ${item.id} exceeded max retries (${item.retries}), skipping`,
+        `[SyncManager] Item ${item.id} exceeded max retries (${item.retries}), removing from queue. Last error: ${item.last_error || "unknown"}`,
       );
+      await removeSyncQueueItem(item.id);
       return;
     }
 

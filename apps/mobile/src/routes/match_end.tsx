@@ -9,6 +9,7 @@ type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
+  practice?: boolean | null;
 };
 
 export const Route = createFileRoute("/match_end")({
@@ -18,13 +19,14 @@ export const Route = createFileRoute("/match_end")({
       teamNum: search.teamNum as string | undefined | null,
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
+      practice: search.practice as boolean | undefined | null,
     };
   },
 })
 
 function MatchEnd() {
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [coordinates, setCoordinates] = useState([1000, 1000]);
@@ -33,9 +35,12 @@ function MatchEnd() {
   const handlesetDialogOpenState = () => {
     setDialogOpenState(true);
   }
-
   const handleBackClick = () => {
-    navigate({ to: "/home" });
+    if (practice) {
+      navigate({ to: "/auth" });
+    } else {
+      navigate({ to: "/home" });
+    }
   };
   const toggle = () => {
     setIsActive(!isActive);
@@ -79,12 +84,13 @@ function MatchEnd() {
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
     <div className="flex flex-row justify-start items-center w-screen h-screen gap-[20px] p-[20px]">
       <div className="flex flex-col justify-between items-center w-[62px] h-full bg-black-950 gap-[10px] py-[12px] rounded-[15px] border-[2px] border-[#1E1E1E]">
-        <Dialog open = {isOpen}>
+        <Dialog open={isOpen} onOpenChange={setDialogOpenState}>
             <DialogContent className="flex items-center justify-center w-[80vw] h-[40vw]">
-                <div className = "bg-primary">
-                    hiwasdwasdwasd
+                <div className="flex flex-col items-center gap-4">
+                    <div className="bg-primary p-4 rounded-md text-foreground">
+                        hiwasdwasdwasd
+                    </div>
                 </div>
-                
             </DialogContent>
         </Dialog>
         <div className="flex flex-col text-outfit text-xs justify-start items-centergap-[5px]">

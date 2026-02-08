@@ -17,19 +17,19 @@ export function LoginForm() {
 
   const handlePractie = () => {
     showPracticePopup(true);
-  }
+  };
 
-  function practiceNav(AllianceColor : string) {
+  function practiceNav(AllianceColor: string) {
     navigate({
       to: "/match_start",
       search: {
         teamNum: "test",
         matchNum: "test",
         alliance: AllianceColor,
-        practice: true
-      }
-    })
-    return
+        practice: true,
+      },
+    });
+    return;
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -92,7 +92,9 @@ export function LoginForm() {
         toast.error("Failed to send reset email");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send reset email");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to send reset email"
+      );
     } finally {
       setLoading(false);
     }
@@ -122,23 +124,58 @@ export function LoginForm() {
             onClick={() => setForgotPasswordMode(false)}
             className="flex-1 h-full bg-accent border border-border text-primary"
           >
-            <svg style={{ width: '24px', height: '24px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M9 14L5 10L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M5 10H16C17.0609 10 18.0783 10.4214 18.8284 11.1716C19.5786 11.9217 20 12.9391 20 14C20 15.0609 19.5786 16.0783 18.8284 16.8284C18.0783 17.5786 17.0609 18 16 18H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              style={{ width: "24px", height: "24px" }}
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M9 14L5 10L9 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M5 10H16C17.0609 10 18.0783 10.4214 18.8284 11.1716C19.5786 11.9217 20 12.9391 20 14C20 15.0609 19.5786 16.0783 18.8284 16.8284C18.0783 17.5786 17.0609 18 16 18H15"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </Button>
           <Button
             type="submit"
             variant="secondary"
             disabled={loading}
-            className={`flex-1 h-full border border-border ${validateEmail(resetEmail)
-              ? "bg-secondary text-primary"
-              : "bg-accent text-primary"
-              }`}
+            className={`flex-1 h-full border border-border ${
+              validateEmail(resetEmail)
+                ? "bg-secondary text-primary"
+                : "bg-accent text-primary"
+            }`}
           >
-            <svg style={{ width: '24px', height: '24px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15 14L19 10L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M19 10H8C6.93913 10 5.92172 10.4214 5.17157 11.1716C4.42143 11.9217 4 12.9391 4 14C4 15.0609 4.42143 16.0783 5.17157 16.8284C5.92172 17.5786 6.93913 18 8 18H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              style={{ width: "24px", height: "24px" }}
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M15 14L19 10L15 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M19 10H8C6.93913 10 5.92172 10.4214 5.17157 11.1716C4.42143 11.9217 4 12.9391 4 14C4 15.0609 4.42143 16.0783 5.17157 16.8284C5.92172 17.5786 6.93913 18 8 18H9"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </Button>
         </div>
@@ -152,26 +189,26 @@ export function LoginForm() {
       noValidate
       className="w-full flex flex-col gap-3 bg-accent rounded-md px-3 py-4"
     >
-      <Dialog open={isPracticePopup}>
-          <DialogContent className="flex w-[80vw] gap-2.5 p-2.5 justify-center items-center h-[80vw]">
-            <div className="flex-1 w-full bg-black h-[40vw]">
-              <Button 
-              className="w-full h-full bg-background border-2 border-[#246190]"
+      <Dialog open={isPracticePopup} onOpenChange={showPracticePopup}>
+        <DialogContent className="flex w-[80vw] gap-2.5 p-2.5 justify-center items-center h-[80vw]">
+          <div className="flex-1 w-full bg-black h-[40vw]">
+            <Button
+              className="w-full h-full hover:bg-[#246190]/50 bg-background border-2 border-[#246190]"
               onClick={() => practiceNav("blue")}
-              >
-                <p className="text-[15px] text-[#246190]">Blue Alliance</p>
-              </Button>
-            </div>
-            <div className="flex-1 w-full h-[40vw]">
-              <Button 
-              className="w-full h-full bg-background border-2 border-[#B73E3E]"
+            >
+              <p className="text-[15px] text-[#246190]">Blue Alliance</p>
+            </Button>
+          </div>
+          <div className="flex-1 w-full h-[40vw]">
+            <Button
+              className="w-full h-full hover:bg-[#B73E3E]/50 bg-background border-2 border-[#B73E3E]"
               onClick={() => practiceNav("red")}
-              >
-                <p className="text-[15px] text-[#B73E3E]">Red Alliance</p>
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            >
+              <p className="text-[15px] text-[#B73E3E]">Red Alliance</p>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Input
         type="email"
         value={email}
@@ -203,8 +240,9 @@ export function LoginForm() {
           type="submit"
           variant="default"
           disabled={loading}
-          className={`size-8 rounded-full flex transition-colors ${validateEmail(email) ? "bg-primary" : "bg-ring"
-            }`}
+          className={`size-8 rounded-full flex transition-colors ${
+            validateEmail(email) ? "bg-primary" : "bg-ring"
+          }`}
         >
           <svg
             className="size-6 text-background"
@@ -212,7 +250,10 @@ export function LoginForm() {
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path d="M16.175 13H4V11H16.175L10.575 5.4L12 4L20 12L12 20L10.575 18.6L16.175 13Z" fill="currentColor" />
+            <path
+              d="M16.175 13H4V11H16.175L10.575 5.4L12 4L20 12L12 20L10.575 18.6L16.175 13Z"
+              fill="currentColor"
+            />
           </svg>
         </Button>
       </div>

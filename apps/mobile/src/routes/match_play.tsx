@@ -9,6 +9,7 @@ type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
+  practice?: boolean | null;
 };
 
 export const Route = createFileRoute("/match_play")({
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/match_play")({
       teamNum: search.teamNum as string | undefined | null,
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
+      practice: search.practice as boolean | undefined | null,
     };
   },
 });
@@ -25,9 +27,13 @@ export const Route = createFileRoute("/match_play")({
 function MatchPlay() {
   const navigate = useNavigate();
   const handleBackClick = () => {
-    navigate({ to: "/home" });
+    if (practice) {
+      navigate({ to: "/auth" });
+    } else {
+      navigate({ to: "/home" });
+    }
   };
-  const { teamNum, matchNum, alliance } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [seconds, setSeconds] = useState(0);
 
   const [isAuto, setIsAuto] = useState(true);
