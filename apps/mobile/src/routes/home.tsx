@@ -17,6 +17,9 @@ import {
   fetchUserProfile,
 } from "@lib/supabase/user";
 import { useEvent } from "@lib/context/EventContext";
+import { useTeamData } from "@lib/context/TeamDataContext";
+import { useCompetition } from "@lib/context/CompetitionDataContext";
+import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import { DashboardPage } from "../pages/home/DashboardPage";
 import { ShiftsPage } from "../pages/home/ShiftsPage";
 import { DataPage } from "../pages/home/DataPage";
@@ -41,12 +44,18 @@ function HomePage() {
   const [userData, setUserData] = useState(getLocalUserData());
   const [currentPage, setCurrentPage] = useState<PageType>("dashboard");
 
+  // Context refresh functions
+  const { refresh: refreshTeams } = useTeamData();
+  const { refresh: refreshCompetition } = useCompetition();
+  const { refresh: refreshAnalytics } = useAnalytics();
+
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [renamingUser, setRenamingUser] = useState(false);
   const [applyingCode, setApplyingCode] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -104,6 +113,25 @@ function HomePage() {
     }
   };
 
+  const handleRefresh = async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refreshTeams(),
+        refreshCompetition(),
+        refreshAnalytics(),
+      ]);
+      toast.success("Data refreshed successfully!");
+    } catch (error) {
+      console.error("Refresh failed:", error);
+      toast.error("Failed to refresh data");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background p-1">
       {/* Header */}
@@ -112,16 +140,16 @@ function HomePage() {
           <p className="text-primary text-md font-light">
             {PAGE_TITLES[currentPage]}
           </p>
-          <div className="ml-auto flex items-center gap-2">
-            <p className="text-xs text-background bg-primary px-2 py-1 rounded-md max-w-18 truncate">
+          <div className="ml-auto flex items-center gap-2 min-w-0">
+            <p className="text-xs text-background bg-primary px-2 py-1 rounded-md truncate max-w-[72px] shrink">
               {userData.name || "User"}
             </p>
-            <p className="text-xs text-background bg-muted-foreground px-2 py-1 rounded-md max-w-18 truncate">
+            <p className="text-xs text-background bg-muted-foreground px-2 py-1 rounded-md shrink-0">
               {userData.role || "user"}
             </p>
             {currentEvent && (
-              <p className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                {currentEvent}
+              <p className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md shrink-0">
+                {currentEvent.replace(/^\d{4}/, "")}
               </p>
             )}
 
@@ -248,6 +276,33 @@ function HomePage() {
 
           <div className="flex-1 overflow-y-auto py-2">
             <div className="flex flex-col gap-4">
+              {/* Refresh Data Button */}
+              <div className="flex justify-center px-2">
+                <Button
+                  variant="ghost"
+                  className="w-full border border-chart-2 bg-chart-2/10 text-chart-2 hover:bg-chart-2/20 hover:text-chart-2"
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    style={{ width: 16, height: 16 }}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`mr-2 ${refreshing ? "animate-spin" : ""}`}
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                  </svg>
+                  <span className="text-md">
+                    {refreshing ? "Refreshing..." : "Refresh Data"}
+                  </span>
+                </Button>
+              </div>
+
               {/* Rename Section */}
               <div className="flex flex-col gap-3">
                 <h3 className="text-sm text-muted-foreground text-left">

@@ -11,7 +11,7 @@ export interface PollingConfig {
 }
 
 export const DEFAULT_POLLING_CONFIG: PollingConfig = {
-  baseInterval: 60_000,
+  baseInterval: 120_000,
   maxInterval: 300_000,
   backoffFactor: 1.5,
 };
@@ -36,7 +36,7 @@ export class PollingController {
   constructor(
     label: string,
     task: () => Promise<void>,
-    config = DEFAULT_POLLING_CONFIG,
+    config = DEFAULT_POLLING_CONFIG
   ) {
     this.label = label;
     this.task = task;
@@ -82,16 +82,16 @@ export class PollingController {
       errorHandler.handleError(
         error,
         `Polling:${this.label}`,
-        ErrorSeverity.LOW,
+        ErrorSeverity.LOW
       );
 
       // Failure: exponential backoff
       this.currentInterval = Math.min(
         this.currentInterval * this.config.backoffFactor,
-        this.config.maxInterval,
+        this.config.maxInterval
       );
       console.log(
-        `[PollingController][${this.label}] Task failed, backing off to ${this.currentInterval}ms`,
+        `[PollingController][${this.label}] Task failed, backing off to ${this.currentInterval}ms`
       );
     } finally {
       if (this.isRunning) {
@@ -107,7 +107,7 @@ export class PollingController {
 export async function fetchWithRetry<T>(
   fn: () => Promise<T>,
   context: string,
-  retries = 3,
+  retries = 3
 ): Promise<T | null> {
   let lastError: any;
   for (let i = 0; i < retries; i++) {
@@ -116,7 +116,7 @@ export async function fetchWithRetry<T>(
     } catch (error) {
       lastError = error;
       console.log(
-        `[FetchWithRetry][${context}] Attempt ${i + 1} failed, retrying...`,
+        `[FetchWithRetry][${context}] Attempt ${i + 1} failed, retrying...`
       );
       // Wait a bit before retry
       await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
