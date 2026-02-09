@@ -149,10 +149,8 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (dbInitialized) {
-      // Clear state to show empty UI while new data loads
-      setTeamEPAs({});
-      setMatchPreds({});
       // Fetch analytics immediately when event changes
+      // Note: Keep old state visible until new data loads to prevent flashing
       fetchAnalytics();
     }
   }, [currentEvent, dbInitialized, fetchAnalytics]);

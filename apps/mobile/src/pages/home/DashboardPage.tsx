@@ -455,15 +455,15 @@ export function DashboardPage() {
         <div className="flex w-28 shrink-0 flex-col gap-4">
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
             <p className="text-4xl leading-none">{shiftStats.done}</p>
-            <p className="mt-3 text-xs text-primary">shifts done</p>
+            <p className="mt-3 text-sm text-primary">shifts done</p>
           </div>
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
             <p className="text-4xl leading-none">{shiftStats.left}</p>
-            <p className="mt-3 text-xs text-primary">shifts left</p>
+            <p className="mt-3 text-sm text-primary">shifts left</p>
           </div>
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
             <p className="text-4xl leading-none">{shiftStats.untilBreak}</p>
-            <p className="mt-3 text-xs text-primary">till break</p>
+            <p className="mt-3 text-sm text-primary">till break</p>
           </div>
         </div>
 
@@ -473,7 +473,7 @@ export function DashboardPage() {
           ) : !nextShift ? (
             <p className="text-sm text-border">No shifts assigned...</p>
           ) : (
-            <div className="flex h-full w-full flex-col justify-center gap-4">
+            <div className="flex h-full w-full flex-col justify-center gap-6">
               {(() => {
                 const displayLabel = nextShift.isPastShift
                   ? "since last shift"

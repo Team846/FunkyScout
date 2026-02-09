@@ -212,14 +212,20 @@ export async function cacheEventTeamData(data: EventTeamData[]): Promise<void> {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
+      // Clear old team data for this event before inserting fresh data
+      if (data.length > 0) {
+        const event = data[0].event;
+        await execWorker("DELETE FROM event_team_data WHERE event = ?", [event]);
+      }
+
       for (const item of data) {
         await execWorker(
-          `INSERT INTO event_team_data 
+          `INSERT INTO event_team_data
            (event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(event, team) DO UPDATE SET
-           data=excluded.data, team_name=excluded.team_name, name=excluded.name, 
-           uid=excluded.uid, assigned=excluded.assigned, timestamp=excluded.timestamp, 
+           data=excluded.data, team_name=excluded.team_name, name=excluded.name,
+           uid=excluded.uid, assigned=excluded.assigned, timestamp=excluded.timestamp,
            last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [
             item.event,
@@ -274,13 +280,19 @@ export async function cacheEventSchedule(
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
+      // Clear old schedule for this event before inserting fresh data
+      if (entries.length > 0) {
+        const event = entries[0].event;
+        await execWorker("DELETE FROM event_schedule WHERE event = ?", [event]);
+      }
+
       for (const entry of entries) {
         await execWorker(
-          `INSERT INTO event_schedule 
+          `INSERT INTO event_schedule
            (event, match, team, alliance, name, uid, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(event, match, team) DO UPDATE SET
-           alliance=excluded.alliance, name=excluded.name, uid=excluded.uid, 
+           alliance=excluded.alliance, name=excluded.name, uid=excluded.uid,
            last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [
             entry.event,
@@ -334,13 +346,21 @@ export async function cacheEventMatchData(
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
+      // Clear old match data for this event before inserting fresh data
+      if (data.length > 0) {
+        const event = data[0].event;
+        await execWorker("DELETE FROM event_match_data WHERE event = ?", [
+          event,
+        ]);
+      }
+
       for (const item of data) {
         await execWorker(
-          `INSERT INTO event_match_data 
+          `INSERT INTO event_match_data
            (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(event, match, team, uid, timestamp) DO UPDATE SET
-           alliance=excluded.alliance, data_raw=excluded.data_raw, data=excluded.data, 
+           alliance=excluded.alliance, data_raw=excluded.data_raw, data=excluded.data,
            name=excluded.name, last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [
             item.event,
@@ -386,15 +406,21 @@ export async function cacheEventPicklists(
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
+      // Clear old picklists for this event before inserting fresh data
+      if (picklists.length > 0) {
+        const event = picklists[0].event;
+        await execWorker("DELETE FROM event_picklist WHERE event = ?", [event]);
+      }
+
       for (const list of picklists) {
         await execWorker(
-          `INSERT INTO event_picklist 
+          `INSERT INTO event_picklist
            (id, event, title, picklist, uname, uid, type, timestamp, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
-           event=excluded.event, title=excluded.title, picklist=excluded.picklist, 
-           uname=excluded.uname, uid=excluded.uid, type=excluded.type, 
-           timestamp=excluded.timestamp, last_modified=excluded.last_modified, 
+           event=excluded.event, title=excluded.title, picklist=excluded.picklist,
+           uname=excluded.uname, uid=excluded.uid, type=excluded.type,
+           timestamp=excluded.timestamp, last_modified=excluded.last_modified,
            deleted_at=excluded.deleted_at`,
           [
             list.id,
@@ -470,13 +496,24 @@ export async function cacheEventPicklistEntries(
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
+      // Clear ALL old entries for this event before inserting fresh data
+      // This ensures deleted entries are removed from cache across all picklists
+      if (entries.length > 0) {
+        const event = entries[0].event;
+        await execWorker(
+          "DELETE FROM event_picklist_entries WHERE event = ?",
+          [event],
+        );
+      }
+
+      // Insert fresh data (with UPSERT to handle duplicates)
       for (const entry of entries) {
         await execWorker(
-          `INSERT INTO event_picklist_entries 
+          `INSERT INTO event_picklist_entries
            (event, id, team, rank, flags, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(event, id, team) DO UPDATE SET
-           rank=excluded.rank, flags=excluded.flags, 
+           rank=excluded.rank, flags=excluded.flags,
            last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [
             entry.event,

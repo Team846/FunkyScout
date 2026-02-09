@@ -17,6 +17,7 @@ import {
   getEventSchedule,
   getEventMatchData,
   getEventPicklistEntries,
+  getTbaTeams,
   type EventTeamData,
   type EventMatchData,
   type EventScheduleEntry,
@@ -40,6 +41,16 @@ export async function putTeamData(
     uid?: string;
   },
 ): Promise<void> {
+  // Validate team exists in TBA for this event
+  const tbaTeams = await getTbaTeams(eventKey);
+  const teamExists = tbaTeams.some((t) => t.team_key === teamNumber);
+
+  if (!teamExists) {
+    throw new Error(
+      `Team ${teamNumber} is not registered for event ${eventKey}`,
+    );
+  }
+
   const now = Date.now();
 
   // 1. Write to local SQLite immediately (optimistic)
@@ -349,6 +360,16 @@ export async function putTeamDataWithImages(
     uid?: string;
   },
 ): Promise<void> {
+  // Validate team exists in TBA for this event
+  const tbaTeams = await getTbaTeams(eventKey);
+  const teamExists = tbaTeams.some((t) => t.team_key === teamNumber);
+
+  if (!teamExists) {
+    throw new Error(
+      `Team ${teamNumber} is not registered for event ${eventKey}`,
+    );
+  }
+
   const now = Date.now();
 
   console.log(

@@ -288,11 +288,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (dbInitialized) {
-      // Clear state to show empty UI while new data loads
-      setSchedule([]);
-      setTbaSchedule({});
-      setNexusMatches([]);
       // Fetch schedule, nexus, and picklist data immediately when event changes
+      // Note: Keep old state visible until new data loads to prevent flashing
       fetchSchedule();
       fetchNexus();
       fetchPicklists();

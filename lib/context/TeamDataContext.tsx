@@ -106,49 +106,30 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           fetchTBAEventTeams(currentEvent),
         ]);
 
-        const tbaMap = new Map((tbaTeamsData ?? []).map((t: { key: string; team: number; name: string; rank: number; record: { wins: number; losses: number; ties: number }; nextMatch: string | null; lastMatch: string | null }) => [t.key, t]));
+        // Use TBA teams as source of truth - only include teams from TBA
+        const supabaseMap = new Map(
+          (supabaseTeams ?? []).map((t: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => [
+            t.team,
+            t,
+          ])
+        );
 
-        const merged: TbaTeam[] = (supabaseTeams ?? []).map((t: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
-          const tbaTeam = tbaMap.get(t.team);
+        const merged: TbaTeam[] = (tbaTeamsData ?? []).map((tbaTeam: { key: string; team: number; name: string; rank: number; record: { wins: number; losses: number; ties: number }; nextMatch: string | null; lastMatch: string | null }) => {
+          const supabaseTeam = supabaseMap.get(tbaTeam.key);
           return {
             event: currentEvent,
-            team_key: t.team,
-            team_number: parseInt(t.team.replace("frc", ""), 10),
-            name:
-              tbaTeam?.name ??
-              t.team_name ??
-              `Team ${t.team.replace("frc", "")}`,
-            rank: tbaTeam?.rank ?? t.rank ?? 0,
-            wins: tbaTeam?.record?.wins ?? 0,
-            losses: tbaTeam?.record?.losses ?? 0,
-            ties: tbaTeam?.record?.ties ?? 0,
-            next_match: tbaTeam?.nextMatch || undefined,
-            last_match: tbaTeam?.lastMatch || undefined,
+            team_key: tbaTeam.key,
+            team_number: tbaTeam.team,
+            name: tbaTeam.name ?? supabaseTeam?.team_name ?? `Team ${tbaTeam.team}`,
+            rank: tbaTeam.rank ?? 0,
+            wins: tbaTeam.record?.wins ?? 0,
+            losses: tbaTeam.record?.losses ?? 0,
+            ties: tbaTeam.record?.ties ?? 0,
+            next_match: tbaTeam.nextMatch || undefined,
+            last_match: tbaTeam.lastMatch || undefined,
             last_synced: Date.now(),
           };
         });
-
-        // Handle B-teams or teams only in TBA
-        const supabaseKeys = new Set(
-          (supabaseTeams ?? []).map((t: { team: string }) => t.team)
-        );
-        for (const tbaTeam of tbaTeamsData ?? []) {
-          if (!supabaseKeys.has(tbaTeam.key)) {
-            merged.push({
-              event: currentEvent,
-              team_key: tbaTeam.key,
-              team_number: tbaTeam.team,
-              name: tbaTeam.name,
-              rank: tbaTeam.rank,
-              wins: tbaTeam.record?.wins ?? 0,
-              losses: tbaTeam.record?.losses ?? 0,
-              ties: tbaTeam.record?.ties ?? 0,
-              next_match: tbaTeam.nextMatch || undefined,
-              last_match: tbaTeam.lastMatch || undefined,
-              last_synced: Date.now(),
-            });
-          }
-        }
 
         merged.sort((a, b) => a.team_number - b.team_number);
         if (merged.length > 0) {
@@ -221,10 +202,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (dbInitialized) {
-      // Clear state to show empty UI while new data loads
-      setTeams([]);
-      setTbaTeams([]);
       // Fetch teams immediately when event changes
+      // Note: Keep old state visible until new data loads to prevent flashing
       fetchTeams();
     }
   }, [currentEvent, dbInitialized, fetchTeams]);
