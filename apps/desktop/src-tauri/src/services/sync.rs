@@ -4,6 +4,7 @@
 
 use super::{StatboticsService, SupabaseService, TbaService};
 use anyhow::{Context, Result};
+use sea_orm::sqlx;
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,15 +15,23 @@ pub struct SyncService {
     supabase: SupabaseService,
     statbotics: StatboticsService,
     current_event: String,
+    sqlx_pool: sqlx::SqlitePool,
 }
 
 impl SyncService {
-    pub fn new(tba: TbaService, supabase: SupabaseService, statbotics: StatboticsService, current_event: String) -> Self {
+    pub fn new(
+        tba: TbaService,
+        supabase: SupabaseService,
+        statbotics: StatboticsService,
+        current_event: String,
+        sqlx_pool: sqlx::SqlitePool,
+    ) -> Self {
         Self {
             tba,
             supabase,
             statbotics,
             current_event,
+            sqlx_pool,
         }
     }
 
@@ -178,6 +187,7 @@ impl SyncService {
                     "opr": opr,
                     "dpr": dpr,
                     "ccwm": ccwm,
+                    "last_synced": chrono::Utc::now().timestamp_millis(), // For mobile TBA failsafe detection
                 });
 
                 Some(json!({
@@ -197,6 +207,12 @@ impl SyncService {
                 println!("{}", serde_json::to_string_pretty(first_record).unwrap_or_default());
             }
 
+            // Cache to local SQLite FIRST (for offline support)
+            self.cache_teams_to_sqlite(&team_data_records)
+                .await
+                .context("Failed to cache team data to SQLite")?;
+
+            // Then push to Supabase
             self.supabase
                 .bulk_upsert_team_data(team_data_records)
                 .await
@@ -303,6 +319,12 @@ impl SyncService {
                 println!("{}", serde_json::to_string_pretty(first_record).unwrap_or_default());
             }
 
+            // Cache to local SQLite FIRST (for offline support)
+            self.cache_schedule_to_sqlite(&schedule_records)
+                .await
+                .context("Failed to cache schedule to SQLite")?;
+
+            // Then push to Supabase
             self.supabase
                 .bulk_upsert_schedule(schedule_records)
                 .await
@@ -312,6 +334,107 @@ impl SyncService {
         }
 
         println!("[Sync] Sync cycle complete");
+        Ok(())
+    }
+
+    /// Cache team data to local SQLite
+    /// Matches Supabase structure for offline support
+    async fn cache_teams_to_sqlite(&self, team_records: &[serde_json::Value]) -> Result<()> {
+        if team_records.is_empty() {
+            return Ok(());
+        }
+
+        // Ensure event exists in event_list (for foreign key constraint)
+        sqlx::query(
+            "INSERT INTO event_list (event, alias, date, last_modified)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+        )
+        .bind(&self.current_event)
+        .bind(&self.current_event)
+        .bind("")
+        .bind(chrono::Utc::now().timestamp_millis())
+        .execute(&self.sqlx_pool)
+        .await
+        .context("Failed to ensure event exists in event_list")?;
+
+        // Bulk insert/update team data
+        for record in team_records {
+            let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let team_name = record.get("team_name").and_then(|v| v.as_str());
+            let data_json = record.get("data").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+
+            sqlx::query(
+                "INSERT INTO event_team_data (event, team, team_name, data, last_modified)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(event, team) DO UPDATE SET
+                   team_name = excluded.team_name,
+                   data = excluded.data,
+                   last_modified = excluded.last_modified"
+            )
+            .bind(&self.current_event)
+            .bind(team)
+            .bind(team_name)
+            .bind(&data_json)
+            .bind(chrono::Utc::now().timestamp_millis())
+            .execute(&self.sqlx_pool)
+            .await
+            .context(format!("Failed to cache team {} to SQLite", team))?;
+        }
+
+        println!("[Sync] Cached {} teams to local SQLite", team_records.len());
+        Ok(())
+    }
+
+    /// Cache schedule data to local SQLite
+    /// Matches Supabase structure for offline support
+    async fn cache_schedule_to_sqlite(&self, schedule_records: &[serde_json::Value]) -> Result<()> {
+        if schedule_records.is_empty() {
+            return Ok(());
+        }
+
+        // Bulk insert/update schedule data
+        for record in schedule_records {
+            let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
+            let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let alliance = record.get("alliance").and_then(|v| v.as_str()).unwrap_or("");
+            let est_time = record.get("est_time").and_then(|v| v.as_i64());
+            let red_score = record.get("red_score").and_then(|v| v.as_i64());
+            let blue_score = record.get("blue_score").and_then(|v| v.as_i64());
+            let red_win_prob = record.get("red_win_prob").and_then(|v| v.as_f64());
+            let predicted_red_score = record.get("predicted_red_score").and_then(|v| v.as_f64());
+            let predicted_blue_score = record.get("predicted_blue_score").and_then(|v| v.as_f64());
+
+            sqlx::query(
+                "INSERT INTO event_schedule (event, match, team, alliance, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(event, match, team) DO UPDATE SET
+                   alliance = excluded.alliance,
+                   est_time = excluded.est_time,
+                   red_score = excluded.red_score,
+                   blue_score = excluded.blue_score,
+                   red_win_prob = excluded.red_win_prob,
+                   predicted_red_score = excluded.predicted_red_score,
+                   predicted_blue_score = excluded.predicted_blue_score,
+                   last_modified = excluded.last_modified"
+            )
+            .bind(&self.current_event)
+            .bind(match_key)
+            .bind(team)
+            .bind(alliance)
+            .bind(est_time)
+            .bind(red_score)
+            .bind(blue_score)
+            .bind(red_win_prob)
+            .bind(predicted_red_score)
+            .bind(predicted_blue_score)
+            .bind(chrono::Utc::now().timestamp_millis())
+            .execute(&self.sqlx_pool)
+            .await
+            .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
+        }
+
+        println!("[Sync] Cached {} schedule entries to local SQLite", schedule_records.len());
         Ok(())
     }
 

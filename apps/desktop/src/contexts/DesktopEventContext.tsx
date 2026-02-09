@@ -28,7 +28,10 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
         const config = await invoke<any>("get_config");
         _setCurrentEvent(config.event_key || null);
       } catch (error) {
-        console.error("[DesktopEvent] Failed to load event from Tauri store:", error);
+        console.error(
+          "[DesktopEvent] Failed to load event from Tauri store:",
+          error
+        );
       } finally {
         setLoading(false);
       }
@@ -49,7 +52,10 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
 
       console.log("[DesktopEvent] Event changed to:", event);
     } catch (error) {
-      console.error("[DesktopEvent] Failed to save event to Tauri store:", error);
+      console.error(
+        "[DesktopEvent] Failed to save event to Tauri store:",
+        error
+      );
       throw error;
     }
   }, []);

@@ -124,65 +124,138 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       console.log("[TeamData] Fetching from network");
       setLoading(true);
       try {
-        const [supabaseTeams, tbaStatuses] = await Promise.all([
-          getTeams(currentEvent),
-          fetchTBATeamStatuses(currentEvent),
-        ]);
+        const supabaseTeams = await getTeams(currentEvent);
 
-        // Use Supabase teams as source of truth (populated on bootstrap)
-        // Merge with TBA statuses for rankings only
-        const merged: TbaTeam[] = (supabaseTeams ?? []).map((supabaseTeam: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
-          const teamStatus = tbaStatuses?.[supabaseTeam.team];
-          const teamNumber = parseInt(supabaseTeam.team.replace("frc", ""), 10);
-
-          return {
-            event: currentEvent,
-            team_key: supabaseTeam.team,
-            team_number: teamNumber,
-            name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
-            // Rankings from TBA (mobile's responsibility - freshest data with 2min polling)
-            rank: teamStatus?.qual?.ranking?.rank ?? supabaseTeam.data?.rank ?? 0,
-            wins: teamStatus?.qual?.ranking?.record?.wins ?? supabaseTeam.data?.record?.wins ?? 0,
-            losses: teamStatus?.qual?.ranking?.record?.losses ?? supabaseTeam.data?.record?.losses ?? 0,
-            ties: teamStatus?.qual?.ranking?.record?.ties ?? supabaseTeam.data?.record?.ties ?? 0,
-            // EPA from Supabase (desktop keeps this fresh every 30s)
-            epa: supabaseTeam.data?.epa ?? null,
-            // OPR/DPR from Supabase (desktop keeps this fresh)
-            opr: supabaseTeam.data?.opr ?? undefined,
-            dpr: supabaseTeam.data?.dpr ?? undefined,
-            next_match: teamStatus?.next_match_key || supabaseTeam.data?.next_match || undefined,
-            last_match: teamStatus?.last_match_key || supabaseTeam.data?.last_match || undefined,
-            last_synced: Date.now(),
-          };
+        // TBA Failsafe: Check if desktop has synced recently (within last 5 minutes)
+        // Desktop updates Supabase every 30s with TBA data (rank, EPA, OPR)
+        // If no recent update, desktop is likely not running
+        const now = Date.now();
+        const hasRecentDesktopSync = (supabaseTeams ?? []).some((t: any) => {
+          // Check if data.last_synced exists and is recent
+          const lastSynced = t.data?.last_synced;
+          if (lastSynced && typeof lastSynced === 'number') {
+            return (now - lastSynced) < 5 * 60 * 1000; // 5 minutes
+          }
+          return false;
         });
 
-        merged.sort((a, b) => a.team_number - b.team_number);
-        if (merged.length > 0) {
-          await cacheTbaTeams(currentEvent, merged);
-          setTeams(
-            merged.map((t) => ({
-              key: t.team_key,
-              num: t.team_number,
-              name: t.name ?? "",
-              rank: t.rank ?? 0,
-            }))
-          );
-          setTbaTeams(
-            merged.map((t) => ({
-              key: t.team_key,
-              team: t.team_number,
-              name: t.name ?? "",
-              rank: t.rank ?? 0,
-              record: {
-                wins: t.wins ?? 0,
-                losses: t.losses ?? 0,
-                ties: t.ties ?? 0,
-              },
-              nextMatch: t.next_match || null,
-              lastMatch: t.last_match || null,
-            }))
-          );
-          hasLoadedDataRef.current = true;
+        // Fetch TBA statuses for rankings (mobile always does this for fresh rankings)
+        const tbaStatuses = await fetchTBATeamStatuses(currentEvent);
+
+        if (hasRecentDesktopSync || (supabaseTeams ?? []).length === 0) {
+          // Normal flow: Desktop is running, use Supabase + TBA
+          console.log("[TeamData] Desktop is active, using Supabase + TBA data");
+
+          const merged: TbaTeam[] = (supabaseTeams ?? []).map((supabaseTeam: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
+            const teamStatus = tbaStatuses?.[supabaseTeam.team];
+            const teamNumber = parseInt(supabaseTeam.team.replace("frc", ""), 10);
+
+            return {
+              event: currentEvent,
+              team_key: supabaseTeam.team,
+              team_number: teamNumber,
+              name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
+              // Rankings from TBA (mobile's responsibility - freshest data with 2min polling)
+              rank: teamStatus?.qual?.ranking?.rank ?? supabaseTeam.data?.rank ?? 0,
+              wins: teamStatus?.qual?.ranking?.record?.wins ?? supabaseTeam.data?.record?.wins ?? 0,
+              losses: teamStatus?.qual?.ranking?.record?.losses ?? supabaseTeam.data?.record?.losses ?? 0,
+              ties: teamStatus?.qual?.ranking?.record?.ties ?? supabaseTeam.data?.record?.ties ?? 0,
+              // EPA from Supabase (desktop keeps this fresh every 30s)
+              epa: supabaseTeam.data?.epa ?? null,
+              // OPR/DPR from Supabase (desktop keeps this fresh)
+              opr: supabaseTeam.data?.opr ?? undefined,
+              dpr: supabaseTeam.data?.dpr ?? undefined,
+              next_match: teamStatus?.next_match_key || supabaseTeam.data?.next_match || undefined,
+              last_match: teamStatus?.last_match_key || supabaseTeam.data?.last_match || undefined,
+              last_synced: Date.now(),
+            };
+          });
+
+          merged.sort((a, b) => a.team_number - b.team_number);
+          if (merged.length > 0) {
+            await cacheTbaTeams(currentEvent, merged);
+            setTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                num: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+              }))
+            );
+            setTbaTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                team: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+                record: {
+                  wins: t.wins ?? 0,
+                  losses: t.losses ?? 0,
+                  ties: t.ties ?? 0,
+                },
+                nextMatch: t.next_match || null,
+                lastMatch: t.last_match || null,
+              }))
+            );
+            hasLoadedDataRef.current = true;
+          }
+        } else {
+          // TBA Failsafe: Desktop not running, use TBA-only data
+          console.warn("[TeamData] Desktop not detected (no recent sync), using TBA failsafe");
+
+          // Use Supabase teams for base info, but acknowledge EPA/OPR will be stale
+          const merged: TbaTeam[] = (supabaseTeams ?? []).map((supabaseTeam: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
+            const teamStatus = tbaStatuses?.[supabaseTeam.team];
+            const teamNumber = parseInt(supabaseTeam.team.replace("frc", ""), 10);
+
+            return {
+              event: currentEvent,
+              team_key: supabaseTeam.team,
+              team_number: teamNumber,
+              name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
+              // Use TBA for rankings
+              rank: teamStatus?.qual?.ranking?.rank ?? 0,
+              wins: teamStatus?.qual?.ranking?.record?.wins ?? 0,
+              losses: teamStatus?.qual?.ranking?.record?.losses ?? 0,
+              ties: teamStatus?.qual?.ranking?.record?.ties ?? 0,
+              // EPA/OPR will be stale or null (desktop not running)
+              epa: supabaseTeam.data?.epa ?? null,
+              opr: supabaseTeam.data?.opr ?? undefined,
+              dpr: supabaseTeam.data?.dpr ?? undefined,
+              next_match: teamStatus?.next_match_key || undefined,
+              last_match: teamStatus?.last_match_key || undefined,
+              last_synced: Date.now(),
+            };
+          });
+
+          merged.sort((a, b) => a.team_number - b.team_number);
+          if (merged.length > 0) {
+            await cacheTbaTeams(currentEvent, merged);
+            setTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                num: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+              }))
+            );
+            setTbaTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                team: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+                record: {
+                  wins: t.wins ?? 0,
+                  losses: t.losses ?? 0,
+                  ties: t.ties ?? 0,
+                },
+                nextMatch: t.next_match || null,
+                lastMatch: t.last_match || null,
+              }))
+            );
+            hasLoadedDataRef.current = true;
+          }
         }
       } finally {
         setLoading(false);

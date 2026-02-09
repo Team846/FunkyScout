@@ -34,11 +34,9 @@ pub fn run() {
 
             tauri::async_runtime::spawn(async move {
                 let state = AppState::new(&handle).await.expect("Failed to initialize AppState");
-                let app_state = Mutex::new(state);
 
                 // Read config from store, fallback to env vars
-                let (tba_key, supabase_url, supabase_key, event_key) = {
-                    let state = app_state.lock().unwrap();
+                let (tba_key, supabase_url, supabase_key, event_key, sqlx_pool) = {
                     let config = state.app_store.get_config();
 
                     // Use store values if present, otherwise try env vars (with VITE_ prefix)
@@ -71,9 +69,15 @@ pub fn run() {
                         config.event_key.clone()
                     };
 
-                    (tba, sb_url, sb_key, evt)
+                    // Get SQLite pool BEFORE moving state into Mutex
+                    let pool = state.database.as_ref()
+                        .expect("Database should be initialized")
+                        .get_sqlx_pool();
+
+                    (tba, sb_url, sb_key, evt, pool)
                 };
 
+                let app_state = Mutex::new(state);
                 handle.manage(app_state);
 
                 // Start background sync service if configured
@@ -90,6 +94,7 @@ pub fn run() {
                         supabase_service,
                         statbotics_service,
                         event_key,
+                        sqlx_pool,
                     );
 
                     println!("[App] Starting background sync service...");
@@ -110,6 +115,10 @@ pub fn run() {
             commands::tba::fetch_tba_match_schedule,
             commands::config::save_config,
             commands::config::get_config,
+            commands::db::get_teams,
+            commands::db::get_schedule,
+            commands::db::get_picklists,
+            commands::db::get_picklist_entries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

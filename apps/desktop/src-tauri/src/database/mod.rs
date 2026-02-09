@@ -40,5 +40,21 @@ impl LocalDatabase {
 
         Ok(())
     }
+
+    /// Get the SQLite pool for direct SQL operations
+    /// Used by sync service for bulk inserts
+    pub fn get_sqlx_pool(&self) -> sea_orm::sqlx::SqlitePool {
+        use sea_orm::DbBackend;
+
+        // Get the underlying sqlx pool from SeaORM's DatabaseConnection
+        // SeaORM wraps sqlx::SqlitePool for SQLite databases
+        match self.db.get_database_backend() {
+            DbBackend::Sqlite => {
+                // Use the internal pool accessor - SeaORM provides this via SqlxSqliteConnector
+                self.db.get_sqlite_connection_pool().clone()
+            },
+            _ => unreachable!("Database should be SQLite"),
+        }
+    }
 }
 

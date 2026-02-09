@@ -123,7 +123,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           filter: `event=eq.${currentEvent}`,
         },
         (payload: any) => {
-          console.log("[DesktopRealtime] event_picklist_entries update:", payload);
+          console.log(
+            "[DesktopRealtime] event_picklist_entries update:",
+            payload
+          );
           triggerRefresh();
         }
       )
@@ -147,10 +150,14 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           console.error("[DesktopRealtime] Subscription error:", err);
         }
         if (status === "SUBSCRIBED") {
-          console.log("[DesktopRealtime] ✅ Successfully subscribed to realtime updates");
+          console.log(
+            "[DesktopRealtime] ✅ Successfully subscribed to realtime updates"
+          );
           setIsConnected(true);
         } else if (status === "CHANNEL_ERROR") {
-          console.error("[DesktopRealtime] ❌ Channel error - check Supabase realtime config");
+          console.error(
+            "[DesktopRealtime] ❌ Channel error - check Supabase realtime config"
+          );
           setIsConnected(false);
         } else if (status === "TIMED_OUT") {
           console.error("[DesktopRealtime] ❌ Connection timed out");

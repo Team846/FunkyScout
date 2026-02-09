@@ -6,7 +6,10 @@ import "./index.css";
 
 import { routeTree } from "./routeTree.gen.ts";
 import { DesktopEventProvider } from "./contexts/DesktopEventContext";
+import { DesktopSyncProvider } from "./contexts/DesktopSyncContext";
 import { DesktopRealtimeProvider } from "./contexts/DesktopRealtimeContext";
+import { DesktopTeamDataProvider } from "./contexts/DesktopTeamDataContext";
+import { DesktopCompetitionDataProvider } from "./contexts/DesktopCompetitionDataContext";
 
 const router = createRouter({ routeTree });
 
@@ -23,9 +26,15 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <DesktopEventProvider>
-        <DesktopRealtimeProvider>
-          <RouterProvider router={router} />
-        </DesktopRealtimeProvider>
+        <DesktopSyncProvider router={router}>
+          <DesktopRealtimeProvider>
+            <DesktopTeamDataProvider>
+              <DesktopCompetitionDataProvider>
+                <RouterProvider router={router} />
+              </DesktopCompetitionDataProvider>
+            </DesktopTeamDataProvider>
+          </DesktopRealtimeProvider>
+        </DesktopSyncProvider>
       </DesktopEventProvider>
     </StrictMode>,
   );

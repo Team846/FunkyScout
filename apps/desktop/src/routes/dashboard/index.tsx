@@ -19,6 +19,8 @@ import {
 import { Activity, Users, Calendar, RefreshCw } from "lucide-react";
 import { useDesktopEvent } from "../../contexts/DesktopEventContext";
 import { useDesktopRealtime } from "../../contexts/DesktopRealtimeContext";
+import { useDesktopTeamData } from "../../contexts/DesktopTeamDataContext";
+import { useDesktopCompetitionData } from "../../contexts/DesktopCompetitionDataContext";
 
 export const Route = createFileRoute("/dashboard/")({
   beforeLoad: async () => {
@@ -43,111 +45,30 @@ interface EventListEntry {
 function DashboardPage() {
   const { currentEvent, setCurrentEvent } = useDesktopEvent();
   const { registerRefreshCallback, isConnected } = useDesktopRealtime();
+  const { teams } = useDesktopTeamData();
+  const { schedule, picklists, picklistEntries } = useDesktopCompetitionData();
 
   const [syncStatus, setSyncStatus] = useState<{
     isRunning: boolean;
     lastSync: Date | null;
-    teamCount: number;
-    matchCount: number;
   }>({
     isRunning: true, // Background sync is always running
     lastSync: null,
-    teamCount: 0,
-    matchCount: 0,
   });
 
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [events, setEvents] = useState<EventListEntry[]>([]);
   const [needsRestart, setNeedsRestart] = useState(false);
-  const [picklists, setPicklists] = useState<any[]>([]);
-  const [picklistEntries, setPicklistEntries] = useState<any[]>([]);
 
-  // Fetch counts from Supabase
-  const fetchCounts = async () => {
-    if (!currentEvent) return;
-
-    try {
-      // Get team count
-      const { count: teamCount } = await supabase
-        .from("event_team_data")
-        .select("*", { count: "exact", head: true })
-        .eq("event", currentEvent)
-        .is("deleted_at", null);
-
-      // Get match count
-      const { count: matchCount } = await supabase
-        .from("event_schedule")
-        .select("*", { count: "exact", head: true })
-        .eq("event", currentEvent)
-        .is("deleted_at", null);
-
+  // Update last sync time when data changes
+  useEffect(() => {
+    if (teams.length > 0 || schedule.length > 0) {
       setSyncStatus((prev) => ({
         ...prev,
-        teamCount: teamCount || 0,
-        matchCount: matchCount || 0,
         lastSync: new Date(),
       }));
-    } catch (error) {
-      console.error("Failed to fetch counts:", error);
     }
-  };
-
-  // Fetch picklists from Supabase
-  const fetchPicklists = async () => {
-    if (!currentEvent) return;
-
-    try {
-      // Fetch picklists
-      const { data: picklistsData, error: picklistsError } = await supabase
-        .from("event_picklist")
-        .select("*")
-        .eq("event", currentEvent)
-        .is("deleted_at", null)
-        .order("timestamp", { ascending: false });
-
-      if (picklistsError) throw picklistsError;
-
-      setPicklists(picklistsData || []);
-
-      // Fetch entries for all picklists
-      if (picklistsData && picklistsData.length > 0) {
-        const picklistIds = picklistsData.map((p) => p.id);
-        const { data: entriesData, error: entriesError } = await supabase
-          .from("event_picklist_entries")
-          .select("*")
-          .eq("event", currentEvent)
-          .in("id", picklistIds)
-          .is("deleted_at", null)
-          .order("rank", { ascending: true });
-
-        if (entriesError) throw entriesError;
-
-        setPicklistEntries(entriesData || []);
-      } else {
-        setPicklistEntries([]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch picklists:", error);
-    }
-  };
-
-  // Register realtime callback and initial fetch
-  useEffect(() => {
-    if (!currentEvent) return;
-
-    // Register dashboard's refresh callbacks
-    const unregister = registerRefreshCallback(() => {
-      console.log("[Dashboard] Realtime update received, refreshing data");
-      fetchCounts();
-      fetchPicklists();
-    });
-
-    // Initial fetch
-    fetchCounts();
-    fetchPicklists();
-
-    return unregister;
-  }, [currentEvent, registerRefreshCallback]);
+  }, [teams, schedule]);
 
   // Load events and user on mount
   useEffect(() => {
@@ -230,7 +151,10 @@ function DashboardPage() {
               <h2 className="text-3xl font-bold">Dashboard</h2>
             </div>
             <div className="flex items-center gap-4">
-              <Select value={currentEvent || undefined} onValueChange={handleEventChange}>
+              <Select
+                value={currentEvent || undefined}
+                onValueChange={handleEventChange}
+              >
                 <SelectTrigger className="w-[240px]">
                   <SelectValue placeholder="Select event" />
                 </SelectTrigger>
@@ -243,7 +167,10 @@ function DashboardPage() {
                 </SelectContent>
               </Select>
               {needsRestart && (
-                <Button variant="outline" onClick={() => window.location.reload()}>
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.reload()}
+                >
                   Restart to Apply
                 </Button>
               )}
@@ -260,7 +187,9 @@ function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full ${ syncStatus.isRunning ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
+                <div
+                  className={`h-2 w-2 rounded-full ${syncStatus.isRunning ? "bg-green-500 animate-pulse" : "bg-gray-400"}`}
+                />
                 <p className="text-2xl font-bold">
                   {syncStatus.isRunning ? "Active" : "Stopped"}
                 </p>
@@ -279,9 +208,9 @@ function DashboardPage() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{syncStatus.teamCount}</div>
+              <div className="text-2xl font-bold">{teams.length}</div>
               <p className="text-xs text-muted-foreground">
-                From TBA + Supabase
+                From SQLite cache
               </p>
             </CardContent>
           </Card>
@@ -292,16 +221,16 @@ function DashboardPage() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{syncStatus.matchCount}</div>
-              <p className="text-xs text-muted-foreground">
-                Schedule entries
-              </p>
+              <div className="text-2xl font-bold">{schedule.length}</div>
+              <p className="text-xs text-muted-foreground">Schedule entries</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Sync Interval</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                Sync Interval
+              </CardTitle>
               <RefreshCw className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -318,18 +247,21 @@ function DashboardPage() {
           <CardHeader>
             <CardTitle>Realtime Sync Active</CardTitle>
             <CardDescription>
-              Desktop polls TBA every 30s and pushes to Supabase. All apps receive
-              updates via realtime subscriptions (&lt; 1 second latency).
+              Desktop polls TBA every 30s and pushes to Supabase. All apps
+              receive updates via realtime subscriptions (&lt; 1 second
+              latency).
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm">
               <p>
-                <strong>Bidirectional Flow:</strong> Desktop ↔ Supabase ↔ Mobile
+                <strong>Bidirectional Flow:</strong> Desktop ↔ Supabase ↔
+                Mobile
               </p>
               <p className="text-muted-foreground">
-                Desktop receives instant updates when mobile users submit pit scouting,
-                create picklists, or assign shifts. Backend sync logs available in terminal.
+                Desktop receives instant updates when mobile users submit pit
+                scouting, create picklists, or assign shifts. Backend sync logs
+                available in terminal.
               </p>
             </div>
           </CardContent>
@@ -342,16 +274,21 @@ function DashboardPage() {
             {picklists.length === 0 ? (
               <Card className="col-span-full">
                 <CardContent className="py-8 text-center text-muted-foreground">
-                  No picklists found. Create one on mobile to test realtime updates!
+                  No picklists found. Create one on mobile to test realtime
+                  updates!
                 </CardContent>
               </Card>
             ) : (
               picklists.map((picklist) => {
-                const entries = picklistEntries.filter((e) => e.id === picklist.id);
+                const entries = picklistEntries.filter(
+                  (e) => e.id === picklist.id
+                );
                 return (
                   <Card key={picklist.id}>
                     <CardHeader>
-                      <CardTitle className="text-lg">{picklist.title}</CardTitle>
+                      <CardTitle className="text-lg">
+                        {picklist.title}
+                      </CardTitle>
                       <CardDescription>
                         By {picklist.uname} • {entries.length} teams
                       </CardDescription>
@@ -389,7 +326,8 @@ function DashboardPage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-4">
-            💡 Test realtime: Edit picklists on mobile or desktop and watch them sync instantly!
+            💡 Test realtime: Edit picklists on mobile or desktop and watch them
+            sync instantly!
           </p>
         </div>
       </main>
