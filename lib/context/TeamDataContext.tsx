@@ -16,6 +16,7 @@ import {
   cacheTbaTeams,
   getEventTeamData,
   type TbaTeam,
+  type EventTeamData,
 } from "@lib/db";
 import {
   PollingController,
@@ -71,7 +72,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     const cached = await getTbaTeams(currentEvent);
     if (cached.length > 0) {
       setTeams(
-        cached.map((t) => ({
+        cached.map((t: TbaTeam) => ({
           key: t.team_key,
           num: t.team_number,
           name: t.name ?? "",
@@ -79,7 +80,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
         }))
       );
       setTbaTeams(
-        cached.map((t) => ({
+        cached.map((t: TbaTeam) => ({
           key: t.team_key,
           team: t.team_number,
           name: t.name ?? "",
@@ -105,9 +106,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           fetchTBAEventTeams(currentEvent),
         ]);
 
-        const tbaMap = new Map((tbaTeamsData ?? []).map((t) => [t.key, t]));
+        const tbaMap = new Map((tbaTeamsData ?? []).map((t: { key: string; team: number; name: string; rank: number; record: { wins: number; losses: number; ties: number }; nextMatch: string | null; lastMatch: string | null }) => [t.key, t]));
 
-        const merged: TbaTeam[] = (supabaseTeams ?? []).map((t: any) => {
+        const merged: TbaTeam[] = (supabaseTeams ?? []).map((t: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
           const tbaTeam = tbaMap.get(t.team);
           return {
             event: currentEvent,
@@ -129,7 +130,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
         // Handle B-teams or teams only in TBA
         const supabaseKeys = new Set(
-          (supabaseTeams ?? []).map((t: any) => t.team)
+          (supabaseTeams ?? []).map((t: { team: string }) => t.team)
         );
         for (const tbaTeam of tbaTeamsData ?? []) {
           if (!supabaseKeys.has(tbaTeam.key)) {
@@ -235,10 +236,10 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    getEventTeamData(currentEvent).then((data) => {
+    getEventTeamData(currentEvent).then((data: EventTeamData[]) => {
       const scouted = new Set(
         data
-          .filter((t) => {
+          .filter((t: EventTeamData) => {
             // Only count as scouted if data exists and is not empty
             if (!t.data) return false;
             if (Array.isArray(t.data)) return t.data.length > 0;
@@ -246,7 +247,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               return Object.keys(t.data).length > 0;
             return false;
           })
-          .map((t) => t.team)
+          .map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
       console.log(`[TeamData] Found ${scouted.size} scouted teams`);
@@ -265,7 +266,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       const data = await getEventTeamData(currentEventRef.current);
       const scouted = new Set(
         data
-          .filter((t) => {
+          .filter((t: EventTeamData) => {
             // Only count as scouted if data exists and is not empty
             if (!t.data) return false;
             if (Array.isArray(t.data)) return t.data.length > 0;
@@ -273,7 +274,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               return Object.keys(t.data).length > 0;
             return false;
           })
-          .map((t) => t.team)
+          .map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
     }

@@ -326,6 +326,10 @@ importers:
       zod:
         specifier: ^4.1.12
         version: 4.1.12
+    devDependencies:
+      '@types/minimatch':
+        specifier: ^6.0.0
+        version: 6.0.0
 
 packages:
 

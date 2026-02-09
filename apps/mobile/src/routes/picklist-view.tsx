@@ -395,6 +395,7 @@ function PicklistViewPage() {
                   key={entry.team}
                   entry={entry}
                   teamName={getTeamName(entry.team)}
+                  teamRank={teams.find((t: any) => t.key === entry.team)?.rank}
                   onToggleExclude={toggleExclude}
                   canEdit={canEdit}
                   onNavigateToTeam={(team) =>
@@ -410,6 +411,7 @@ function PicklistViewPage() {
               key={entry.team}
               entry={entry}
               teamName={getTeamName(entry.team)}
+              teamRank={teams.find((t: any) => t.key === entry.team)?.rank}
               onNavigateToTeam={(team) =>
                 navigate({ to: "/team-info", search: { teamKey: team } })
               }
@@ -425,12 +427,14 @@ function PicklistViewPage() {
 function SortableTeamRow({
   entry,
   teamName,
+  teamRank,
   onToggleExclude,
   canEdit,
   onNavigateToTeam,
 }: {
   entry: EventPicklistEntry;
   teamName: string;
+  teamRank?: number;
   onToggleExclude: (team: string) => void;
   canEdit: boolean;
   onNavigateToTeam: (team: string) => void;
@@ -455,16 +459,19 @@ function SortableTeamRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 min-h-[80px] ${
+      className={`rounded-2xl bg-muted px-5 py-6 mb-3 last:mb-0 min-h-[80px] ${
         isDragging ? "ring-2 ring-primary" : ""
       }`}
     >
       <div className="flex w-full items-center justify-between gap-3">
         <div
-          className={`flex items-center gap-3 min-w-0 ${
+          className={`flex items-center gap-2 min-w-0 ${
             isExcluded ? "opacity-60" : ""
           }`}
         >
+          <div className="text-xs font-semibold text-primary w-4 text-center">
+            {entry.rank}
+          </div>
           {canEdit && (
             <div
               {...attributes}
@@ -501,7 +508,7 @@ function SortableTeamRow({
               <p className="text-sm text-border">
                 Rank{" "}
                 <span className="text-primary font-semibold">
-                  #{entry.rank}
+                  #{teamRank ?? "—"}
                 </span>
               </p>
               {isExcluded && <Badge variant="destructive">Excluded</Badge>}
@@ -511,13 +518,36 @@ function SortableTeamRow({
 
         <div className="flex items-center gap-2">
           {canEdit && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
+              className="p-1"
               onClick={() => onToggleExclude(entry.team)}
+              aria-label={isExcluded ? "Include team" : "Exclude team"}
             >
-              {isExcluded ? "Include" : "Exclude"}
-            </Button>
+              <svg
+                viewBox="0 0 24 24"
+                className={
+                  isExcluded ? "text-destructive" : "text-muted-foreground"
+                }
+                style={{ width: 22, height: 22 }}
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="8.5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M8 8L16 16"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
           )}
           <button
             type="button"
@@ -549,10 +579,12 @@ function SortableTeamRow({
 function TeamRow({
   entry,
   teamName,
+  teamRank,
   onNavigateToTeam,
 }: {
   entry: EventPicklistEntry;
   teamName: string;
+  teamRank?: number;
   onNavigateToTeam: (team: string) => void;
 }) {
   const isExcluded = !!entry.flags?.excluded;
@@ -560,9 +592,12 @@ function TeamRow({
 
   return (
     <div
-      className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 min-h-[80px]"
+      className="rounded-2xl bg-muted px-5 py-6 mb-3 last:mb-0 min-h-[80px]"
     >
       <div className="flex w-full items-center justify-between gap-3">
+        <div className="text-xs font-semibold text-primary w-4 text-center">
+          {entry.rank}
+        </div>
         <div
           className={`flex-1 min-w-0 cursor-pointer ${
             isExcluded ? "opacity-60" : ""
@@ -577,7 +612,9 @@ function TeamRow({
           <div className="flex items-center gap-2 mt-1">
             <p className="text-sm text-border">
               Rank{" "}
-              <span className="text-primary font-semibold">#{entry.rank}</span>
+              <span className="text-primary font-semibold">
+                #{teamRank ?? "—"}
+              </span>
             </p>
             {isExcluded && <Badge variant="destructive">Excluded</Badge>}
           </div>

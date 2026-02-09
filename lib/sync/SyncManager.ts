@@ -16,7 +16,6 @@ import {
 } from "@lib/db";
 import {
   type SyncQueueType,
-  type SyncPayload,
   type PutTeamDataPayload,
   type PutTeamDataWithImagesPayload,
   type PutMatchDataPayload,
@@ -25,7 +24,6 @@ import {
   type CreatePicklistPayload,
   type UpdatePicklistPayload,
   type DeletePicklistPayload,
-  SyncError,
   classifyError,
   calculateRetryDelay,
   DEFAULT_RETRY_CONFIG,
@@ -44,9 +42,7 @@ export class SyncManager {
 
   constructor(
     private supabaseClient: SupabaseClient,
-    private getCurrentEvent: () => string | null,
     private getIsOnline: () => boolean,
-    private getUserId: () => Promise<string | null>,
   ) {}
 
   /**
@@ -239,7 +235,7 @@ export class SyncManager {
         try {
           // Fetch fresh item from queue
           const queue = await getSyncQueue();
-          const freshItem = queue.find((q) => q.id === item.id);
+          const freshItem = queue.find((q: SyncQueueItem) => q.id === item.id);
           if (freshItem) {
             await this.processQueueItem(freshItem);
           }

@@ -20,7 +20,7 @@ function EventsPage() {
     getEvents()
       .then((data) => {
         const sorted = (data || []).sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          (a: EventList, b: EventList) => new Date(b.date).getTime() - new Date(a.date).getTime(),
         );
         setEvents(sorted);
       })

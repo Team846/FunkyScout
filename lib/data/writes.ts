@@ -135,9 +135,9 @@ export async function deleteMatchData(
   // Soft delete in local cache
   const existing = await getEventMatchData(eventKey, matchNumber, teamNumber);
   if (existing.length > 0) {
-    const toDelete = existing.filter((e) => e.uid === uid);
+    const toDelete = existing.filter((e: EventMatchData) => e.uid === uid);
     await cacheEventMatchData(
-      toDelete.map((e) => ({ ...e, deleted_at: now })),
+      toDelete.map((e: EventMatchData) => ({ ...e, deleted_at: now })),
     );
   }
 
@@ -168,7 +168,7 @@ export async function assignShift(
 
   // Update local schedule cache
   const schedule = await getEventSchedule(eventKey);
-  const updated = schedule.map((s) =>
+  const updated = schedule.map((s: EventScheduleEntry) =>
     s.team === teamNumber ? { ...s, uid, name, last_modified: now } : s,
   );
   await cacheEventSchedule(updated);
@@ -198,7 +198,6 @@ export async function createPicklist(
 ): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
-  const nowISO = new Date(now).toISOString();
 
   // Cache picklist header locally
   const picklist: EventPicklist = {
@@ -209,9 +208,9 @@ export async function createPicklist(
     uname,
     uid,
     type,
-    timestamp: nowISO,
-    last_modified: nowISO,
-    deleted_at: null,
+    timestamp: now,
+    last_modified: now,
+    deleted_at: undefined,
   };
 
   await cacheEventPicklists([picklist]);
@@ -223,8 +222,8 @@ export async function createPicklist(
     team: e.team,
     rank: e.rank,
     flags: e.flags,
-    last_modified: nowISO,
-    deleted_at: null,
+    last_modified: now,
+    deleted_at: undefined,
   }));
 
   await cacheEventPicklistEntries(picklistEntries);
@@ -257,7 +256,6 @@ export async function updatePicklist(
   type?: "public" | "private" | "default",
 ): Promise<void> {
   const now = Date.now();
-  const nowISO = new Date(now).toISOString();
 
   // Update picklist header locally (just the title and last_modified)
   const picklist: Partial<EventPicklist> & { id: string; event: string } = {
@@ -266,7 +264,7 @@ export async function updatePicklist(
     title,
     ...(type ? { type } : {}),
     picklist: null,
-    last_modified: nowISO,
+    last_modified: now,
   };
 
   await cacheEventPicklists([picklist as EventPicklist]);
@@ -278,8 +276,8 @@ export async function updatePicklist(
     team: e.team,
     rank: e.rank,
     flags: e.flags,
-    last_modified: nowISO,
-    deleted_at: null,
+    last_modified: now,
+    deleted_at: undefined,
   }));
 
   await cacheEventPicklistEntries(picklistEntries);
@@ -305,24 +303,23 @@ export async function deletePicklist(
   eventKey: string,
 ): Promise<void> {
   const now = Date.now();
-  const nowISO = new Date(now).toISOString();
 
   // Soft delete picklist locally
   const picklist: Partial<EventPicklist> & { id: string; event: string } = {
     id,
     event: eventKey,
-    deleted_at: nowISO,
-    last_modified: nowISO,
+    deleted_at: now,
+    last_modified: now,
   };
 
   await cacheEventPicklists([picklist as EventPicklist]);
 
   // Soft delete entries locally
   const existingEntries = await getEventPicklistEntries(eventKey, id);
-  const deletedEntries = existingEntries.map((e) => ({
+  const deletedEntries = existingEntries.map((e: EventPicklistEntry) => ({
     ...e,
-    deleted_at: nowISO,
-    last_modified: nowISO,
+    deleted_at: now,
+    last_modified: now,
   }));
 
   await cacheEventPicklistEntries(deletedEntries);
@@ -365,7 +362,7 @@ export async function putTeamDataWithImages(
 
   // 2. Store compressed images in IndexedDB queue
   const localImageIds = await Promise.all(
-    compressedBlobs.map(async (blob, idx) => {
+    compressedBlobs.map(async (blob: Blob, idx: number) => {
       const id = crypto.randomUUID();
       await addToImageQueue({
         id,
@@ -387,7 +384,7 @@ export async function putTeamDataWithImages(
       ...data,
       images: {
         ...data.images,
-        files: localImageIds.map((id, idx) => ({
+        files: localImageIds.map((id: string, idx: number) => ({
           path: `pending-${id}`, // Placeholder until upload
           filename: `image-${idx}-${now}.png`,
           uploaded: false,

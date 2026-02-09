@@ -10,7 +10,6 @@ import {
 import { useEvent } from "./EventContext";
 import { useSync } from "./SyncContext";
 import { useTeamData } from "./TeamDataContext";
-import { useCompetition } from "./CompetitionDataContext";
 import {
   fetchEventMatches,
   fetchEventTeamYears,
@@ -43,7 +42,6 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
   const { registerRefreshCallback } = useSync();
   const { teams } = useTeamData();
-  const { tbaSchedule } = useCompetition();
 
   const [teamEPAs, setTeamEPAs] = useState<Record<string, StatboticsTeamEPAs>>(
     {},

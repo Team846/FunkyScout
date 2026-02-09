@@ -35,7 +35,7 @@ export function EventProvider({ children }: { children: ReactNode }) {
           console.log("[EventContext] DB Initialized");
           setDbInitialized(true);
         })
-        .catch((e) => {
+        .catch((e: unknown) => {
           console.error("[EventContext] Failed to initialize DB:", e);
         });
     }

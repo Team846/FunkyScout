@@ -106,5 +106,5 @@ export async function listTeamImages(
     throw error;
   }
 
-  return (data || []).map((file) => `${prefix}${file.name}`);
+  return (data || []).map((file: { name: string }) => `${prefix}${file.name}`);
 }

@@ -12,6 +12,7 @@ import { useSync } from "./SyncContext";
 import { getSchedule, getPicklists } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
+import type { EventPicklist as SupabaseEventPicklist, EventPicklistEntry as SupabaseEventPicklistEntry } from "../data/schema";
 import {
   getEventSchedule,
   cacheEventSchedule,
@@ -20,7 +21,6 @@ import {
   cacheEventPicklists,
   cacheEventPicklistEntries,
   type TbaMatch,
-  type EventScheduleEntry,
 } from "@lib/db";
 import {
   PollingController,
@@ -84,7 +84,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
     if (cachedSchedule.length > 0) {
       setSchedule(
-        cachedSchedule.map((s) => ({
+        cachedSchedule.map((s: { match: string; team: string; alliance: string }) => ({
           match: s.match,
           team: s.team,
           alliance: s.alliance as "red" | "blue",
@@ -94,7 +94,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
     if (cachedTba.length > 0) {
       const map: Record<string, TBAMatchData> = {};
-      for (const m of cachedTba) {
+      for (const m of cachedTba as TbaMatch[]) {
         map[m.match_key] = {
           redTeams: m.red_teams,
           blueTeams: m.blue_teams,
@@ -117,23 +117,23 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         ]);
 
         if (supabaseSchedule) {
-          const entries = supabaseSchedule.map((s: any) => ({
+          const entries = supabaseSchedule.map((s: { match: string; team: string; alliance: string; name?: string; uid?: string; last_modified?: string; deleted_at?: string | null }) => ({
             match: s.match,
             team: s.team,
             alliance: s.alliance as "red" | "blue",
           }));
           setSchedule(entries);
-          // Cache full schedule entries with name and uid for shift assignments
+          // Cache full schedule entries with name and uid for shift assignments (convert string timestamps to numbers for SQLite)
           await cacheEventSchedule(
-            supabaseSchedule.map((s: any) => ({
+            supabaseSchedule.map((s: { match: string; team: string; alliance: string; name?: string; uid?: string; last_modified?: string; deleted_at?: string | null }) => ({
               event: currentEvent,
               match: s.match,
               team: s.team,
               alliance: s.alliance as "red" | "blue",
               name: s.name,
               uid: s.uid,
-              last_modified: s.last_modified,
-              deleted_at: s.deleted_at,
+              last_modified: s.last_modified ? new Date(s.last_modified).getTime() : undefined,
+              deleted_at: s.deleted_at ? new Date(s.deleted_at).getTime() : undefined,
             }))
           );
         }
@@ -141,16 +141,19 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         if (tbaData) {
           setTbaSchedule(tbaData);
           const tbaMatches: TbaMatch[] = Object.entries(tbaData).map(
-            ([key, m]) => ({
-              event: currentEvent,
-              match_key: key,
-              red_teams: m.redTeams,
-              blue_teams: m.blueTeams,
-              est_time: m.est_time,
-              red_score: m.redScore ?? undefined,
-              blue_score: m.blueScore ?? undefined,
-              last_synced: Date.now(),
-            })
+            ([key, m]) => {
+              const match = m as TBAMatchData;
+              return {
+                event: currentEvent,
+                match_key: key,
+                red_teams: match.redTeams,
+                blue_teams: match.blueTeams,
+                est_time: match.est_time,
+                red_score: match.redScore ?? undefined,
+                blue_score: match.blueScore ?? undefined,
+                last_synced: Date.now(),
+              };
+            }
           );
           await cacheTbaMatches(currentEvent, tbaMatches);
         }
@@ -181,12 +184,26 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         const data = await getPicklists(currentEvent);
 
         if (data) {
+          // Convert Supabase schema (string timestamps) to local SQLite schema (number timestamps)
+          const localPicklists = data.picklists.map((p: SupabaseEventPicklist) => ({
+            ...p,
+            timestamp: p.timestamp ? new Date(p.timestamp).getTime() : undefined,
+            last_modified: p.last_modified ? new Date(p.last_modified).getTime() : undefined,
+            deleted_at: p.deleted_at ? new Date(p.deleted_at).getTime() : undefined,
+          }));
+
+          const localEntries = data.entries.map((e: SupabaseEventPicklistEntry) => ({
+            ...e,
+            last_modified: e.last_modified ? new Date(e.last_modified).getTime() : undefined,
+            deleted_at: e.deleted_at ? new Date(e.deleted_at).getTime() : undefined,
+          }));
+
           // Cache picklists to local SQLite
-          await cacheEventPicklists(data.picklists);
+          await cacheEventPicklists(localPicklists);
 
           // Cache picklist entries to local SQLite
-          if (data.entries.length > 0) {
-            await cacheEventPicklistEntries(data.entries);
+          if (localEntries.length > 0) {
+            await cacheEventPicklistEntries(localEntries);
           }
 
           console.log(

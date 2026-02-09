@@ -96,7 +96,7 @@ const nexusLabelToMatchKey = (label: string): string => {
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { currentEvent} = useEvent();
+  const { currentEvent } = useEvent();
   const [userData, setUserData] = useState(getLocalUserData());
   const {
     teams,
@@ -111,6 +111,11 @@ export function DashboardPage() {
   const [matchLoading, setMatchLoading] = useState(true);
   const [nextShift, setNextShift] = useState<NextShiftData | null>(null);
   const [shiftLoading, setShiftLoading] = useState(true);
+  const [shiftStats, setShiftStats] = useState({
+    done: 0,
+    left: 0,
+    untilBreak: 0,
+  });
   const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
 
   const OUR_TEAM = 846;
@@ -306,6 +311,7 @@ export function DashboardPage() {
 
         if (assignments.length === 0) {
           setNextShift(null);
+          setShiftStats({ done: 0, left: 0, untilBreak: 0 });
           return;
         }
 
@@ -322,6 +328,53 @@ export function DashboardPage() {
             assignment,
             matchTime,
           };
+        });
+
+        const pastShiftsCount = shiftsWithTimes.filter(
+          (s) => s.matchTime && s.matchTime <= now
+        ).length;
+        const futureShiftsCount = shiftsWithTimes.filter(
+          (s) => s.matchTime && s.matchTime > now
+        ).length;
+
+        const getQualNumber = (matchKey: string): number | null => {
+          const parts = matchKey.split("_");
+          if (parts.length < 2) return null;
+          const matchPart = parts[1];
+          const qmMatch = matchPart.match(/^qm(\d+)$/i);
+          return qmMatch ? Number(qmMatch[1]) : null;
+        };
+
+        const upcomingQualMatches = Object.entries(tbaSchedule)
+          .map(([matchKey, matchData]) => {
+            const qualNum = getQualNumber(matchKey);
+            const matchTime = matchData?.est_time
+              ? matchData.est_time * 1000
+              : null;
+            return { matchKey, qualNum, matchTime };
+          })
+          .filter(
+            (m) =>
+              m.qualNum !== null &&
+              m.matchTime !== null &&
+              (m.matchTime as number) >= now
+          )
+          .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
+
+        const assignedMatches = new Set(assignments.map((a) => a.match));
+        let untilBreak = 0;
+        for (const match of upcomingQualMatches) {
+          if (assignedMatches.has(match.matchKey)) {
+            untilBreak += 1;
+          } else {
+            break;
+          }
+        }
+
+        setShiftStats({
+          done: pastShiftsCount,
+          left: futureShiftsCount,
+          untilBreak,
         });
 
         // Find next upcoming shift
@@ -388,6 +441,7 @@ export function DashboardPage() {
       } catch (error) {
         console.error("Failed to load shift data:", error);
         setNextShift(null);
+        setShiftStats({ done: 0, left: 0, untilBreak: 0 });
       }
     };
 
@@ -400,15 +454,15 @@ export function DashboardPage() {
       <div className="flex gap-4 min-h-0">
         <div className="flex w-28 shrink-0 flex-col gap-4">
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
-            <p className="text-4xl leading-none">846</p>
+            <p className="text-4xl leading-none">{shiftStats.done}</p>
             <p className="mt-3 text-xs text-primary">shifts done</p>
           </div>
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
-            <p className="text-4xl leading-none">254</p>
+            <p className="text-4xl leading-none">{shiftStats.left}</p>
             <p className="mt-3 text-xs text-primary">shifts left</p>
           </div>
           <div className="aspect-square w-full rounded-2xl bg-muted px-4 py-6">
-            <p className="text-4xl leading-none">10</p>
+            <p className="text-4xl leading-none">{shiftStats.untilBreak}</p>
             <p className="mt-3 text-xs text-primary">till break</p>
           </div>
         </div>
@@ -436,8 +490,11 @@ export function DashboardPage() {
                   if (qmMatch) return `Qualification ${qmMatch[1]}`;
                   return nextShift.matchLabel;
                 })();
-                const teamInfo = teams.find((team: any) => team.key === nextShift.teamKey);
-                const teamName = teamInfo?.name ?? `Team ${nextShift.teamNumber}`;
+                const teamInfo = teams.find(
+                  (team: any) => team.key === nextShift.teamKey
+                );
+                const teamName =
+                  teamInfo?.name ?? `Team ${nextShift.teamNumber}`;
                 const teamRank =
                   teamInfo?.rank && teamInfo.rank > 0
                     ? `Rank # ${teamInfo.rank}`
@@ -519,7 +576,7 @@ export function DashboardPage() {
                         <p className="text-base text-primary truncate">
                           {teamName}
                         </p>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-3 text-sm text-foreground/80">
                           <span className="truncate">
                             Rank{" "}
                             <span className="text-primary">

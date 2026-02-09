@@ -12,7 +12,31 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import type { AutoEntry } from "@mobile/components/auto-path-drawer/types";
+
+// Type definitions for auto path drawer
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface Path {
+  points: Point[];
+  color: string;
+  lineWidth: number;
+}
+
+interface DrawingData {
+  paths: Path[];
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+export interface AutoEntry {
+  id: number;
+  climb: boolean;
+  drawing: DrawingData | null;
+  description?: string;
+}
 
 export interface PitScoutFormData {
   teamNum: number;

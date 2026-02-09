@@ -19,7 +19,6 @@ import {
 import { useEvent } from "./EventContext";
 import { SyncManager } from "@lib/sync/SyncManager";
 import supabase from "@lib/supabase/supabase";
-import { getSession } from "@lib/supabase/auth";
 
 interface SyncContextType {
   syncManager: SyncManager | null;
@@ -50,16 +49,9 @@ export function SyncProvider({
   useEffect(() => {
     if (!dbInitialized) return;
 
-    const getUserId = async () => {
-      const session = await getSession();
-      return session?.user?.id || null;
-    };
-
     syncManagerRef.current = new SyncManager(
       supabase,
-      () => currentEvent,
       () => isOnline,
-      getUserId,
     );
 
     syncManagerRef.current.start();
@@ -167,7 +159,7 @@ export function SyncProvider({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event: string) => {
       if (event === "SIGNED_IN") {
         console.log("[SyncContext] User signed in, triggering sync");
         forceSyncNow().catch((error) => {
