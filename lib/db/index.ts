@@ -115,6 +115,15 @@ export interface TbaTeam {
   ties?: number;
   next_match?: string;
   last_match?: string;
+  epa?: {
+    total_points?: { mean?: number; sd?: number };
+    auto?: { mean?: number; sd?: number };
+    teleop?: { mean?: number; sd?: number };
+    endgame?: { mean?: number; sd?: number };
+    norm?: number;
+  } | null;
+  opr?: number;
+  dpr?: number;
   last_synced?: number;
 }
 
@@ -128,6 +137,10 @@ export interface TbaMatch {
   blue_teams: string[]; // JSON array
   red_score?: number;
   blue_score?: number;
+  // Statbotics predictions (synced from desktop via Supabase)
+  red_win_prob?: number;
+  predicted_red_score?: number;
+  predicted_blue_score?: number;
   last_synced?: number;
 }
 

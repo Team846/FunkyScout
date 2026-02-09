@@ -178,6 +178,14 @@ impl TbaService {
             .collect())
     }
 
+    /// Fetch event OPRs (Offensive Power Rating) and related stats
+    /// GET /event/{event_key}/oprs
+    /// Returns OPR, DPR (Defensive Power Rating), CCWM (Calculated Contribution to Winning Margin)
+    pub async fn fetch_oprs(&self, event: &str) -> Result<serde_json::Value> {
+        self.fetch_json(&format!("/event/{}/oprs", event))
+            .await
+    }
+
     /// Generic fetch with TBA API key auth
     async fn fetch_json<T: serde::de::DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
         let url = format!("{}{}", TBA_BASE_URL, endpoint);

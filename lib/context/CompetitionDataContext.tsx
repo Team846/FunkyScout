@@ -32,6 +32,14 @@ export interface ScheduleEntry {
   match: string;
   team: string;
   alliance: "red" | "blue";
+  // Match timing & scores (from TBA via desktop)
+  est_time?: number;
+  red_score?: number | null;
+  blue_score?: number | null;
+  // Match predictions (from Statbotics via desktop)
+  red_win_prob?: number | null;
+  predicted_red_score?: number | null;
+  predicted_blue_score?: number | null;
 }
 
 export interface TBAMatchData {
@@ -40,6 +48,10 @@ export interface TBAMatchData {
   est_time: number;
   redScore: number | null;
   blueScore: number | null;
+  // Statbotics predictions (from desktop sync)
+  red_win_prob?: number | null;
+  predicted_red_score?: number | null;
+  predicted_blue_score?: number | null;
 }
 
 interface CompetitionDataContextType {
@@ -131,17 +143,56 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
         console.log(`[CompetitionData] getSchedule returned ${supabaseSchedule?.length ?? 0} entries`);
 
+        // Check if desktop has synced match data
+        const hasMatchData = supabaseSchedule && supabaseSchedule.some((s: any) => s.est_time != null);
+
         if (supabaseSchedule) {
-          const entries = supabaseSchedule.map((s: { match: string; team: string; alliance: string; name?: string; uid?: string; last_modified?: string; deleted_at?: string | null }) => ({
+          const entries = supabaseSchedule.map((s: any) => ({
             match: s.match,
             team: s.team,
             alliance: s.alliance as "red" | "blue",
+            est_time: s.est_time,
+            red_score: s.red_score,
+            blue_score: s.blue_score,
+            red_win_prob: s.red_win_prob,
+            predicted_red_score: s.predicted_red_score,
+            predicted_blue_score: s.predicted_blue_score,
           }));
           setSchedule(entries);
+
+          // Build tbaSchedule from schedule entries (desktop-synced data)
+          if (hasMatchData) {
+            console.log("[CompetitionData] Using match data from desktop sync");
+            const matchData: Record<string, TBAMatchData> = {};
+            entries.forEach((entry) => {
+              if (!matchData[entry.match]) {
+                const matchEntries = entries.filter(e => e.match === entry.match);
+                matchData[entry.match] = {
+                  redTeams: matchEntries
+                    .filter(e => e.alliance === "red")
+                    .map(e => e.team),
+                  blueTeams: matchEntries
+                    .filter(e => e.alliance === "blue")
+                    .map(e => e.team),
+                  est_time: entry.est_time ?? 0,
+                  redScore: entry.red_score ?? null,
+                  blueScore: entry.blue_score ?? null,
+                  red_win_prob: entry.red_win_prob,
+                  predicted_red_score: entry.predicted_red_score,
+                  predicted_blue_score: entry.predicted_blue_score,
+                };
+              }
+            });
+            setTbaSchedule(matchData);
+          } else {
+            console.log("[CompetitionData] No match data from desktop, will use TBA fallback");
+          }
           // Note: getSchedule() already handles caching with correct timestamp conversion
         }
 
-        if (tbaData) {
+        // Only use TBA data if desktop hasn't synced match data
+        if (tbaData && !hasMatchData) {
+          console.log("[CompetitionData] Falling back to TBA match data");
           setTbaSchedule(tbaData);
           const tbaMatches: TbaMatch[] = Object.entries(tbaData).map(
             ([key, m]) => {

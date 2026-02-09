@@ -1,6 +1,6 @@
 use crate::{
     database::LocalDatabase,
-    services::{SupabaseService, SyncService, TbaService},
+    services::{StatboticsService, SupabaseService, SyncService, TbaService},
     store::LocalStore,
 };
 use std::{process::Command, sync::Mutex};
@@ -57,15 +57,16 @@ pub fn run() {
                     };
 
                     let sb_key = if config.supabase_key.is_empty() {
-                        get_env("SUPABASE_ANON_KEY")
+                        get_env("SUPABASE_SERVICE_ROLE_KEY")
                             .or_else(|| get_env("SUPABASE_KEY"))
+                            .or_else(|| get_env("SUPABASE_ANON_KEY"))
                             .unwrap_or_default()
                     } else {
                         config.supabase_key.clone()
                     };
 
                     let evt = if config.event_key.is_empty() {
-                        get_env("EVENT_KEY").unwrap_or_else(|| "2025casf".to_string())
+                        get_env("EVENT_KEY").unwrap_or_else(|| "2025cada".to_string())
                     } else {
                         config.event_key.clone()
                     };
@@ -82,10 +83,12 @@ pub fn run() {
 
                     let tba_service = TbaService::new(tba_key);
                     let supabase_service = SupabaseService::new(supabase_url, supabase_key);
+                    let statbotics_service = StatboticsService::new();
 
                     let sync_service = SyncService::new(
                         tba_service,
                         supabase_service,
+                        statbotics_service,
                         event_key,
                     );
 
@@ -113,7 +116,7 @@ pub fn run() {
 }
 
 pub struct AppState {
-    database: Option<LocalDatabase>,
+    pub database: Option<LocalDatabase>,
     pub app_store: LocalStore,
     pub app_handle: AppHandle,
     pub tba_service: TbaService,
@@ -165,7 +168,7 @@ impl AppState {
 
     // placeholder pelase fix
     pub fn curr_event(&self) -> &str {
-        "2025casf"
+        "2025cada"
     }
 }
 

@@ -17,7 +17,16 @@ pub struct SupabaseService {
 impl SupabaseService {
     /// Create new Supabase service
     pub fn new(url: String, api_key: String) -> Self {
-        let client = Postgrest::new(url)
+        // Ensure URL has /rest/v1 suffix for Postgrest
+        let rest_url = if url.ends_with("/rest/v1") {
+            url
+        } else if url.ends_with('/') {
+            format!("{}rest/v1", url)
+        } else {
+            format!("{}/rest/v1", url)
+        };
+
+        let client = Postgrest::new(rest_url)
             .insert_header("apikey", &api_key)
             .insert_header("Authorization", format!("Bearer {}", api_key));
 
@@ -320,13 +329,22 @@ impl SupabaseService {
             return Ok(());
         }
 
-        self.client
+        let response = self.client
             .from("event_schedule")
             .upsert(&serde_json::to_string(&schedule)?)
             .on_conflict("event,match,team")
             .execute()
             .await
             .context("Failed to bulk upsert schedule")?;
+
+        // Debug: Print response status
+        let status = response.status();
+        println!("[Supabase] Schedule upsert response: status={}", status);
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            eprintln!("[Supabase] Schedule upsert failed: {}", body);
+            anyhow::bail!("Schedule upsert failed with status {}: {}", status, body);
+        }
 
         Ok(())
     }

@@ -39,6 +39,15 @@ export interface TBATeam {
   record: { wins: number; losses: number; ties: number };
   nextMatch: string | null;
   lastMatch: string | null;
+  epa?: {
+    total_points?: { mean?: number; sd?: number };
+    auto?: { mean?: number; sd?: number };
+    teleop?: { mean?: number; sd?: number };
+    endgame?: { mean?: number; sd?: number };
+    norm?: number;
+  } | null;
+  opr?: number;
+  dpr?: number;
 }
 
 interface TeamDataContextType {
@@ -131,12 +140,18 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
             team_key: supabaseTeam.team,
             team_number: teamNumber,
             name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
-            rank: teamStatus?.qual?.ranking?.rank ?? 0,
-            wins: teamStatus?.qual?.ranking?.record?.wins ?? 0,
-            losses: teamStatus?.qual?.ranking?.record?.losses ?? 0,
-            ties: teamStatus?.qual?.ranking?.record?.ties ?? 0,
-            next_match: teamStatus?.next_match_key || undefined,
-            last_match: teamStatus?.last_match_key || undefined,
+            // Rankings from TBA (mobile's responsibility - freshest data with 2min polling)
+            rank: teamStatus?.qual?.ranking?.rank ?? supabaseTeam.data?.rank ?? 0,
+            wins: teamStatus?.qual?.ranking?.record?.wins ?? supabaseTeam.data?.record?.wins ?? 0,
+            losses: teamStatus?.qual?.ranking?.record?.losses ?? supabaseTeam.data?.record?.losses ?? 0,
+            ties: teamStatus?.qual?.ranking?.record?.ties ?? supabaseTeam.data?.record?.ties ?? 0,
+            // EPA from Supabase (desktop keeps this fresh every 30s)
+            epa: supabaseTeam.data?.epa ?? null,
+            // OPR/DPR from Supabase (desktop keeps this fresh)
+            opr: supabaseTeam.data?.opr ?? undefined,
+            dpr: supabaseTeam.data?.dpr ?? undefined,
+            next_match: teamStatus?.next_match_key || supabaseTeam.data?.next_match || undefined,
+            last_match: teamStatus?.last_match_key || supabaseTeam.data?.last_match || undefined,
             last_synced: Date.now(),
           };
         });
