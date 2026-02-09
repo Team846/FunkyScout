@@ -20,6 +20,7 @@ import { useEvent } from "./EventContext";
 import { SyncManager } from "@lib/sync/SyncManager";
 import supabase from "@lib/supabase/supabase";
 import { toast } from "sonner";
+import { setGlobalSyncTrigger } from "@lib/data/writes";
 
 interface SyncContextType {
   syncManager: SyncManager | null;
@@ -98,6 +99,12 @@ export function SyncProvider({
       setIsSyncing(false);
     }
   }, [isOnline]);
+
+  // Register forceSyncNow as the global sync trigger for instant sync
+  useEffect(() => {
+    setGlobalSyncTrigger(forceSyncNow);
+    console.log("[SyncContext] Registered global sync trigger for instant sync");
+  }, [forceSyncNow]);
 
   // Trigger 1: Event Switch
   useEffect(() => {
