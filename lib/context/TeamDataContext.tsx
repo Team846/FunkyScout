@@ -44,6 +44,7 @@ interface TeamDataContextType {
   teams: Team[];
   tbaTeams: TBATeam[];
   loading: boolean;
+  initialLoading: boolean;
   refresh: () => Promise<void>;
   scoutedTeams: Set<string>; // Team keys that have been pit scouted
 }
@@ -59,41 +60,53 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
   const [loading, setLoading] = useState(false);
   const [scoutedTeams, setScoutedTeams] = useState<Set<string>>(new Set());
+  const [initialLoading, setInitialLoading] = useState(true);
   const pollingController = useRef<PollingController | null>(null);
 
   // Refs for stable access in refresh callback
   const fetchTeamsRef = useRef<(() => Promise<void>) | null>(null);
   const currentEventRef = useRef(currentEvent);
+  const skipCacheOnceRef = useRef(false);
+  const hasLoadedDataRef = useRef(false);
 
   const fetchTeams = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
 
-    // 1. Load from cache first
-    const cached = await getTbaTeams(currentEvent);
-    if (cached.length > 0) {
-      setTeams(
-        cached.map((t: TbaTeam) => ({
-          key: t.team_key,
-          num: t.team_number,
-          name: t.name ?? "",
-          rank: t.rank ?? 0,
-        }))
-      );
-      setTbaTeams(
-        cached.map((t: TbaTeam) => ({
-          key: t.team_key,
-          team: t.team_number,
-          name: t.name ?? "",
-          rank: t.rank ?? 0,
-          record: {
-            wins: t.wins ?? 0,
-            losses: t.losses ?? 0,
-            ties: t.ties ?? 0,
-          },
-          nextMatch: t.next_match || null,
-          lastMatch: t.last_match || null,
-        }))
-      );
+    // Check if we should skip cache this time (only on event change when online)
+    const shouldSkipCache = skipCacheOnceRef.current && isOnline;
+    if (shouldSkipCache) {
+      skipCacheOnceRef.current = false; // Clear immediately
+    }
+
+    // 1. Load from cache (only if not skipping)
+    if (!shouldSkipCache) {
+      const cached = await getTbaTeams(currentEvent);
+      if (cached.length > 0) {
+        setTeams(
+          cached.map((t: TbaTeam) => ({
+            key: t.team_key,
+            num: t.team_number,
+            name: t.name ?? "",
+            rank: t.rank ?? 0,
+          }))
+        );
+        setTbaTeams(
+          cached.map((t: TbaTeam) => ({
+            key: t.team_key,
+            team: t.team_number,
+            name: t.name ?? "",
+            rank: t.rank ?? 0,
+            record: {
+              wins: t.wins ?? 0,
+              losses: t.losses ?? 0,
+              ties: t.ties ?? 0,
+            },
+            nextMatch: t.next_match || null,
+            lastMatch: t.last_match || null,
+          }))
+        );
+        hasLoadedDataRef.current = true;
+      }
     }
 
     // 2. Refresh from network if online
@@ -157,10 +170,15 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               lastMatch: t.last_match || null,
             }))
           );
+          hasLoadedDataRef.current = true;
         }
       } finally {
         setLoading(false);
+        setInitialLoading(false);
       }
+    } else {
+      // Offline: done after cache
+      setInitialLoading(false);
     }
   }, [currentEvent, dbInitialized, isOnline]);
 
@@ -198,15 +216,20 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     if (!currentEvent) {
       setTeams([]);
       setTbaTeams([]);
+      setInitialLoading(false);
+      hasLoadedDataRef.current = false;
       return;
     }
 
     if (dbInitialized) {
-      // Fetch teams immediately when event changes
-      // Note: Keep old state visible until new data loads to prevent flashing
+      // Set skip flag when changing events (only if online and has prior data)
+      if (isOnline && hasLoadedDataRef.current) {
+        skipCacheOnceRef.current = true;
+        setInitialLoading(true);
+      }
       fetchTeams();
     }
-  }, [currentEvent, dbInitialized, fetchTeams]);
+  }, [currentEvent, dbInitialized, fetchTeams, isOnline]);
 
   // Fetch scouted teams when event changes
   useEffect(() => {
@@ -276,7 +299,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
   return (
     <TeamDataContext.Provider
-      value={{ teams, tbaTeams, loading, refresh, scoutedTeams }}
+      value={{ teams, tbaTeams, loading, initialLoading, refresh, scoutedTeams }}
     >
       {children}
     </TeamDataContext.Provider>

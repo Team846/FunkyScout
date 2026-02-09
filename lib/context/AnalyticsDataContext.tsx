@@ -31,6 +31,7 @@ interface AnalyticsDataContextType {
   teamEPAs: Record<string, StatboticsTeamEPAs>;
   matchPreds: Record<string, StatboticsMatch>;
   loading: boolean;
+  initialLoading: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -50,29 +51,41 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     {},
   );
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const pollingController = useRef<PollingController | null>(null);
 
   // Ref for stable access in refresh callback
   const fetchAnalyticsRef = useRef<(() => Promise<void>) | null>(null);
+  const skipCacheOnceRef = useRef(false);
+  const hasLoadedDataRef = useRef(false);
 
   const fetchAnalytics = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
 
-    // 1. Load from cache
-    const [cachedEpas, cachedPreds] = await Promise.all([
-      getStatboticsEpa(currentEvent),
-      getStatboticsMatchPred(currentEvent),
-    ]);
-
-    if (cachedEpas.length > 0) {
-      const map: Record<string, StatboticsTeamEPAs> = {};
-      for (const item of cachedEpas) map[item.team] = item.epa;
-      setTeamEPAs(map);
+    // Check if we should skip cache this time (only on event change when online)
+    const shouldSkipCache = skipCacheOnceRef.current && isOnline;
+    if (shouldSkipCache) {
+      skipCacheOnceRef.current = false; // Clear immediately
     }
-    if (cachedPreds.length > 0) {
-      const map: Record<string, StatboticsMatch> = {};
-      for (const item of cachedPreds) map[item.match] = item.pred;
-      setMatchPreds(map);
+
+    // 1. Load from cache (only if not skipping)
+    if (!shouldSkipCache) {
+      const [cachedEpas, cachedPreds] = await Promise.all([
+        getStatboticsEpa(currentEvent),
+        getStatboticsMatchPred(currentEvent),
+      ]);
+
+      if (cachedEpas.length > 0) {
+        const map: Record<string, StatboticsTeamEPAs> = {};
+        for (const item of cachedEpas) map[item.team] = item.epa;
+        setTeamEPAs(map);
+        hasLoadedDataRef.current = true;
+      }
+      if (cachedPreds.length > 0) {
+        const map: Record<string, StatboticsMatch> = {};
+        for (const item of cachedPreds) map[item.match] = item.pred;
+        setMatchPreds(map);
+      }
     }
 
     // 2. Network refresh
@@ -106,9 +119,14 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
             pred,
           })),
         );
+        hasLoadedDataRef.current = true;
       } finally {
         setLoading(false);
+        setInitialLoading(false);
       }
+    } else {
+      // Offline or no teams: done after cache
+      setInitialLoading(false);
     }
   }, [currentEvent, dbInitialized, isOnline, teams.length]);
 
@@ -145,15 +163,20 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     if (!currentEvent) {
       setTeamEPAs({});
       setMatchPreds({});
+      setInitialLoading(false);
+      hasLoadedDataRef.current = false;
       return;
     }
 
     if (dbInitialized) {
-      // Fetch analytics immediately when event changes
-      // Note: Keep old state visible until new data loads to prevent flashing
+      // Set skip flag when changing events (only if online and has prior data)
+      if (isOnline && hasLoadedDataRef.current) {
+        skipCacheOnceRef.current = true;
+        setInitialLoading(true);
+      }
       fetchAnalytics();
     }
-  }, [currentEvent, dbInitialized, fetchAnalytics]);
+  }, [currentEvent, dbInitialized, fetchAnalytics, isOnline]);
 
   const refresh = useCallback(async () => {
     console.log("[AnalyticsDataContext] Refresh callback triggered");
@@ -180,7 +203,7 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
 
   return (
     <AnalyticsDataContext.Provider
-      value={{ teamEPAs, matchPreds, loading, refresh }}
+      value={{ teamEPAs, matchPreds, loading, initialLoading, refresh }}
     >
       {children}
     </AnalyticsDataContext.Provider>

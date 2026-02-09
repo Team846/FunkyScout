@@ -47,6 +47,7 @@ interface CompetitionDataContextType {
   tbaSchedule: Record<string, TBAMatchData>;
   nexusMatches: NexusMatch[];
   loading: boolean;
+  initialLoading: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -63,6 +64,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   );
   const [nexusMatches, setNexusMatches] = useState<NexusMatch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const schedulePolling = useRef<PollingController | null>(null);
   const nexusPolling = useRef<PollingController | null>(null);
@@ -72,38 +74,49 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
   const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
   const fetchPicklistsRef = useRef<(() => Promise<void>) | null>(null);
+  const skipCacheOnceRef = useRef(false);
+  const hasLoadedDataRef = useRef(false);
 
   const fetchSchedule = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
 
-    // 1. Load from cache
-    const [cachedSchedule, cachedTba] = await Promise.all([
-      getEventSchedule(currentEvent),
-      getTbaMatches(currentEvent),
-    ]);
-
-    if (cachedSchedule.length > 0) {
-      setSchedule(
-        cachedSchedule.map((s: { match: string; team: string; alliance: string }) => ({
-          match: s.match,
-          team: s.team,
-          alliance: s.alliance as "red" | "blue",
-        }))
-      );
+    // Check if we should skip cache this time (only on event change when online)
+    const shouldSkipCache = skipCacheOnceRef.current && isOnline;
+    if (shouldSkipCache) {
+      skipCacheOnceRef.current = false; // Clear immediately
     }
 
-    if (cachedTba.length > 0) {
-      const map: Record<string, TBAMatchData> = {};
-      for (const m of cachedTba as TbaMatch[]) {
-        map[m.match_key] = {
-          redTeams: m.red_teams,
-          blueTeams: m.blue_teams,
-          est_time: m.est_time ?? 0,
-          redScore: m.red_score ?? null,
-          blueScore: m.blue_score ?? null,
-        };
+    // 1. Load from cache (only if not skipping)
+    if (!shouldSkipCache) {
+      const [cachedSchedule, cachedTba] = await Promise.all([
+        getEventSchedule(currentEvent),
+        getTbaMatches(currentEvent),
+      ]);
+
+      if (cachedSchedule.length > 0) {
+        setSchedule(
+          cachedSchedule.map((s: { match: string; team: string; alliance: string }) => ({
+            match: s.match,
+            team: s.team,
+            alliance: s.alliance as "red" | "blue",
+          }))
+        );
+        hasLoadedDataRef.current = true;
       }
-      setTbaSchedule(map);
+
+      if (cachedTba.length > 0) {
+        const map: Record<string, TBAMatchData> = {};
+        for (const m of cachedTba as TbaMatch[]) {
+          map[m.match_key] = {
+            redTeams: m.red_teams,
+            blueTeams: m.blue_teams,
+            est_time: m.est_time ?? 0,
+            redScore: m.red_score ?? null,
+            blueScore: m.blue_score ?? null,
+          };
+        }
+        setTbaSchedule(map);
+      }
     }
 
     // 2. Network refresh
@@ -157,9 +170,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           );
           await cacheTbaMatches(currentEvent, tbaMatches);
         }
+        hasLoadedDataRef.current = true;
       } finally {
         setLoading(false);
+        setInitialLoading(false);
       }
+    } else {
+      // Offline: done after cache
+      setInitialLoading(false);
     }
   }, [currentEvent, dbInitialized, isOnline]);
 
@@ -284,17 +302,22 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       setSchedule([]);
       setTbaSchedule({});
       setNexusMatches([]);
+      setInitialLoading(false);
+      hasLoadedDataRef.current = false;
     return;
     }
 
     if (dbInitialized) {
-      // Fetch schedule, nexus, and picklist data immediately when event changes
-      // Note: Keep old state visible until new data loads to prevent flashing
+      // Set skip flag when changing events (only if online and has prior data)
+      if (isOnline && hasLoadedDataRef.current) {
+        skipCacheOnceRef.current = true;
+        setInitialLoading(true);
+      }
       fetchSchedule();
       fetchNexus();
       fetchPicklists();
     }
-  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus, fetchPicklists]);
+  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus, fetchPicklists, isOnline]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");
@@ -323,7 +346,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
   return (
     <CompetitionDataContext.Provider
-      value={{ schedule, tbaSchedule, nexusMatches, loading, refresh }}
+      value={{ schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh }}
     >
       {children}
     </CompetitionDataContext.Provider>
