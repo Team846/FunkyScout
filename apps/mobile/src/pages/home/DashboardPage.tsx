@@ -118,7 +118,7 @@ export function DashboardPage() {
   });
   const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
 
-  const OUR_TEAM = 846;
+  const OUR_TEAM = 199;
 
   // DEV TEST: Set to true to test future match UI with mock data
   const DEV_TEST_FUTURE = false;
@@ -408,7 +408,7 @@ export function DashboardPage() {
 
           // Helper to format relative time
           const formatRelativeTime = (timestamp: number | null): string => {
-            if (!timestamp) return "Unknown";
+            if (!timestamp) return ""; // Return empty string instead of "Unknown"
             const diff = timestamp - now;
             const absDiff = Math.abs(diff);
             const minutes = Math.floor(absDiff / (1000 * 60));
@@ -468,7 +468,7 @@ export function DashboardPage() {
         </div>
 
         <div className="flex min-h-[18rem] max-h-[60vh] flex-1 items-center justify-center rounded-2xl bg-muted p-6 overflow-hidden">
-          {shiftLoading ? (
+          {shiftLoading || (nextShift && !nextShift.timeLabel) ? (
             <p className="text-sm text-border">Loading shift...</p>
           ) : !nextShift ? (
             <p className="text-sm text-border">No shifts assigned...</p>
@@ -618,7 +618,7 @@ export function DashboardPage() {
 
       {/* Next Match Card */}
       <div className="rounded-2xl bg-muted px-6 py-4">
-        {matchLoading ? (
+        {matchLoading || (nextMatch && !nextMatch.matchTime) ? (
           <div className="flex min-h-[10rem] items-center justify-center">
             <p className="text-sm text-border">Loading match details...</p>
           </div>
@@ -1078,55 +1078,68 @@ export function DashboardPage() {
             <CommandEmpty>
               {teamsLoading ? "Loading teams..." : "No teams found."}
             </CommandEmpty>
-            {teams.map((team: any) => (
-              <CommandItem
-                key={team.key}
-                className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
-                onSelect={() =>
-                  navigate({
-                    to: "/team-info",
-                    search: { teamKey: team.key },
-                  })
-                }
-              >
-                <div className="flex w-full items-center justify-between gap-3">
-                  <div className="flex-1">
-                    <p className="text-base">
-                      <span className="font-bold text-primary">{team.num}</span>
-                      <span className="text-foreground bg"> | {team.name}</span>
-                    </p>
-                    {team.rank > 0 && (
-                      <p className="mt-1 text-sm text-border">
-                        Rank {team.rank}
+            {teams
+              .sort((a: any, b: any) => {
+                // Sort by rank (ascending), then by team number
+                if (a.rank === 0 && b.rank === 0) return a.num - b.num;
+                if (a.rank === 0) return 1; // unranked teams go last
+                if (b.rank === 0) return -1;
+                return a.rank - b.rank;
+              })
+              .map((team: any) => (
+                <CommandItem
+                  key={team.key}
+                  className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
+                  onSelect={() =>
+                    navigate({
+                      to: "/team-info",
+                      search: { teamKey: team.key },
+                    })
+                  }
+                >
+                  <div className="flex w-full items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="text-base">
+                        <span className="font-bold text-primary">
+                          {team.num}
+                        </span>
+                        <span className="text-foreground bg">
+                          {" "}
+                          | {team.name}
+                        </span>
                       </p>
+                      {team.rank > 0 && (
+                        <p className="mt-1 text-sm text-border">
+                          Rank {team.rank}
+                        </p>
+                      )}
+                    </div>
+                    {scoutedTeams.has(team.key) && (
+                      <Badge
+                        variant="outline"
+                        className="ml-2 border-primary text-primary"
+                      >
+                        Scouted
+                      </Badge>
                     )}
-                  </div>
-                  {scoutedTeams.has(team.key) && (
-                    <Badge
-                      variant="outline"
-                      className="ml-2 border-primary text-primary"
+                    <svg
+                      viewBox="0 0 24 24"
+                      style={{ width: 20, height: 20 }}
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
                     >
-                      Scouted
-                    </Badge>
-                  )}
-                  <svg
-                    viewBox="0 0 24 24"
-                    style={{ width: 20, height: 20 }}
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M9 18L15 12L9 6"
-                      stroke="currentColor"
-                      className="text-primary"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-              </CommandItem>
-            ))}
+                      <path
+                        d="M9 18L15 12L9 6"
+                        stroke="currentColor"
+                        className="text-primary"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                </CommandItem>
+              ))}
           </CommandList>
         </Command>
       </div>
