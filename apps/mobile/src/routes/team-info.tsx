@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { toast } from "sonner";
@@ -60,13 +60,29 @@ interface PitData {
 }
 
 function TeamInfoPage() {
+  const navigate = useNavigate();
   const { teamKey } = Route.useSearch();
   const { currentEvent } = useEvent();
   const [pitData, setPitData] = useState<PitData | null>(null);
+  const [teamName, setTeamName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingAutoIndex, setEditingAutoIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"pit" | "match">("pit");
+
+  // Check if team has actually been scouted (not just empty data structure)
+  const isTeamScouted = (data: any): boolean => {
+    if (!data) return false;
+    // Check if any meaningful pit scouting data exists
+    // Data is considered "scouted" if it has images, autos, or any true boolean values
+    if (data.images?.files?.length > 0) return true;
+    if (data.autos?.length > 0) return true;
+    if (data.movement?.depot || data.movement?.trough) return true;
+    if (data.intake?.ground || data.intake?.station || data.intake?.depot || data.intake?.stocking) return true;
+    if (data.fuel?.shootMoving || data.fuel?.passing) return true;
+    if (data.climb?.level) return true;
+    return false;
+  };
 
   useEffect(() => {
     if (!currentEvent || !teamKey) {
@@ -76,8 +92,16 @@ function TeamInfoPage() {
 
     getEventTeamData(currentEvent).then((data) => {
       const teamData = data.find((t) => t.team === teamKey);
-      if (teamData && teamData.data) {
-        setPitData(teamData.data as PitData);
+      if (teamData) {
+        // Always store team name (exists even without pit data)
+        setTeamName(teamData.team_name || `Team ${teamKey.replace("frc", "")}`);
+
+        // Check if pit data exists and is meaningful
+        if (teamData.data && isTeamScouted(teamData.data)) {
+          setPitData(teamData.data as PitData);
+        } else {
+          setPitData(null); // Treat as not scouted
+        }
       }
       setLoading(false);
     });
@@ -232,10 +256,53 @@ function TeamInfoPage() {
               <p className="text-muted-foreground">Loading team data...</p>
             </div>
           ) : !pitData ? (
-            <div className="flex flex-1 items-center justify-center">
-              <p className="text-muted-foreground">
-                No pit data found for this team
-              </p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
+              {/* Icon */}
+              <div className="rounded-full bg-muted p-6">
+                <svg
+                  width="64"
+                  height="64"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="text-muted-foreground"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M9 11H15M9 15H15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="12" cy="8" r="1" fill="currentColor" />
+                </svg>
+              </div>
+
+              {/* Text */}
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-bold text-primary">
+                  Not Scouted Yet
+                </h3>
+                <p className="text-sm text-muted-foreground max-w-xs">
+                  This team hasn't been pit scouted. Visit their pit to gather information.
+                </p>
+              </div>
+
+              {/* Button */}
+              <Button
+                onClick={() => {
+                  navigate({
+                    to: "/pitscout",
+                    search: {
+                      teamNum: Number(teamNum),
+                      teamName: teamName,
+                    },
+                  });
+                }}
+                className="w-full max-w-sm h-12 bg-primary text-background font-semibold"
+              >
+                Scout Team {teamNum}
+              </Button>
             </div>
           ) : (
             <div className="flex flex-col gap-6">

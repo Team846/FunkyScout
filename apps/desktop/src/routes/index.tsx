@@ -1,14 +1,19 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Loader } from "./-components/Loader";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import supabase from "@lib/supabase/supabase";
 
 export const Route = createFileRoute("/")({
-  component: RouteComponent,
-});
+  beforeLoad: async () => {
+    // Check if user is authenticated
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-function RouteComponent() {
-  return (
-    <>
-      <Loader />
-    </>
-  );
-}
+    if (!session) {
+      // Not logged in - redirect to auth
+      throw redirect({ to: "/auth" });
+    }
+
+    // Logged in - redirect to dashboard
+    throw redirect({ to: "/dashboard" });
+  },
+});

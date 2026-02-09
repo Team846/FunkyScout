@@ -19,6 +19,7 @@ import {
 import { useEvent } from "./EventContext";
 import { SyncManager } from "@lib/sync/SyncManager";
 import supabase from "@lib/supabase/supabase";
+import { toast } from "sonner";
 
 interface SyncContextType {
   syncManager: SyncManager | null;
@@ -125,9 +126,16 @@ export function SyncProvider({
       syncManagerRef.current
     ) {
       console.log("[SyncContext] Back online, triggering sync");
-      forceSyncNow().catch((error) => {
-        console.error("[SyncContext] Online sync failed:", error);
-      });
+      toast.info("Back online, syncing data...", { duration: 2000 });
+
+      forceSyncNow()
+        .then(() => {
+          toast.success("Sync complete!", { duration: 2000 });
+        })
+        .catch((error) => {
+          console.error("[SyncContext] Online sync failed:", error);
+          toast.error("Sync failed", { duration: 3000 });
+        });
     }
     prevOnlineRef.current = isOnline;
   }, [isOnline, dbInitialized, forceSyncNow]);

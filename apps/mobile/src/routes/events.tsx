@@ -11,12 +11,18 @@ export const Route = createFileRoute("/events")({
 
 function EventsPage() {
   const navigate = useNavigate();
-  const { setCurrentEvent } = useEvent();
+  const { setCurrentEvent, dbInitialized, isOnline } = useEvent();
   const [events, setEvents] = useState<EventList[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    // Only fetch when database is initialized
+    if (!dbInitialized) {
+      return;
+    }
+
+    setLoading(true);
     getEvents()
       .then((data) => {
         const sorted = (data || []).sort(
@@ -26,7 +32,7 @@ function EventsPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [dbInitialized, isOnline]);
 
   const handleSelectEvent = (eventKey: string) => {
     setCurrentEvent(eventKey);
