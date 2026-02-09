@@ -10,7 +10,7 @@ import {
 import { useEvent } from "./EventContext";
 import { useSync } from "./SyncContext";
 import { getTeams } from "@lib/data";
-import { fetchTBAEventTeams } from "@lib/tba";
+import { fetchTBATeamStatuses } from "@lib/tba";
 import {
   getTbaTeams,
   cacheTbaTeams,
@@ -22,6 +22,7 @@ import {
   PollingController,
   DEFAULT_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
+import supabase from "@lib/supabase/supabase";
 
 export interface Team {
   key: string;
@@ -114,32 +115,28 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       console.log("[TeamData] Fetching from network");
       setLoading(true);
       try {
-        const [supabaseTeams, tbaTeamsData] = await Promise.all([
+        const [supabaseTeams, tbaStatuses] = await Promise.all([
           getTeams(currentEvent),
-          fetchTBAEventTeams(currentEvent),
+          fetchTBATeamStatuses(currentEvent),
         ]);
 
-        // Use TBA teams as source of truth - only include teams from TBA
-        const supabaseMap = new Map(
-          (supabaseTeams ?? []).map((t: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => [
-            t.team,
-            t,
-          ])
-        );
+        // Use Supabase teams as source of truth (populated on bootstrap)
+        // Merge with TBA statuses for rankings only
+        const merged: TbaTeam[] = (supabaseTeams ?? []).map((supabaseTeam: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
+          const teamStatus = tbaStatuses?.[supabaseTeam.team];
+          const teamNumber = parseInt(supabaseTeam.team.replace("frc", ""), 10);
 
-        const merged: TbaTeam[] = (tbaTeamsData ?? []).map((tbaTeam: { key: string; team: number; name: string; rank: number; record: { wins: number; losses: number; ties: number }; nextMatch: string | null; lastMatch: string | null }) => {
-          const supabaseTeam = supabaseMap.get(tbaTeam.key);
           return {
             event: currentEvent,
-            team_key: tbaTeam.key,
-            team_number: tbaTeam.team,
-            name: tbaTeam.name ?? supabaseTeam?.team_name ?? `Team ${tbaTeam.team}`,
-            rank: tbaTeam.rank ?? 0,
-            wins: tbaTeam.record?.wins ?? 0,
-            losses: tbaTeam.record?.losses ?? 0,
-            ties: tbaTeam.record?.ties ?? 0,
-            next_match: tbaTeam.nextMatch || undefined,
-            last_match: tbaTeam.lastMatch || undefined,
+            team_key: supabaseTeam.team,
+            team_number: teamNumber,
+            name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
+            rank: teamStatus?.qual?.ranking?.rank ?? 0,
+            wins: teamStatus?.qual?.ranking?.record?.wins ?? 0,
+            losses: teamStatus?.qual?.ranking?.record?.losses ?? 0,
+            ties: teamStatus?.qual?.ranking?.record?.ties ?? 0,
+            next_match: teamStatus?.next_match_key || undefined,
+            last_match: teamStatus?.last_match_key || undefined,
             last_synced: Date.now(),
           };
         });
@@ -255,6 +252,36 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       console.log(`[TeamData] Found ${scouted.size} scouted teams`);
     });
   }, [currentEvent, dbInitialized]);
+
+  // Subscribe to Supabase realtime for event_team_data updates
+  useEffect(() => {
+    if (!currentEvent || !dbInitialized || !isOnline) return;
+
+    console.log('[TeamData] Setting up realtime subscription for event_team_data');
+
+    const channel = supabase
+      .channel(`event-team-data-${currentEvent}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'event_team_data',
+          filter: `event=eq.${currentEvent}`
+        },
+        (payload) => {
+          console.log('[TeamData] Realtime update received:', payload);
+          // Desktop updated team data → refresh local cache
+          fetchTeams();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[TeamData] Cleaning up realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [currentEvent, dbInitialized, isOnline, fetchTeams]);
 
   const refresh = useCallback(async () => {
     console.log("[TeamDataContext] Refresh callback triggered");

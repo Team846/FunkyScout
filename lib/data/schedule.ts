@@ -70,6 +70,13 @@ export async function getSchedule(eventKey: string) {
 
     if (error) throw error;
 
+    console.log(`[Schedule] Fetched ${data?.length ?? 0} schedule entries from Supabase`);
+    if (data && data.length > 0) {
+      console.log('[Schedule] Sample entry:', data[0]);
+      const entriesWithNames = data.filter(d => d.name).length;
+      console.log(`[Schedule] ${entriesWithNames} entries have name field (shift assignments)`);
+    }
+
     if (data) {
       await cacheEventSchedule(
         data.map((d) => ({
@@ -79,10 +86,12 @@ export async function getSchedule(eventKey: string) {
           alliance: d.alliance as "red" | "blue",
           name: d.name,
           uid: d.uid,
-          last_modified: d.last_modified,
-          deleted_at: d.deleted_at,
+          // Convert PostgreSQL timestamps to epoch milliseconds for SQLite
+          last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
+          deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,
         })),
       );
+      console.log(`[Schedule] Cached ${data.length} entries to local SQLite`);
     }
 
     return data ?? [];

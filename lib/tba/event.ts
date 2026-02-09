@@ -34,7 +34,8 @@ export interface EventScheduleEntry {
 }
 
 /**
- * Fetches teams from TBA and returns each team and their ranks
+ * Fetches teams from TBA and returns each team and their ranks.
+ * Used for bootstrap to populate Supabase with team names.
  */
 async function fetchTBAEventTeams(event: string): Promise<TeamRank[] | undefined> {
   const teamsStatuses = await fetchTBAData(
@@ -84,6 +85,20 @@ async function fetchTBAEventTeams(event: string): Promise<TeamRank[] | undefined
   }
 
   return teams;
+}
+
+/**
+ * Fetches only team statuses/rankings from TBA (not team names).
+ * Used for runtime polling - 50% fewer API calls than fetchTBAEventTeams.
+ * Returns a map of team_key -> status for merging with Supabase team data.
+ */
+async function fetchTBATeamStatuses(event: string): Promise<Record<string, any> | undefined> {
+  const teamsStatuses = await fetchTBAData(
+    `/event/${event}/teams/statuses`,
+    "GET"
+  );
+
+  return teamsStatuses;
 }
 
 async function fetchTBAMatchSchedule(
@@ -140,5 +155,5 @@ async function fetchTeamEventCOPRs(
   return returnObject;
 }
 
-export { fetchTBAEventTeams, fetchTBAMatchSchedule, fetchTeamEventCOPRs };
+export { fetchTBAEventTeams, fetchTBATeamStatuses, fetchTBAMatchSchedule, fetchTeamEventCOPRs };
 export type { EventSchedule, TeamRank };

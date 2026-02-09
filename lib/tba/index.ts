@@ -4,6 +4,7 @@ export { fetchTeamEventStatus } from "./team";
 export type { TeamEventStatus } from "./team";
 export {
   fetchTBAEventTeams,
+  fetchTBATeamStatuses,
   fetchTBAMatchSchedule,
   fetchTeamEventCOPRs,
 } from "./event";

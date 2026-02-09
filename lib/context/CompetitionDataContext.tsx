@@ -15,7 +15,6 @@ import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
 import type { EventPicklist as SupabaseEventPicklist, EventPicklistEntry as SupabaseEventPicklistEntry } from "../data/schema";
 import {
   getEventSchedule,
-  cacheEventSchedule,
   getTbaMatches,
   cacheTbaMatches,
   cacheEventPicklists,
@@ -27,6 +26,7 @@ import {
   DEFAULT_POLLING_CONFIG,
   LIVE_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
+import supabase from "@lib/supabase/supabase";
 
 export interface ScheduleEntry {
   match: string;
@@ -129,6 +129,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           fetchTBAMatchSchedule(currentEvent),
         ]);
 
+        console.log(`[CompetitionData] getSchedule returned ${supabaseSchedule?.length ?? 0} entries`);
+
         if (supabaseSchedule) {
           const entries = supabaseSchedule.map((s: { match: string; team: string; alliance: string; name?: string; uid?: string; last_modified?: string; deleted_at?: string | null }) => ({
             match: s.match,
@@ -136,19 +138,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             alliance: s.alliance as "red" | "blue",
           }));
           setSchedule(entries);
-          // Cache full schedule entries with name and uid for shift assignments (convert string timestamps to numbers for SQLite)
-          await cacheEventSchedule(
-            supabaseSchedule.map((s: { match: string; team: string; alliance: string; name?: string; uid?: string; last_modified?: string; deleted_at?: string | null }) => ({
-              event: currentEvent,
-              match: s.match,
-              team: s.team,
-              alliance: s.alliance as "red" | "blue",
-              name: s.name,
-              uid: s.uid,
-              last_modified: s.last_modified ? new Date(s.last_modified).getTime() : undefined,
-              deleted_at: s.deleted_at ? new Date(s.deleted_at).getTime() : undefined,
-            }))
-          );
+          // Note: getSchedule() already handles caching with correct timestamp conversion
         }
 
         if (tbaData) {
@@ -171,6 +161,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           await cacheTbaMatches(currentEvent, tbaMatches);
         }
         hasLoadedDataRef.current = true;
+      } catch (error) {
+        console.error("[CompetitionData] Error fetching schedule:", error);
       } finally {
         setLoading(false);
         setInitialLoading(false);
@@ -318,6 +310,64 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       fetchPicklists();
     }
   }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus, fetchPicklists, isOnline]);
+
+  // Subscribe to Supabase realtime for schedule/match/picklist updates
+  useEffect(() => {
+    if (!currentEvent || !dbInitialized || !isOnline) return;
+
+    console.log('[Competition] Setting up realtime subscriptions');
+
+    const channel = supabase
+      .channel(`competition-data-${currentEvent}`)
+      // Listen for schedule changes (rare - manual updates by admin)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'event_schedule',
+          filter: `event=eq.${currentEvent}`
+        },
+        (payload) => {
+          console.log('[Competition] Schedule updated:', payload);
+          fetchSchedule(); // Refresh schedule from Supabase
+        }
+      )
+      // Listen for match data changes (desktop posts results)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'event_match_data',
+          filter: `event=eq.${currentEvent}`
+        },
+        (payload) => {
+          console.log('[Competition] Match data updated:', payload);
+          fetchSchedule(); // Refresh (includes match data)
+        }
+      )
+      // Listen for picklist changes (desktop or other mobile users edit)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'event_picklist',
+          filter: `event=eq.${currentEvent}`
+        },
+        (payload) => {
+          console.log('[Competition] Picklist updated:', payload);
+          fetchPicklists(); // Refresh picklists
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[Competition] Cleaning up realtime subscriptions');
+      supabase.removeChannel(channel);
+    };
+  }, [currentEvent, dbInitialized, isOnline, fetchSchedule, fetchPicklists]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");
