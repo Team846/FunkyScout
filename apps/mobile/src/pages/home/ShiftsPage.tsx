@@ -71,6 +71,10 @@ export function ShiftsPage() {
 
     getUserEventScheduleAssignments(currentEvent, userData.name)
       .then((assignments) => {
+        console.log(`[ShiftsPage] Found ${assignments.length} shift assignments for user: ${userData.name}`);
+        if (assignments.length > 0) {
+          console.log('[ShiftsPage] First assignment:', assignments[0]);
+        }
         const now = Date.now();
 
         // Map assignments to display format with match times

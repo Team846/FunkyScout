@@ -1,7 +1,7 @@
 import supabase from "./supabase";
 import { handleError } from "../../utils/errorHandler";
 
-export type UserRole = "user" | "admin" | "scout";
+export type UserRole = "user" | "admin" | "scouter";
 export type LocalUserData = {
   uid: string;
   email: string;

@@ -22,12 +22,20 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Get the origin from the request to support both localhost and production
+    const origin = req.headers.get("origin") || Deno.env.get("AUTH_CALLBACK_URL");
+    const baseUrl = origin || "https://funkyscout.vercel.app";
+    // Redirect to /verify for email confirmation (matches Supabase redirect URLs)
+    const callbackUrl = `${baseUrl}/verify`;
+
+    console.log(`Using callback URL: ${callbackUrl}`);
+
     // 1. sign up the user
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${Deno.env.get("AUTH_CALLBACK_URL")}`,
+        emailRedirectTo: callbackUrl,
       },
     });
 

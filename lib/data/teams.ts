@@ -21,7 +21,7 @@ export async function getTeams(eventKey: string) {
   try {
     const { data, error } = await supabase
       .from("event_team_data")
-      .select("event, team, data, team_name")
+      .select("event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at")
       .eq("event", eventKey)
       .is("deleted_at", null);
 
@@ -34,6 +34,12 @@ export async function getTeams(eventKey: string) {
           team: d.team,
           data: d.data,
           team_name: d.team_name,
+          name: d.name,
+          uid: d.uid,
+          assigned: d.assigned,
+          timestamp: d.timestamp ? new Date(d.timestamp).getTime() : undefined,
+          last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
+          deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,
         })),
       );
     }

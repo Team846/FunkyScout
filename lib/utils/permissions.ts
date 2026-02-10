@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "scout" | "user";
+export type UserRole = "admin" | "scouter" | "user";
 export type PicklistType = "public" | "private" | "default";
 
 export function canCreatePicklist(role: UserRole): boolean {
@@ -12,8 +12,8 @@ export function canViewPicklist(
   currentUid?: string,
 ): boolean {
   if (role === "admin") return true;
-  if (picklistType === "public") return role === "scout";
-  if (picklistType === "default") return role === "scout";
+  if (picklistType === "public") return role === "scouter";
+  if (picklistType === "default") return role === "scouter";
   if (picklistType === "private") return picklistUid === currentUid;
   return false;
 }
@@ -24,9 +24,13 @@ export function canEditPicklist(
   picklistUid?: string,
   currentUid?: string,
 ): boolean {
-  if (role === "admin") return true;
-  if (picklistType === "public") return role === "scout";
-  if (picklistType === "default") return false; // scouts view-only
-  if (picklistType === "private") return picklistUid === currentUid;
+  if (role === "admin") return true; // Admins can always edit public and default
+  if (picklistType === "default") return false; // Only admins can edit default picklists
+  if (picklistType === "public") {
+    return role === "scouter"; // All scouters can edit public picklists
+  }
+  if (picklistType === "private") {
+    return picklistUid === currentUid; // Only creator can edit private
+  }
   return false;
 }

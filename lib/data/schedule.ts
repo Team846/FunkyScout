@@ -64,11 +64,33 @@ export async function getSchedule(eventKey: string) {
   try {
     const { data, error } = await supabase
       .from("event_schedule")
-      .select("*")
+      .select(`
+        event,
+        match,
+        team,
+        alliance,
+        name,
+        uid,
+        last_modified,
+        deleted_at,
+        est_time,
+        red_score,
+        blue_score,
+        red_win_prob,
+        predicted_red_score,
+        predicted_blue_score
+      `)
       .eq("event", eventKey)
       .is("deleted_at", null);
 
     if (error) throw error;
+
+    console.log(`[Schedule] Fetched ${data?.length ?? 0} schedule entries from Supabase`);
+    if (data && data.length > 0) {
+      console.log('[Schedule] Sample entry:', data[0]);
+      const entriesWithNames = data.filter(d => d.name).length;
+      console.log(`[Schedule] ${entriesWithNames} entries have name field (shift assignments)`);
+    }
 
     if (data) {
       await cacheEventSchedule(
@@ -79,10 +101,19 @@ export async function getSchedule(eventKey: string) {
           alliance: d.alliance as "red" | "blue",
           name: d.name,
           uid: d.uid,
-          last_modified: d.last_modified,
-          deleted_at: d.deleted_at,
+          // Convert PostgreSQL timestamps to epoch milliseconds for SQLite
+          last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
+          deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,
+          // Match data from desktop sync
+          est_time: d.est_time,
+          red_score: d.red_score,
+          blue_score: d.blue_score,
+          red_win_prob: d.red_win_prob,
+          predicted_red_score: d.predicted_red_score,
+          predicted_blue_score: d.predicted_blue_score,
         })),
       );
+      console.log(`[Schedule] Cached ${data.length} entries to local SQLite`);
     }
 
     return data ?? [];

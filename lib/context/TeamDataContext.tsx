@@ -10,7 +10,7 @@ import {
 import { useEvent } from "./EventContext";
 import { useSync } from "./SyncContext";
 import { getTeams } from "@lib/data";
-import { fetchTBAEventTeams } from "@lib/tba";
+import { fetchTBATeamStatuses } from "@lib/tba";
 import {
   getTbaTeams,
   cacheTbaTeams,
@@ -22,6 +22,7 @@ import {
   PollingController,
   DEFAULT_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
+import supabase from "@lib/supabase/supabase";
 
 export interface Team {
   key: string;
@@ -38,6 +39,15 @@ export interface TBATeam {
   record: { wins: number; losses: number; ties: number };
   nextMatch: string | null;
   lastMatch: string | null;
+  epa?: {
+    total_points?: { mean?: number; sd?: number };
+    auto?: { mean?: number; sd?: number };
+    teleop?: { mean?: number; sd?: number };
+    endgame?: { mean?: number; sd?: number };
+    norm?: number;
+  } | null;
+  opr?: number;
+  dpr?: number;
 }
 
 interface TeamDataContextType {
@@ -112,65 +122,145 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     // 2. Refresh from network if online
     if (isOnline) {
       console.log("[TeamData] Fetching from network");
-      setLoading(true);
+      // Only show loading on initial load (no data yet) or event change (skipped cache)
+      // Don't show loading on background refreshes (prevents flickering)
+      const isInitialLoad = !hasLoadedDataRef.current;
+      if (isInitialLoad || shouldSkipCache) {
+        setLoading(true);
+      }
       try {
-        const [supabaseTeams, tbaTeamsData] = await Promise.all([
-          getTeams(currentEvent),
-          fetchTBAEventTeams(currentEvent),
-        ]);
+        const supabaseTeams = await getTeams(currentEvent);
 
-        // Use TBA teams as source of truth - only include teams from TBA
-        const supabaseMap = new Map(
-          (supabaseTeams ?? []).map((t: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => [
-            t.team,
-            t,
-          ])
-        );
-
-        const merged: TbaTeam[] = (tbaTeamsData ?? []).map((tbaTeam: { key: string; team: number; name: string; rank: number; record: { wins: number; losses: number; ties: number }; nextMatch: string | null; lastMatch: string | null }) => {
-          const supabaseTeam = supabaseMap.get(tbaTeam.key);
-          return {
-            event: currentEvent,
-            team_key: tbaTeam.key,
-            team_number: tbaTeam.team,
-            name: tbaTeam.name ?? supabaseTeam?.team_name ?? `Team ${tbaTeam.team}`,
-            rank: tbaTeam.rank ?? 0,
-            wins: tbaTeam.record?.wins ?? 0,
-            losses: tbaTeam.record?.losses ?? 0,
-            ties: tbaTeam.record?.ties ?? 0,
-            next_match: tbaTeam.nextMatch || undefined,
-            last_match: tbaTeam.lastMatch || undefined,
-            last_synced: Date.now(),
-          };
+        // TBA Failsafe: Check if desktop has synced recently (within last 5 minutes)
+        // Desktop updates Supabase every 30s with TBA data (rank, EPA, OPR)
+        // If no recent update, desktop is likely not running
+        const now = Date.now();
+        const hasRecentDesktopSync = (supabaseTeams ?? []).some((t: any) => {
+          // Check if data.last_synced exists and is recent
+          const lastSynced = t.data?.last_synced;
+          if (lastSynced && typeof lastSynced === 'number') {
+            return (now - lastSynced) < 5 * 60 * 1000; // 5 minutes
+          }
+          return false;
         });
 
-        merged.sort((a, b) => a.team_number - b.team_number);
-        if (merged.length > 0) {
-          await cacheTbaTeams(currentEvent, merged);
-          setTeams(
-            merged.map((t) => ({
-              key: t.team_key,
-              num: t.team_number,
-              name: t.name ?? "",
-              rank: t.rank ?? 0,
-            }))
-          );
-          setTbaTeams(
-            merged.map((t) => ({
-              key: t.team_key,
-              team: t.team_number,
-              name: t.name ?? "",
-              rank: t.rank ?? 0,
-              record: {
-                wins: t.wins ?? 0,
-                losses: t.losses ?? 0,
-                ties: t.ties ?? 0,
-              },
-              nextMatch: t.next_match || null,
-              lastMatch: t.last_match || null,
-            }))
-          );
-          hasLoadedDataRef.current = true;
+        // Fetch TBA statuses for rankings (mobile always does this for fresh rankings)
+        const tbaStatuses = await fetchTBATeamStatuses(currentEvent);
+
+        if (hasRecentDesktopSync || (supabaseTeams ?? []).length === 0) {
+          // Normal flow: Desktop is running, use Supabase + TBA
+          console.log("[TeamData] Desktop is active, using Supabase + TBA data");
+
+          const merged: TbaTeam[] = (supabaseTeams ?? []).map((supabaseTeam: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
+            const teamStatus = tbaStatuses?.[supabaseTeam.team];
+            const teamNumber = parseInt(supabaseTeam.team.replace("frc", ""), 10);
+
+            return {
+              event: currentEvent,
+              team_key: supabaseTeam.team,
+              team_number: teamNumber,
+              name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
+              // Rankings from TBA (mobile's responsibility - freshest data with 2min polling)
+              rank: teamStatus?.qual?.ranking?.rank ?? supabaseTeam.data?.rank ?? 0,
+              wins: teamStatus?.qual?.ranking?.record?.wins ?? supabaseTeam.data?.record?.wins ?? 0,
+              losses: teamStatus?.qual?.ranking?.record?.losses ?? supabaseTeam.data?.record?.losses ?? 0,
+              ties: teamStatus?.qual?.ranking?.record?.ties ?? supabaseTeam.data?.record?.ties ?? 0,
+              // EPA from Supabase (desktop keeps this fresh every 30s)
+              epa: supabaseTeam.data?.epa ?? null,
+              // OPR/DPR from Supabase (desktop keeps this fresh)
+              opr: supabaseTeam.data?.opr ?? undefined,
+              dpr: supabaseTeam.data?.dpr ?? undefined,
+              next_match: teamStatus?.next_match_key || supabaseTeam.data?.next_match || undefined,
+              last_match: teamStatus?.last_match_key || supabaseTeam.data?.last_match || undefined,
+              last_synced: Date.now(),
+            };
+          });
+
+          merged.sort((a, b) => a.team_number - b.team_number);
+          if (merged.length > 0) {
+            await cacheTbaTeams(currentEvent, merged);
+            setTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                num: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+              }))
+            );
+            setTbaTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                team: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+                record: {
+                  wins: t.wins ?? 0,
+                  losses: t.losses ?? 0,
+                  ties: t.ties ?? 0,
+                },
+                nextMatch: t.next_match || null,
+                lastMatch: t.last_match || null,
+              }))
+            );
+            hasLoadedDataRef.current = true;
+          }
+        } else {
+          // TBA Failsafe: Desktop not running, use TBA-only data
+          console.warn("[TeamData] Desktop not detected (no recent sync), using TBA failsafe");
+
+          // Use Supabase teams for base info, but acknowledge EPA/OPR will be stale
+          const merged: TbaTeam[] = (supabaseTeams ?? []).map((supabaseTeam: { event: string; team: string; data?: any; team_name?: string; rank?: number }) => {
+            const teamStatus = tbaStatuses?.[supabaseTeam.team];
+            const teamNumber = parseInt(supabaseTeam.team.replace("frc", ""), 10);
+
+            return {
+              event: currentEvent,
+              team_key: supabaseTeam.team,
+              team_number: teamNumber,
+              name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
+              // Use TBA for rankings
+              rank: teamStatus?.qual?.ranking?.rank ?? 0,
+              wins: teamStatus?.qual?.ranking?.record?.wins ?? 0,
+              losses: teamStatus?.qual?.ranking?.record?.losses ?? 0,
+              ties: teamStatus?.qual?.ranking?.record?.ties ?? 0,
+              // EPA/OPR will be stale or null (desktop not running)
+              epa: supabaseTeam.data?.epa ?? null,
+              opr: supabaseTeam.data?.opr ?? undefined,
+              dpr: supabaseTeam.data?.dpr ?? undefined,
+              next_match: teamStatus?.next_match_key || undefined,
+              last_match: teamStatus?.last_match_key || undefined,
+              last_synced: Date.now(),
+            };
+          });
+
+          merged.sort((a, b) => a.team_number - b.team_number);
+          if (merged.length > 0) {
+            await cacheTbaTeams(currentEvent, merged);
+            setTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                num: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+              }))
+            );
+            setTbaTeams(
+              merged.map((t) => ({
+                key: t.team_key,
+                team: t.team_number,
+                name: t.name ?? "",
+                rank: t.rank ?? 0,
+                record: {
+                  wins: t.wins ?? 0,
+                  losses: t.losses ?? 0,
+                  ties: t.ties ?? 0,
+                },
+                nextMatch: t.next_match || null,
+                lastMatch: t.last_match || null,
+              }))
+            );
+            hasLoadedDataRef.current = true;
+          }
         }
       } finally {
         setLoading(false);
@@ -242,12 +332,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       const scouted = new Set(
         data
           .filter((t: EventTeamData) => {
-            // Only count as scouted if data exists and is not empty
-            if (!t.data) return false;
-            if (Array.isArray(t.data)) return t.data.length > 0;
-            if (typeof t.data === "object")
-              return Object.keys(t.data).length > 0;
-            return false;
+            // Only count as scouted if name is registered (someone submitted pit data)
+            return !!t.name;
           })
           .map((t: EventTeamData) => t.team)
       );
@@ -255,6 +341,53 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       console.log(`[TeamData] Found ${scouted.size} scouted teams`);
     });
   }, [currentEvent, dbInitialized]);
+
+  // Subscribe to Supabase realtime for event_team_data updates
+  useEffect(() => {
+    if (!currentEvent || !dbInitialized || !isOnline) return;
+
+    console.log('[TeamData] Setting up realtime subscription for event_team_data');
+
+    // Debounce timer to batch multiple realtime updates
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let updateCount = 0;
+
+    const channel = supabase
+      .channel(`event-team-data-${currentEvent}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'event_team_data',
+          filter: `event=eq.${currentEvent}`
+        },
+        () => {
+          updateCount++;
+
+          // Clear existing timer
+          if (debounceTimer) {
+            clearTimeout(debounceTimer);
+          }
+
+          // Set new timer - only fetch after 2s of no updates
+          debounceTimer = setTimeout(() => {
+            console.log(`[TeamData] Realtime: Batched ${updateCount} updates, fetching now`);
+            updateCount = 0;
+            fetchTeams();
+          }, 2000); // 2 second debounce
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[TeamData] Cleaning up realtime subscription');
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      supabase.removeChannel(channel);
+    };
+  }, [currentEvent, dbInitialized, isOnline, fetchTeams]);
 
   const refresh = useCallback(async () => {
     console.log("[TeamDataContext] Refresh callback triggered");
@@ -269,12 +402,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       const scouted = new Set(
         data
           .filter((t: EventTeamData) => {
-            // Only count as scouted if data exists and is not empty
-            if (!t.data) return false;
-            if (Array.isArray(t.data)) return t.data.length > 0;
-            if (typeof t.data === "object")
-              return Object.keys(t.data).length > 0;
-            return false;
+            // Only count as scouted if name is registered (someone submitted pit data)
+            return !!t.name;
           })
           .map((t: EventTeamData) => t.team)
       );

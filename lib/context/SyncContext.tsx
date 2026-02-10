@@ -19,6 +19,8 @@ import {
 import { useEvent } from "./EventContext";
 import { SyncManager } from "@lib/sync/SyncManager";
 import supabase from "@lib/supabase/supabase";
+import { toast } from "sonner";
+import { setGlobalSyncTrigger } from "@lib/data/writes";
 
 interface SyncContextType {
   syncManager: SyncManager | null;
@@ -98,6 +100,12 @@ export function SyncProvider({
     }
   }, [isOnline]);
 
+  // Register forceSyncNow as the global sync trigger for instant sync
+  useEffect(() => {
+    setGlobalSyncTrigger(forceSyncNow);
+    console.log("[SyncContext] Registered global sync trigger for instant sync");
+  }, [forceSyncNow]);
+
   // Trigger 1: Event Switch
   useEffect(() => {
     if (
@@ -125,9 +133,16 @@ export function SyncProvider({
       syncManagerRef.current
     ) {
       console.log("[SyncContext] Back online, triggering sync");
-      forceSyncNow().catch((error) => {
-        console.error("[SyncContext] Online sync failed:", error);
-      });
+      toast.info("Back online, syncing data...", { duration: 2000 });
+
+      forceSyncNow()
+        .then(() => {
+          toast.success("Sync complete!", { duration: 2000 });
+        })
+        .catch((error) => {
+          console.error("[SyncContext] Online sync failed:", error);
+          toast.error("Sync failed", { duration: 3000 });
+        });
     }
     prevOnlineRef.current = isOnline;
   }, [isOnline, dbInitialized, forceSyncNow]);

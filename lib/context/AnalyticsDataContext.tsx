@@ -91,7 +91,11 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     // 2. Network refresh
     if (isOnline && teams.length > 0) {
       console.log("[AnalyticsData] Fetching from Statbotics");
-      setLoading(true);
+      // Only show loading on initial load or event change (prevents flickering on background refreshes)
+      const isInitialLoad = !hasLoadedDataRef.current;
+      if (isInitialLoad || shouldSkipCache) {
+        setLoading(true);
+      }
       try {
         const [rawEpas, rawMatches] = await Promise.all([
           fetchEventTeamYears(currentEvent),

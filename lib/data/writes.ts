@@ -4,7 +4,8 @@
  * All write functions:
  * 1. Write to local SQLite cache immediately (optimistic update)
  * 2. Queue the operation for background sync to Supabase
- * 3. Return immediately (non-blocking)
+ * 3. Trigger instant sync if online (for immediate collaboration)
+ * 4. Return immediately (non-blocking)
  */
 
 import {
@@ -26,6 +27,32 @@ import {
 } from "@lib/db";
 import { addToImageQueue } from "@lib/storage/imageQueue";
 import { compressImage } from "@lib/utils/imageCompression";
+
+/**
+ * Global sync trigger - set by SyncContext
+ * Allows write operations to trigger instant sync without React context
+ */
+let globalSyncTrigger: (() => Promise<void>) | null = null;
+
+export function setGlobalSyncTrigger(trigger: () => Promise<void>) {
+  globalSyncTrigger = trigger;
+}
+
+/**
+ * Trigger instant sync if online
+ * Fire-and-forget - errors are logged but don't block the write
+ */
+async function triggerInstantSync() {
+  if (typeof window === "undefined" || !navigator.onLine) return;
+  if (!globalSyncTrigger) return;
+
+  try {
+    await globalSyncTrigger();
+  } catch (error) {
+    console.error("[Writes] Instant sync failed:", error);
+    // Don't throw - write already succeeded locally
+  }
+}
 
 /**
  * Put team data (pit scouting)
@@ -79,6 +106,9 @@ export async function putTeamData(
   });
 
   console.log(`[Writes] Queued team data for ${teamNumber} in ${eventKey}`);
+
+  // 3. Trigger instant sync if online
+  await triggerInstantSync();
 }
 
 /**
@@ -129,6 +159,9 @@ export async function putMatchData(
   console.log(
     `[Writes] Queued match data for ${teamNumber} in match ${matchNumber}`,
   );
+
+  // 3. Trigger instant sync if online
+  await triggerInstantSync();
 }
 
 /**
@@ -164,6 +197,9 @@ export async function deleteMatchData(
   console.log(
     `[Writes] Queued delete match data for ${teamNumber} in match ${matchNumber}`,
   );
+
+  // Trigger instant sync if online
+  await triggerInstantSync();
 }
 
 /**
@@ -194,6 +230,9 @@ export async function assignShift(
   });
 
   console.log(`[Writes] Queued shift assignment for ${teamNumber}`);
+
+  // Trigger instant sync if online
+  await triggerInstantSync();
 }
 
 /**
@@ -253,6 +292,9 @@ export async function createPicklist(
 
   console.log(`[Writes] Queued picklist creation: ${title}`);
 
+  // Trigger instant sync if online
+  await triggerInstantSync();
+
   return id;
 }
 
@@ -304,6 +346,9 @@ export async function updatePicklist(
   });
 
   console.log(`[Writes] Queued picklist update: ${title}`);
+
+  // Trigger instant sync if online
+  await triggerInstantSync();
 }
 
 /**
@@ -343,6 +388,9 @@ export async function deletePicklist(
   });
 
   console.log(`[Writes] Queued picklist deletion: ${id}`);
+
+  // Trigger instant sync if online
+  await triggerInstantSync();
 }
 
 /**
@@ -437,4 +485,7 @@ export async function putTeamDataWithImages(
   console.log(
     `[Writes] Queued team data with ${imageFiles.length} images for ${teamNumber}`,
   );
+
+  // 5. Trigger instant sync if online
+  await triggerInstantSync();
 }

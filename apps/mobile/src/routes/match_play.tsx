@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import React from "react";
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
@@ -14,7 +14,6 @@ type MatchType = {
   practice?: boolean | null;
 };
 
-
 export const Route = createFileRoute("/match_play")({
   component: MatchPlay,
   validateSearch: (search: Record<string, unknown>): MatchType => {
@@ -25,9 +24,7 @@ export const Route = createFileRoute("/match_play")({
       practice: search.practice as boolean | undefined | null,
     };
   },
-})
-
-
+});
 
 function MatchPlay() {
   const navigate = useNavigate();
@@ -43,9 +40,9 @@ function MatchPlay() {
 
   const [isAuto, setIsAuto] = useState(true);
 
-    const [isRotated, setIsRotated] = useState(false);
+  const [isRotated, setIsRotated] = useState(false);
 
-    const [shake, setShake] = useState(false);
+  const [shake, setShake] = useState(false);
   const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
   const [flashingButton, setFlashingButton] = useState<string | null>(null);
 
@@ -53,25 +50,73 @@ function MatchPlay() {
   const timer1Ref = useRef<number | null>(null);
   const timer2Ref = useRef<number | null>(null);
   const shakeTimerRef = useRef<number | null>(null);
-  const intervalRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const countdownAutoRef = useRef<number | null>(null);
   const countdownTeleopRef = useRef<number | null>(null);
+  const baseTimeRef = useRef<number>(performance.now());
+  const flashTimeoutRef = useRef<number | null>(null);
 
-    //timestamp action (maybe value), timestamp, value, x, y
-    const [fuel, setFuel] = useState([0, 0, 182.11, 158.84]);
+  // Action history for undo/redo
+  const [actionHistory, setActionHistory] = useState<string[]>([]);
+  const [undoneActions, setUndoneActions] = useState<string[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  //timestamp action (maybe value), timestamp, value, x, y
+  const [fuel, setFuel] = useState([0, 0, 182.11, 158.84]);
 
   const rotateField = () => {
     setIsRotated(!isRotated);
   };
 
   const reset = useCallback(() => {
+    baseTimeRef.current = performance.now();
     setSeconds(0);
   }, []);
 
-  const triggerButtonFeedback = async (buttonId: string) => {
+  const triggerButtonFeedback = (buttonId: string) => {
+    // Prevent multiple flashes on same button
+    if (flashingButton === buttonId) return;
+
+    // Clear previous timeout to prevent conflicts
+    if (flashTimeoutRef.current) {
+      clearTimeout(flashTimeoutRef.current);
+    }
+
     setFlashingButton(buttonId);
-    setTimeout(() => setFlashingButton(null), 300);
-    await vibrateTap();
+    flashTimeoutRef.current = window.setTimeout(() => {
+      setFlashingButton(null);
+      flashTimeoutRef.current = null;
+    }, 120);
+
+    // Add to action history
+    setActionHistory((prev) => [...prev, buttonId]);
+    setUndoneActions([]); // Clear redo stack when new action is performed
+
+    vibrateTap(); // Fire and forget
+  };
+
+  const handleUndo = () => {
+    if (actionHistory.length === 0) return;
+
+    const lastAction = actionHistory[actionHistory.length - 1];
+    setActionHistory((prev) => prev.slice(0, -1));
+    setUndoneActions((prev) => [...prev, lastAction]);
+
+    setToastMessage("Action undone");
+    setTimeout(() => setToastMessage(null), 2000);
+    vibrateTap();
+  };
+
+  const handleRedo = () => {
+    if (undoneActions.length === 0) return;
+
+    const actionToRedo = undoneActions[undoneActions.length - 1];
+    setUndoneActions((prev) => prev.slice(0, -1));
+    setActionHistory((prev) => [...prev, actionToRedo]);
+
+    setToastMessage("Action redone");
+    setTimeout(() => setToastMessage(null), 2000);
+    vibrateTap();
   };
 
   const triggerCountdown = async () => {
@@ -98,28 +143,50 @@ function MatchPlay() {
 
     if (isAuto) {
       // Skip to teleop
+      baseTimeRef.current = performance.now();
       setSeconds(0);
       setIsAuto(false);
       // Restart teleop timer
       timer2Ref.current = setTimeout(() => {
-        navigate({ to: "/match_end", search: { teamNum, matchNum, alliance, practice } });
+        navigate({
+          to: "/match_end",
+          search: { teamNum, matchNum, alliance, practice },
+        });
       }, 140 * 1000);
 
       // Set up teleop countdown
       countdownTeleopRef.current = setTimeout(() => {
-        console.log('🔔 Triggering TELEOP countdown at 137 seconds (after fast-forward)');
+        console.log(
+          "🔔 Triggering TELEOP countdown at 137 seconds (after fast-forward)"
+        );
         triggerCountdown();
       }, 137 * 1000);
     } else {
       // Skip to end
-      navigate({ to: "/match_end", search: { teamNum, matchNum, alliance, practice } });
+      navigate({
+        to: "/match_end",
+        search: { teamNum, matchNum, alliance, practice },
+      });
     }
   };
 
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setSeconds(prev => prev + 0.01);
-    }, 10);
+    // Use requestAnimationFrame with throttling for optimal performance
+    let lastUpdateTime = 0;
+    const updateInterval = 50; // Update state every 50ms (20 FPS) instead of every 10ms (100 FPS)
+
+    const updateTimer = (currentTime: number) => {
+      // Only update state every 50ms to reduce re-renders by 80%
+      if (currentTime - lastUpdateTime >= updateInterval) {
+        const elapsed = (currentTime - baseTimeRef.current) / 1000;
+        setSeconds(elapsed);
+        lastUpdateTime = currentTime;
+      }
+
+      animationFrameRef.current = requestAnimationFrame(updateTimer);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(updateTimer);
 
     // Auto mode countdown: trigger at 17s (3 seconds before 20s switch)
     countdownAutoRef.current = window.setTimeout(() => {
@@ -145,7 +212,7 @@ function MatchPlay() {
           teamNum: teamNum,
           matchNum: matchNum,
           alliance: alliance,
-          practice: practice
+          practice: practice,
         },
       });
     }, 160 * 1000);
@@ -158,7 +225,8 @@ function MatchPlay() {
     }, 10 * 1000);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (animationFrameRef.current)
+        cancelAnimationFrame(animationFrameRef.current);
       if (timer1Ref.current) clearTimeout(timer1Ref.current);
       if (timer2Ref.current) clearTimeout(timer2Ref.current);
       if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
@@ -167,296 +235,399 @@ function MatchPlay() {
     };
   }, []);
 
-    
-   return (
-    //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
-    //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
+  // Memoize tick marks to avoid recreating them on every render (was happening 100x/second)
+  const tickMarks = useMemo(() => {
+    if (isAuto) return null;
 
-    <div className={`flex flex-row w-screen h-screen gap-5 p-5 ${shake ? 'animate-shake' : ''}`}>
-      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
-        <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
-          <p className="text-[#CDA745]">
-            {matchNum ? getMatchLabel(matchNum) : ""}
-          </p>
-
-          <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>
+    return [10, 35, 60, 85, 110].map((tick) => {
+      const percentage = (tick / 140) * 100;
+      return (
+        <div
+          key={tick}
+          className="absolute w-full rounded-0.5"
+          style={{ top: `${percentage}%` }}
+        >
+          <div
+            className="w-2.5 h-0.5 bg-[#D9D9D9]"
+            style={{ transform: "translateX(-2.5px)" }}
+          />
         </div>
-        <div className="flex flex-col items-center gap-[30px]">
-          {/* Fast-forward button */}
-          <svg
-            width="25"
-            height="25"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            onClick={handleFastForward}
-            className="cursor-pointer"
-          >
-            <path d="M13 6L21 12L13 18V6Z" fill="#515151" />
-            <path d="M3 6L11 12L3 18V6Z" fill="#515151" />
-          </svg>
+      );
+    });
+  }, [isAuto]);
 
-          <svg
-            viewBox="0 0 25 20"
-            onClick={handleBackClick}
-            fill="currentColor"
-            className="w-[25px] h-[25px]"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fill="#515151"
-              d="M12.1688 5.04384L4.16666 11.6345V18.7478C4.16666 18.932 4.23983 19.1086 4.37006 19.2389C4.50029 19.3691 4.67693 19.4423 4.8611 19.4423L9.72482 19.4297C9.9084 19.4288 10.0841 19.3552 10.2136 19.2251C10.3431 19.0949 10.4158 18.9188 10.4158 18.7352V14.5812C10.4158 14.397 10.489 14.2204 10.6192 14.0901C10.7494 13.9599 10.9261 13.8867 11.1102 13.8867H13.888C14.0722 13.8867 14.2488 13.9599 14.3791 14.0901C14.5093 14.2204 14.5825 14.397 14.5825 14.5812V18.7322C14.5822 18.8236 14.5999 18.9141 14.6347 18.9986C14.6695 19.0831 14.7206 19.1599 14.7851 19.2247C14.8496 19.2894 14.9263 19.3407 15.0106 19.3758C15.095 19.4108 15.1855 19.4288 15.2769 19.4288L20.1389 19.4423C20.3231 19.4423 20.4997 19.3691 20.6299 19.2389C20.7602 19.1086 20.8333 18.932 20.8333 18.7478V11.6298L12.8329 5.04384C12.7388 4.96802 12.6217 4.92668 12.5009 4.92668C12.3801 4.92668 12.2629 4.96802 12.1688 5.04384ZM24.809 9.52344L21.1805 6.53255V0.520833C21.1805 0.3827 21.1257 0.250224 21.028 0.152549C20.9303 0.0548735 20.7978 0 20.6597 0H18.2292C18.091 0 17.9585 0.0548735 17.8609 0.152549C17.7632 0.250224 17.7083 0.3827 17.7083 0.520833V3.67231L13.8225 0.47526C13.4496 0.168394 12.9816 0.000613431 12.4987 0.000613431C12.0158 0.000613431 11.5478 0.168394 11.1749 0.47526L0.188362 9.52344C0.135623 9.56703 0.0919888 9.62058 0.0599541 9.68104C0.0279193 9.7415 0.00811156 9.80768 0.00166252 9.8758C-0.00478653 9.94392 0.00224954 10.0126 0.0223687 10.078C0.0424879 10.1434 0.0752958 10.2042 0.118918 10.2569L1.22569 11.6024C1.26919 11.6553 1.3227 11.6991 1.38315 11.7313C1.44361 11.7635 1.50981 11.7835 1.57799 11.79C1.64616 11.7966 1.71496 11.7897 1.78045 11.7696C1.84593 11.7496 1.90682 11.7168 1.95963 11.6732L12.1688 3.26432C12.2629 3.18851 12.3801 3.14717 12.5009 3.14717C12.6217 3.14717 12.7388 3.18851 12.8329 3.26432L23.0425 11.6732C23.0952 11.7168 23.156 11.7496 23.2214 11.7697C23.2868 11.7898 23.3556 11.7969 23.4237 11.7904C23.4918 11.784 23.558 11.7642 23.6184 11.7321C23.6789 11.7001 23.7324 11.6565 23.776 11.6037L24.8828 10.2582C24.9264 10.2052 24.9591 10.1441 24.9789 10.0784C24.9988 10.0128 25.0055 9.94379 24.9987 9.8755C24.9918 9.80722 24.9715 9.74096 24.939 9.68054C24.9064 9.62012 24.8623 9.56673 24.809 9.52344Z"
-            />
-          </svg>
+  return (
+    <>
+      <style>{`
+        @keyframes button-flash {
+          0% { fill: none; }
+          1% { fill: #CDA745; }
+          99% { fill: #CDA745; }
+          100% { fill: none; }
+        }
+        @keyframes text-flash {
+          0% { fill-opacity: 0.4; }
+          1% { fill-opacity: 1; }
+          99% { fill-opacity: 1; }
+          100% { fill-opacity: 0.4; }
+        }
+        .flash-btn rect {
+          animation: button-flash 120ms ease-in-out;
+        }
+        .flash-btn path {
+          animation: text-flash 120ms ease-in-out;
+        }
+      `}</style>
 
-          <svg
-            width="30"
-            height="30"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-            onClick={rotateField}
-            className="cursor-pointer"
-          >
-            <path
-              d="M5 7H6C6.53043 7 7.03914 6.78929 7.41421 6.41421C7.78929 6.03914 8 5.53043 8 5C8 4.73478 8.10536 4.48043 8.29289 4.29289C8.48043 4.10536 8.73478 4 9 4H15C15.2652 4 15.5196 4.10536 15.7071 4.29289C15.8946 4.48043 16 4.73478 16 5C16 5.53043 16.2107 6.03914 16.5858 6.41421C16.9609 6.78929 17.4696 7 18 7H19C19.5304 7 20.0391 7.21071 20.4142 7.58579C20.7893 7.96086 21 8.46957 21 9V18C21 18.5304 20.7893 19.0391 20.4142 19.4142C20.0391 19.7893 19.5304 20 19 20H5C4.46957 20 3.96086 19.7893 3.58579 19.4142C3.21071 19.0391 3 18.5304 3 18V9C3 8.46957 3.21071 7.96086 3.58579 7.58579C3.96086 7.21071 4.46957 7 5 7Z"
-              stroke="#515151"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M11.245 15.904C11.6886 16.0194 12.1527 16.0315 12.6017 15.9396C13.0507 15.8477 13.4727 15.6541 13.8353 15.3737C14.1979 15.0933 14.4914 14.7336 14.6933 14.3221C14.8952 13.9106 15.0001 13.4584 15 13M12.75 10.095C12.3067 9.98055 11.843 9.96908 11.3946 10.0615C10.9461 10.1539 10.5247 10.3477 10.1628 10.6281C9.80081 10.9085 9.50783 11.2681 9.30628 11.6792C9.10473 12.0903 8.99996 12.5421 9 13"
-              stroke="#515151"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M14 13H16V15"
-              stroke="#515151"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M10 13H8V11"
-              stroke="#515151"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+      <div
+        className={`flex flex-row w-screen h-screen gap-5 p-5 ${shake ? "animate-shake" : ""}`}
+      >
+        <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+          <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
+            <p className="text-[#CDA745]">
+              {matchNum ? getMatchLabel(matchNum) : ""}
+            </p>
 
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <g clipPath="url(#clip0_681_274)">
+            <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>
+          </div>
+          <div className="flex flex-col items-center gap-[30px]">
+            {/* Fast-forward button */}
+            <svg
+              width="25"
+              height="25"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={handleFastForward}
+              className="cursor-pointer"
+            >
+              <path d="M13 6L21 12L13 18V6Z" fill="#515151" />
+              <path d="M3 6L11 12L3 18V6Z" fill="#515151" />
+            </svg>
+
+            <svg
+              viewBox="0 0 25 20"
+              onClick={handleBackClick}
+              fill="currentColor"
+              className="w-[25px] h-[25px]"
+              xmlns="http://www.w3.org/2000/svg"
+            >
               <path
-                d="M10.0178 0.312516C12.6064 0.317164 14.9567 1.33724 16.692 2.99552L18.0871 1.60041C18.6777 1.00982 19.6875 1.4281 19.6875 2.26334V7.50002C19.6875 8.01779 19.2678 8.43752 18.75 8.43752H13.5133C12.6781 8.43752 12.2598 7.42771 12.8504 6.83709L14.4813 5.20623C13.2756 4.07736 11.7156 3.45205 10.0582 3.43775C6.44891 3.40658 3.40652 6.32748 3.43773 10.0566C3.46734 13.5941 6.33531 16.5625 10 16.5625C11.6065 16.5625 13.1249 15.9892 14.3214 14.9392C14.5067 14.7767 14.7865 14.7866 14.9608 14.9608L16.5101 16.5101C16.7004 16.7004 16.691 17.0107 16.4913 17.1911C14.7735 18.7427 12.4971 19.6875 10 19.6875C4.64977 19.6875 0.312539 15.3503 0.3125 10.0001C0.312461 4.65599 4.67367 0.302945 10.0178 0.312516Z"
                 fill="#515151"
+                d="M12.1688 5.04384L4.16666 11.6345V18.7478C4.16666 18.932 4.23983 19.1086 4.37006 19.2389C4.50029 19.3691 4.67693 19.4423 4.8611 19.4423L9.72482 19.4297C9.9084 19.4288 10.0841 19.3552 10.2136 19.2251C10.3431 19.0949 10.4158 18.9188 10.4158 18.7352V14.5812C10.4158 14.397 10.489 14.2204 10.6192 14.0901C10.7494 13.9599 10.9261 13.8867 11.1102 13.8867H13.888C14.0722 13.8867 14.2488 13.9599 14.3791 14.0901C14.5093 14.2204 14.5825 14.397 14.5825 14.5812V18.7322C14.5822 18.8236 14.5999 18.9141 14.6347 18.9986C14.6695 19.0831 14.7206 19.1599 14.7851 19.2247C14.8496 19.2894 14.9263 19.3407 15.0106 19.3758C15.095 19.4108 15.1855 19.4288 15.2769 19.4288L20.1389 19.4423C20.3231 19.4423 20.4997 19.3691 20.6299 19.2389C20.7602 19.1086 20.8333 18.932 20.8333 18.7478V11.6298L12.8329 5.04384C12.7388 4.96802 12.6217 4.92668 12.5009 4.92668C12.3801 4.92668 12.2629 4.96802 12.1688 5.04384ZM24.809 9.52344L21.1805 6.53255V0.520833C21.1805 0.3827 21.1257 0.250224 21.028 0.152549C20.9303 0.0548735 20.7978 0 20.6597 0H18.2292C18.091 0 17.9585 0.0548735 17.8609 0.152549C17.7632 0.250224 17.7083 0.3827 17.7083 0.520833V3.67231L13.8225 0.47526C13.4496 0.168394 12.9816 0.000613431 12.4987 0.000613431C12.0158 0.000613431 11.5478 0.168394 11.1749 0.47526L0.188362 9.52344C0.135623 9.56703 0.0919888 9.62058 0.0599541 9.68104C0.0279193 9.7415 0.00811156 9.80768 0.00166252 9.8758C-0.00478653 9.94392 0.00224954 10.0126 0.0223687 10.078C0.0424879 10.1434 0.0752958 10.2042 0.118918 10.2569L1.22569 11.6024C1.26919 11.6553 1.3227 11.6991 1.38315 11.7313C1.44361 11.7635 1.50981 11.7835 1.57799 11.79C1.64616 11.7966 1.71496 11.7897 1.78045 11.7696C1.84593 11.7496 1.90682 11.7168 1.95963 11.6732L12.1688 3.26432C12.2629 3.18851 12.3801 3.14717 12.5009 3.14717C12.6217 3.14717 12.7388 3.18851 12.8329 3.26432L23.0425 11.6732C23.0952 11.7168 23.156 11.7496 23.2214 11.7697C23.2868 11.7898 23.3556 11.7969 23.4237 11.7904C23.4918 11.784 23.558 11.7642 23.6184 11.7321C23.6789 11.7001 23.7324 11.6565 23.776 11.6037L24.8828 10.2582C24.9264 10.2052 24.9591 10.1441 24.9789 10.0784C24.9988 10.0128 25.0055 9.94379 24.9987 9.8755C24.9918 9.80722 24.9715 9.74096 24.939 9.68054C24.9064 9.62012 24.8623 9.56673 24.809 9.52344Z"
               />
-            </g>
-            <defs>
-              <clipPath id="clip0_681_274">
-                <rect width="20" height="20" fill="white" />
-              </clipPath>
-            </defs>
-          </svg>
+            </svg>
 
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <g clipPath="url(#clip0_681_272)">
+            <svg
+              width="30"
+              height="30"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={rotateField}
+              className="cursor-pointer"
+            >
               <path
-                d="M9.98223 0.312516C7.39359 0.317164 5.04324 1.33724 3.30801 2.99552L1.91293 1.60045C1.3223 1.00982 0.3125 1.4281 0.3125 2.26334V7.50002C0.3125 8.01779 0.732227 8.43752 1.25 8.43752H6.48668C7.32191 8.43752 7.7402 7.42771 7.14961 6.83709L5.51875 5.20623C6.72437 4.07736 8.28441 3.45205 9.9418 3.43775C13.5511 3.40658 16.5935 6.32748 16.5623 10.0566C16.5327 13.5941 13.6647 16.5625 10 16.5625C8.39348 16.5625 6.87512 15.9892 5.67852 14.9392C5.49324 14.7767 5.21344 14.7866 5.03914 14.9608L3.48984 16.5101C3.29953 16.7004 3.30895 17.0107 3.50867 17.1911C5.22648 18.7427 7.50289 19.6875 10 19.6875C15.3502 19.6875 19.6875 15.3503 19.6875 10.0001C19.6875 4.65599 15.3263 0.302945 9.98223 0.312516Z"
-                fill="#515151"
+                d="M5 7H6C6.53043 7 7.03914 6.78929 7.41421 6.41421C7.78929 6.03914 8 5.53043 8 5C8 4.73478 8.10536 4.48043 8.29289 4.29289C8.48043 4.10536 8.73478 4 9 4H15C15.2652 4 15.5196 4.10536 15.7071 4.29289C15.8946 4.48043 16 4.73478 16 5C16 5.53043 16.2107 6.03914 16.5858 6.41421C16.9609 6.78929 17.4696 7 18 7H19C19.5304 7 20.0391 7.21071 20.4142 7.58579C20.7893 7.96086 21 8.46957 21 9V18C21 18.5304 20.7893 19.0391 20.4142 19.4142C20.0391 19.7893 19.5304 20 19 20H5C4.46957 20 3.96086 19.7893 3.58579 19.4142C3.21071 19.0391 3 18.5304 3 18V9C3 8.46957 3.21071 7.96086 3.58579 7.58579C3.96086 7.21071 4.46957 7 5 7Z"
+                stroke="#515151"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
-            </g>
-            <defs>
-              <clipPath id="clip0_681_272">
-                <rect width="20" height="20" fill="white" />
-              </clipPath>
-            </defs>
-          </svg>
+              <path
+                d="M11.245 15.904C11.6886 16.0194 12.1527 16.0315 12.6017 15.9396C13.0507 15.8477 13.4727 15.6541 13.8353 15.3737C14.1979 15.0933 14.4914 14.7336 14.6933 14.3221C14.8952 13.9106 15.0001 13.4584 15 13M12.75 10.095C12.3067 9.98055 11.843 9.96908 11.3946 10.0615C10.9461 10.1539 10.5247 10.3477 10.1628 10.6281C9.80081 10.9085 9.50783 11.2681 9.30628 11.6792C9.10473 12.0903 8.99996 12.5421 9 13"
+                stroke="#515151"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M14 13H16V15"
+                stroke="#515151"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M10 13H8V11"
+                stroke="#515151"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={handleRedo}
+              className={`cursor-pointer ${undoneActions.length === 0 ? "opacity-30" : ""}`}
+            >
+              <g clipPath="url(#clip0_681_274)">
+                <path
+                  d="M10.0178 0.312516C12.6064 0.317164 14.9567 1.33724 16.692 2.99552L18.0871 1.60041C18.6777 1.00982 19.6875 1.4281 19.6875 2.26334V7.50002C19.6875 8.01779 19.2678 8.43752 18.75 8.43752H13.5133C12.6781 8.43752 12.2598 7.42771 12.8504 6.83709L14.4813 5.20623C13.2756 4.07736 11.7156 3.45205 10.0582 3.43775C6.44891 3.40658 3.40652 6.32748 3.43773 10.0566C3.46734 13.5941 6.33531 16.5625 10 16.5625C11.6065 16.5625 13.1249 15.9892 14.3214 14.9392C14.5067 14.7767 14.7865 14.7866 14.9608 14.9608L16.5101 16.5101C16.7004 16.7004 16.691 17.0107 16.4913 17.1911C14.7735 18.7427 12.4971 19.6875 10 19.6875C4.64977 19.6875 0.312539 15.3503 0.3125 10.0001C0.312461 4.65599 4.67367 0.302945 10.0178 0.312516Z"
+                  fill="#515151"
+                />
+              </g>
+              <defs>
+                <clipPath id="clip0_681_274">
+                  <rect width="20" height="20" fill="white" />
+                </clipPath>
+              </defs>
+            </svg>
+
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={handleUndo}
+              className={`cursor-pointer ${actionHistory.length === 0 ? "opacity-30" : ""}`}
+            >
+              <g clipPath="url(#clip0_681_272)">
+                <path
+                  d="M9.98223 0.312516C7.39359 0.317164 5.04324 1.33724 3.30801 2.99552L1.91293 1.60045C1.3223 1.00982 0.3125 1.4281 0.3125 2.26334V7.50002C0.3125 8.01779 0.732227 8.43752 1.25 8.43752H6.48668C7.32191 8.43752 7.7402 7.42771 7.14961 6.83709L5.51875 5.20623C6.72437 4.07736 8.28441 3.45205 9.9418 3.43775C13.5511 3.40658 16.5935 6.32748 16.5623 10.0566C16.5327 13.5941 13.6647 16.5625 10 16.5625C8.39348 16.5625 6.87512 15.9892 5.67852 14.9392C5.49324 14.7767 5.21344 14.7866 5.03914 14.9608L3.48984 16.5101C3.29953 16.7004 3.30895 17.0107 3.50867 17.1911C5.22648 18.7427 7.50289 19.6875 10 19.6875C15.3502 19.6875 19.6875 15.3503 19.6875 10.0001C19.6875 4.65599 15.3263 0.302945 9.98223 0.312516Z"
+                  fill="#515151"
+                />
+              </g>
+              <defs>
+                <clipPath id="clip0_681_272">
+                  <rect width="20" height="20" fill="white" />
+                </clipPath>
+              </defs>
+            </svg>
+          </div>
         </div>
-      </div>
-
 
         <div className="w-[45vw] h-full flex items-center justify-center">
           <div className="w-full aspect-square max-h-full relative">
             <img
-
-            src={alliance == "red" ? red_field : blue_field}
-            alt="Field"
-            className="w-full h-full object-contain transition-transform duration-200"
-            style={{
-              transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
-        <div
-          className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E] cursor-pointer ${flashingButton === 'score-group-1' ? 'animate-flash-yellow' : ''}`}
-          onClick={() => triggerButtonFeedback('score-group-1')}
-        >
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect
-              x="0.5"
-              y="0.5"
-              width="47"
-              height="47"
-              rx="23.5"
-              stroke="#8A8A8A"
+              src={alliance == "red" ? red_field : blue_field}
+              alt="Field"
+              className="w-full h-full object-contain"
+              style={{
+                transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
+              }}
             />
-            <path
-              d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 19.3182V29.5H28.6254V20.8594H28.5657L26.1296 22.4503V20.9787L28.6701 19.3182H30.1665Z"
-              fill="white"
-              fill-opacity="0.4"
-            />
-          </svg>
-
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect
-              x="0.5"
-              y="0.5"
-              width="47"
-              height="47"
-              rx="23.5"
-              stroke="#8A8A8A"
-            />
-            <path
-              d="M18.9922 27.7898V21.0682H20.3295V27.7898H18.9922ZM16.3026 25.0952V23.7628H23.0241V25.0952H16.3026ZM24.8935 29.5V28.3864L28.3388 24.8168C28.7067 24.429 29.0099 24.0893 29.2486 23.7976C29.4905 23.5026 29.6712 23.2225 29.7905 22.9574C29.9098 22.6922 29.9695 22.4105 29.9695 22.1122C29.9695 21.7741 29.8899 21.4825 29.7308 21.2372C29.5717 20.9886 29.3546 20.7981 29.0795 20.6655C28.8045 20.5296 28.4946 20.4616 28.1499 20.4616C27.7853 20.4616 27.4671 20.5362 27.1953 20.6854C26.9235 20.8345 26.7147 21.045 26.5689 21.3168C26.4231 21.5885 26.3501 21.9067 26.3501 22.2713H24.8835C24.8835 21.6515 25.026 21.1096 25.3111 20.6456C25.5961 20.1816 25.9872 19.822 26.4844 19.5668C26.9815 19.3082 27.5466 19.179 28.1797 19.179C28.8194 19.179 29.3828 19.3066 29.87 19.5618C30.3606 19.8137 30.7434 20.1584 31.0185 20.5959C31.2936 21.0301 31.4311 21.5206 31.4311 22.0675C31.4311 22.4453 31.3598 22.8149 31.2173 23.1761C31.0781 23.5374 30.8345 23.9401 30.4865 24.3842C30.1385 24.825 29.6546 25.3603 29.0348 25.9901L27.0114 28.108V28.1825H31.5952V29.5H24.8935Z"
-              fill="white"
-              fill-opacity="0.4"
-            />
-          </svg>
-
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect
-              x="0.5"
-              y="0.5"
-              width="47"
-              height="47"
-              rx="23.5"
-              stroke="#8A8A8A"
-            />
-            <path
-              d="M14.9922 27.7898V21.0682H16.3295V27.7898H14.9922ZM12.3026 25.0952V23.7628H19.0241V25.0952H12.3026ZM24.6644 29.6392C24.0413 29.6392 23.4812 29.5199 22.984 29.2812C22.4902 29.0393 22.0958 28.7079 21.8008 28.2869C21.5058 27.866 21.3484 27.3854 21.3285 26.8452H22.82C22.8564 27.2827 23.0503 27.6423 23.4016 27.924C23.753 28.2057 24.1739 28.3466 24.6644 28.3466C25.0555 28.3466 25.4019 28.2571 25.7035 28.0781C26.0084 27.8958 26.247 27.6456 26.4194 27.3274C26.5951 27.0092 26.6829 26.6463 26.6829 26.2386C26.6829 25.8243 26.5934 25.4548 26.4144 25.13C26.2354 24.8052 25.9885 24.55 25.6737 24.3643C25.3621 24.1787 25.0041 24.0843 24.5998 24.081C24.2915 24.081 23.9817 24.134 23.6701 24.2401C23.3585 24.3461 23.1067 24.4853 22.9144 24.6577L21.5075 24.4489L22.0792 19.3182H27.6772V20.6357H23.3569L23.0337 23.4844H23.0934C23.2923 23.2921 23.5558 23.1314 23.8839 23.0021C24.2153 22.8729 24.57 22.8082 24.9478 22.8082C25.5676 22.8082 26.1194 22.9557 26.6033 23.2507C27.0906 23.5457 27.4734 23.9484 27.7518 24.4588C28.0335 24.9659 28.1727 25.5492 28.1694 26.2088C28.1727 26.8684 28.0236 27.4567 27.7219 27.9737C27.4237 28.4908 27.0094 28.8984 26.479 29.1967C25.9521 29.4917 25.3472 29.6392 24.6644 29.6392ZM35.7275 23.728L34.3801 23.9666C34.3238 23.7943 34.2343 23.6302 34.1117 23.4744C33.9924 23.3187 33.83 23.1911 33.6245 23.0916C33.419 22.9922 33.1621 22.9425 32.8539 22.9425C32.4329 22.9425 32.0816 23.0369 31.7999 23.2259C31.5182 23.4115 31.3773 23.6518 31.3773 23.9467C31.3773 24.2019 31.4718 24.4074 31.6607 24.5632C31.8496 24.719 32.1545 24.8466 32.5755 24.946L33.7885 25.2244C34.4912 25.3868 35.0149 25.6371 35.3596 25.9751C35.7042 26.3132 35.8766 26.7524 35.8766 27.2926C35.8766 27.75 35.744 28.1577 35.4789 28.5156C35.217 28.8703 34.8508 29.1487 34.3801 29.3509C33.9128 29.553 33.3709 29.6541 32.7544 29.6541C31.8993 29.6541 31.2016 29.4718 30.6614 29.1072C30.1212 28.7393 29.7897 28.2173 29.6671 27.5412L31.1039 27.3224C31.1934 27.697 31.3773 27.9804 31.6557 28.1726C31.9341 28.3615 32.2971 28.456 32.7445 28.456C33.2317 28.456 33.6212 28.3549 33.9128 28.1527C34.2045 27.9472 34.3503 27.697 34.3503 27.402C34.3503 27.1634 34.2608 26.9628 34.0819 26.8004C33.9062 26.638 33.6361 26.5154 33.2715 26.4325L31.9789 26.1491C31.2663 25.9867 30.7393 25.7282 30.3979 25.3736C30.0598 25.0189 29.8908 24.5698 29.8908 24.0263C29.8908 23.5755 30.0167 23.1811 30.2686 22.843C30.5205 22.505 30.8685 22.2415 31.3127 22.0526C31.7568 21.8603 32.2656 21.7642 32.839 21.7642C33.6642 21.7642 34.3139 21.9432 34.7878 22.3011C35.2618 22.6558 35.575 23.1314 35.7275 23.728Z"
-              fill="white"
-              fill-opacity="0.4"
-            />
-          </svg>
+          </div>
         </div>
 
-        <div
-          className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E] cursor-pointer ${flashingButton === 'score-group-3' ? 'animate-flash-yellow' : ''}`}
-          onClick={() => triggerButtonFeedback('score-group-3')}
-        >
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.5" y="0.5" width="47" height="47" rx="23.5" stroke="#8A8A8A"/>
-            <path d="M18.1186 29.5V19.3182H19.6548V28.1776H24.2685V29.5H18.1186ZM29.1021 19.3182V29.5H27.5609V20.8594H27.5012L25.0652 22.4503V20.9787L27.6056 19.3182H29.1021Z" fill="white" fill-opacity="0.4"/>
-            </svg>
-
-            
-
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.5" y="0.5" width="47" height="47" rx="23.5" stroke="#8A8A8A"/>
-            <path d="M16.6186 29.5V19.3182H18.1548V28.1776H22.7685V29.5H16.6186ZM24.3817 29.5V28.3864L27.8271 24.8168C28.195 24.429 28.4982 24.0893 28.7369 23.7976C28.9788 23.5026 29.1594 23.2225 29.2788 22.9574C29.3981 22.6922 29.4577 22.4105 29.4577 22.1122C29.4577 21.7741 29.3782 21.4825 29.2191 21.2372C29.06 20.9886 28.8429 20.7981 28.5678 20.6655C28.2927 20.5296 27.9828 20.4616 27.6381 20.4616C27.2736 20.4616 26.9554 20.5362 26.6836 20.6854C26.4118 20.8345 26.203 21.045 26.0572 21.3168C25.9113 21.5885 25.8384 21.9067 25.8384 22.2713H24.3718C24.3718 21.6515 24.5143 21.1096 24.7994 20.6456C25.0844 20.1816 25.4755 19.822 25.9727 19.5668C26.4698 19.3082 27.0349 19.179 27.668 19.179C28.3076 19.179 28.8711 19.3066 29.3583 19.5618C29.8488 19.8137 30.2317 20.1584 30.5067 20.5959C30.7818 21.0301 30.9194 21.5206 30.9194 22.0675C30.9194 22.4453 30.8481 22.8149 30.7056 23.1761C30.5664 23.5374 30.3228 23.9401 29.9748 24.3842C29.6268 24.825 29.1429 25.3603 28.5231 25.9901L26.4996 28.108V28.1825H31.0835V29.5H24.3817Z" fill="white" fill-opacity="0.4"/>
-            </svg>
-
-
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.5" y="0.5" width="47" height="47" rx="23.5" stroke="#8A8A8A"/>
-            <path d="M16.6186 29.5V19.3182H18.1548V28.1776H22.7685V29.5H16.6186ZM27.9265 29.6392C27.2437 29.6392 26.6339 29.5215 26.0969 29.2862C25.5633 29.0509 25.1407 28.7244 24.8292 28.3068C24.521 27.8859 24.3552 27.3987 24.332 26.8452H25.8931C25.913 27.1468 26.0141 27.4086 26.1964 27.6307C26.382 27.8494 26.6239 28.0185 26.9222 28.1378C27.2205 28.2571 27.552 28.3168 27.9165 28.3168C28.3176 28.3168 28.6722 28.2472 28.9805 28.108C29.292 27.9687 29.5356 27.7749 29.7113 27.5263C29.887 27.2744 29.9748 26.9844 29.9748 26.6562C29.9748 26.3149 29.887 26.0149 29.7113 25.7564C29.5389 25.4946 29.2854 25.2891 28.9506 25.1399C28.6192 24.9908 28.2182 24.9162 27.7475 24.9162H26.8874V23.6634H27.7475C28.1254 23.6634 28.4568 23.5954 28.7418 23.4595C29.0302 23.3236 29.2556 23.1347 29.418 22.8928C29.5804 22.6475 29.6616 22.3608 29.6616 22.0327C29.6616 21.7178 29.5903 21.4444 29.4478 21.2124C29.3086 20.977 29.1097 20.7931 28.8512 20.6605C28.596 20.5279 28.2944 20.4616 27.9464 20.4616C27.6149 20.4616 27.305 20.523 27.0167 20.6456C26.7317 20.7649 26.4996 20.9373 26.3207 21.1626C26.1417 21.3847 26.0456 21.6515 26.0323 21.9631H24.5458C24.5624 21.4129 24.7248 20.929 25.033 20.5114C25.3446 20.0937 25.7556 19.7673 26.266 19.532C26.7764 19.2966 27.3432 19.179 27.9663 19.179C28.6192 19.179 29.1826 19.3066 29.6566 19.5618C30.1339 19.8137 30.5018 20.1501 30.7603 20.571C31.0221 20.992 31.1514 21.4527 31.1481 21.9531C31.1514 22.5232 30.9923 23.0071 30.6708 23.4048C30.3526 23.8026 29.9284 24.0694 29.3981 24.2053V24.2848C30.0742 24.3875 30.5979 24.656 30.9691 25.0902C31.3436 25.5244 31.5292 26.063 31.5259 26.706C31.5292 27.2661 31.3735 27.7682 31.0586 28.2124C30.747 28.6565 30.3211 29.0062 29.7809 29.2614C29.2406 29.5133 28.6225 29.6392 27.9265 29.6392Z" fill="white" fill-opacity="0.4"/>
-            </svg>
-
-        </div>
-
-        <div className="flex gap-2.5  w-full h-full">
+        <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
           <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
-            <p className="text-xs text-outfit text-[#BF4141]">disabled</p>
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={() => triggerButtonFeedback("btn-1-1")}
+              className={`cursor-pointer ${flashingButton === "btn-1-1" ? "flash-btn scale-95" : ""}`}
+              style={{ transition: "transform 0.1s" }}
+            >
+              <rect
+                x="0.5"
+                y="0.5"
+                width="47"
+                height="47"
+                rx="23.5"
+                fill="none"
+                stroke="#8A8A8A"
+              />
+              <path
+                d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 19.3182V29.5H28.6254V20.8594H28.5657L26.1296 22.4503V20.9787L28.6701 19.3182H30.1665Z"
+                fill="white"
+                fillOpacity="0.4"
+              />
+            </svg>
+
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={() => triggerButtonFeedback("btn-1-2")}
+              className={`cursor-pointer ${flashingButton === "btn-1-2" ? "flash-btn scale-95" : ""}`}
+              style={{ transition: "transform 0.1s" }}
+            >
+              <rect
+                x="0.5"
+                y="0.5"
+                width="47"
+                height="47"
+                rx="23.5"
+                fill="none"
+                stroke="#8A8A8A"
+              />
+              <path
+                d="M18.9922 27.7898V21.0682H20.3295V27.7898H18.9922ZM16.3026 25.0952V23.7628H23.0241V25.0952H16.3026ZM24.8935 29.5V28.3864L28.3388 24.8168C28.7067 24.429 29.0099 24.0893 29.2486 23.7976C29.4905 23.5026 29.6712 23.2225 29.7905 22.9574C29.9098 22.6922 29.9695 22.4105 29.9695 22.1122C29.9695 21.7741 29.8899 21.4825 29.7308 21.2372C29.5717 20.9886 29.3546 20.7981 29.0795 20.6655C28.8045 20.5296 28.4946 20.4616 28.1499 20.4616C27.7853 20.4616 27.4671 20.5362 27.1953 20.6854C26.9235 20.8345 26.7147 21.045 26.5689 21.3168C26.4231 21.5885 26.3501 21.9067 26.3501 22.2713H24.8835C24.8835 21.6515 25.026 21.1096 25.3111 20.6456C25.5961 20.1816 25.9872 19.822 26.4844 19.5668C26.9815 19.3082 27.5466 19.179 28.1797 19.179C28.8194 19.179 29.3828 19.3066 29.87 19.5618C30.3606 19.8137 30.7434 20.1584 31.0185 20.5959C31.2936 21.0301 31.4311 21.5206 31.4311 22.0675C31.4311 22.4453 31.3598 22.8149 31.2173 23.1761C31.0781 23.5374 30.8345 23.9401 30.4865 24.3842C30.1385 24.825 29.6546 25.3603 29.0348 25.9901L27.0114 28.108V28.1825H31.5952V29.5H24.8935Z"
+                fill="white"
+                fillOpacity="0.4"
+              />
+            </svg>
+
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={() => triggerButtonFeedback("btn-1-3")}
+              className={`cursor-pointer ${flashingButton === "btn-1-3" ? "flash-btn scale-95" : ""}`}
+              style={{ transition: "transform 0.1s" }}
+            >
+              <rect
+                x="0.5"
+                y="0.5"
+                width="47"
+                height="47"
+                rx="23.5"
+                fill="none"
+                stroke="#8A8A8A"
+              />
+              <path
+                d="M14.9922 27.7898V21.0682H16.3295V27.7898H14.9922ZM12.3026 25.0952V23.7628H19.0241V25.0952H12.3026ZM24.6644 29.6392C24.0413 29.6392 23.4812 29.5199 22.984 29.2812C22.4902 29.0393 22.0958 28.7079 21.8008 28.2869C21.5058 27.866 21.3484 27.3854 21.3285 26.8452H22.82C22.8564 27.2827 23.0503 27.6423 23.4016 27.924C23.753 28.2057 24.1739 28.3466 24.6644 28.3466C25.0555 28.3466 25.4019 28.2571 25.7035 28.0781C26.0084 27.8958 26.247 27.6456 26.4194 27.3274C26.5951 27.0092 26.6829 26.6463 26.6829 26.2386C26.6829 25.8243 26.5934 25.4548 26.4144 25.13C26.2354 24.8052 25.9885 24.55 25.6737 24.3643C25.3621 24.1787 25.0041 24.0843 24.5998 24.081C24.2915 24.081 23.9817 24.134 23.6701 24.2401C23.3585 24.3461 23.1067 24.4853 22.9144 24.6577L21.5075 24.4489L22.0792 19.3182H27.6772V20.6357H23.3569L23.0337 23.4844H23.0934C23.2923 23.2921 23.5558 23.1314 23.8839 23.0021C24.2153 22.8729 24.57 22.8082 24.9478 22.8082C25.5676 22.8082 26.1194 22.9557 26.6033 23.2507C27.0906 23.5457 27.4734 23.9484 27.7518 24.4588C28.0335 24.9659 28.1727 25.5492 28.1694 26.2088C28.1727 26.8684 28.0236 27.4567 27.7219 27.9737C27.4237 28.4908 27.0094 28.8984 26.479 29.1967C25.9521 29.4917 25.3472 29.6392 24.6644 29.6392ZM35.7275 23.728L34.3801 23.9666C34.3238 23.7943 34.2343 23.6302 34.1117 23.4744C33.9924 23.3187 33.83 23.1911 33.6245 23.0916C33.419 22.9922 33.1621 22.9425 32.8539 22.9425C32.4329 22.9425 32.0816 23.0369 31.7999 23.2259C31.5182 23.4115 31.3773 23.6518 31.3773 23.9467C31.3773 24.2019 31.4718 24.4074 31.6607 24.5632C31.8496 24.719 32.1545 24.8466 32.5755 24.946L33.7885 25.2244C34.4912 25.3868 35.0149 25.6371 35.3596 25.9751C35.7042 26.3132 35.8766 26.7524 35.8766 27.2926C35.8766 27.75 35.744 28.1577 35.4789 28.5156C35.217 28.8703 34.8508 29.1487 34.3801 29.3509C33.9128 29.553 33.3709 29.6541 32.7544 29.6541C31.8993 29.6541 31.2016 29.4718 30.6614 29.1072C30.1212 28.7393 29.7897 28.2173 29.6671 27.5412L31.1039 27.3224C31.1934 27.697 31.3773 27.9804 31.6557 28.1726C31.9341 28.3615 32.2971 28.456 32.7445 28.456C33.2317 28.456 33.6212 28.3549 33.9128 28.1527C34.2045 27.9472 34.3503 27.697 34.3503 27.402C34.3503 27.1634 34.2608 26.9628 34.0819 26.8004C33.9062 26.638 33.6361 26.5154 33.2715 26.4325L31.9789 26.1491C31.2663 25.9867 30.7393 25.7282 30.3979 25.3736C30.0598 25.0189 29.8908 24.5698 29.8908 24.0263C29.8908 23.5755 30.0167 23.1811 30.2686 22.843C30.5205 22.505 30.8685 22.2415 31.3127 22.0526C31.7568 21.8603 32.2656 21.7642 32.839 21.7642C33.6642 21.7642 34.3139 21.9432 34.7878 22.3011C35.2618 22.6558 35.575 23.1314 35.7275 23.728Z"
+                fill="white"
+                fillOpacity="0.4"
+              />
+            </svg>
           </div>
 
           <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
-            <p className="text-xs text-outfit">penalty</p>
-          </div>
-        </div>
-      </div>
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={() => triggerButtonFeedback("btn-2-1")}
+              className={`cursor-pointer ${flashingButton === "btn-2-1" ? "flash-btn scale-95" : ""}`}
+              style={{ transition: "transform 0.1s" }}
+            >
+              <rect
+                x="0.5"
+                y="0.5"
+                width="47"
+                height="47"
+                rx="23.5"
+                fill="none"
+                stroke="#8A8A8A"
+              />
+              <path
+                d="M18.1186 29.5V19.3182H19.6548V28.1776H24.2685V29.5H18.1186ZM29.1021 19.3182V29.5H27.5609V20.8594H27.5012L25.0652 22.4503V20.9787L27.6056 19.3182H29.1021Z"
+                fill="white"
+                fillOpacity="0.4"
+              />
+            </svg>
 
-      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
-        {countdown !== null ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-6xl font-bold text-[#4ADE80] animate-pulse">
-              {countdown}
-            </p>
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={() => triggerButtonFeedback("btn-2-2")}
+              className={`cursor-pointer ${flashingButton === "btn-2-2" ? "flash-btn scale-95" : ""}`}
+              style={{ transition: "transform 0.1s" }}
+            >
+              <rect
+                x="0.5"
+                y="0.5"
+                width="47"
+                height="47"
+                rx="23.5"
+                fill="none"
+                stroke="#8A8A8A"
+              />
+              <path
+                d="M16.6186 29.5V19.3182H18.1548V28.1776H22.7685V29.5H16.6186ZM24.3817 29.5V28.3864L27.8271 24.8168C28.195 24.429 28.4982 24.0893 28.7369 23.7976C28.9788 23.5026 29.1594 23.2225 29.2788 22.9574C29.3981 22.6922 29.4577 22.4105 29.4577 22.1122C29.4577 21.7741 29.3782 21.4825 29.2191 21.2372C29.06 20.9886 28.8429 20.7981 28.5678 20.6655C28.2927 20.5296 27.9828 20.4616 27.6381 20.4616C27.2736 20.4616 26.9554 20.5362 26.6836 20.6854C26.4118 20.8345 26.203 21.045 26.0572 21.3168C25.9113 21.5885 25.8384 21.9067 25.8384 22.2713H24.3718C24.3718 21.6515 24.5143 21.1096 24.7994 20.6456C25.0844 20.1816 25.4755 19.822 25.9727 19.5668C26.4698 19.3082 27.0349 19.179 27.668 19.179C28.3076 19.179 28.8711 19.3066 29.3583 19.5618C29.8488 19.8137 30.2317 20.1584 30.5067 20.5959C30.7818 21.0301 30.9194 21.5206 30.9194 22.0675C30.9194 22.4453 30.8481 22.8149 30.7056 23.1761C30.5664 23.5374 30.3228 23.9401 29.9748 24.3842C29.6268 24.825 29.1429 25.3603 28.5231 25.9901L26.4996 28.108V28.1825H31.0835V29.5H24.3817Z"
+                fill="white"
+                fillOpacity="0.4"
+              />
+            </svg>
+
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              onClick={() => triggerButtonFeedback("btn-2-3")}
+              className={`cursor-pointer ${flashingButton === "btn-2-3" ? "flash-btn scale-95" : ""}`}
+              style={{ transition: "transform 0.1s" }}
+            >
+              <rect
+                x="0.5"
+                y="0.5"
+                width="47"
+                height="47"
+                rx="23.5"
+                fill="none"
+                stroke="#8A8A8A"
+              />
+              <path
+                d="M16.6186 29.5V19.3182H18.1548V28.1776H22.7685V29.5H16.6186ZM27.9265 29.6392C27.2437 29.6392 26.6339 29.5215 26.0969 29.2862C25.5633 29.0509 25.1407 28.7244 24.8292 28.3068C24.521 27.8859 24.3552 27.3987 24.332 26.8452H25.8931C25.913 27.1468 26.0141 27.4086 26.1964 27.6307C26.382 27.8494 26.6239 28.0185 26.9222 28.1378C27.2205 28.2571 27.552 28.3168 27.9165 28.3168C28.3176 28.3168 28.6722 28.2472 28.9805 28.108C29.292 27.9687 29.5356 27.7749 29.7113 27.5263C29.887 27.2744 29.9748 26.9844 29.9748 26.6562C29.9748 26.3149 29.887 26.0149 29.7113 25.7564C29.5389 25.4946 29.2854 25.2891 28.9506 25.1399C28.6192 24.9908 28.2182 24.9162 27.7475 24.9162H26.8874V23.6634H27.7475C28.1254 23.6634 28.4568 23.5954 28.7418 23.4595C29.0302 23.3236 29.2556 23.1347 29.418 22.8928C29.5804 22.6475 29.6616 22.3608 29.6616 22.0327C29.6616 21.7178 29.5903 21.4444 29.4478 21.2124C29.3086 20.977 29.1097 20.7931 28.8512 20.6605C28.596 20.5279 28.2944 20.4616 27.9464 20.4616C27.6149 20.4616 27.305 20.523 27.0167 20.6456C26.7317 20.7649 26.4996 20.9373 26.3207 21.1626C26.1417 21.3847 26.0456 21.6515 26.0323 21.9631H24.5458C24.5624 21.4129 24.7248 20.929 25.033 20.5114C25.3446 20.0937 25.7556 19.7673 26.266 19.532C26.7764 19.2966 27.3432 19.179 27.9663 19.179C28.6192 19.179 29.1826 19.3066 29.6566 19.5618C30.1339 19.8137 30.5018 20.1501 30.7603 20.571C31.0221 20.992 31.1514 21.4527 31.1481 21.9531C31.1514 22.5232 30.9923 23.0071 30.6708 23.4048C30.3526 23.8026 29.9284 24.0694 29.3981 24.2053V24.2848C30.0742 24.3875 30.5979 24.656 30.9691 25.0902C31.3436 25.5244 31.5292 26.063 31.5259 26.706C31.5292 27.2661 31.3735 27.7682 31.0586 28.2124C30.747 28.6565 30.3211 29.0062 29.7809 29.2614C29.2406 29.5133 28.6225 29.6392 27.9265 29.6392Z"
+                fill="white"
+                fillOpacity="0.4"
+              />
+            </svg>
           </div>
-        ) : (
-          <>
-            <p className="text-xs text-[#CDA745]">
-              {Math.round(seconds) + "/"}
-              {isAuto ? "20" : "140"}
-            </p>
-            <div className="relative flex flex-col gap-0 flex-1 w-1.25">
-        
-        {!isAuto && (
-        <div className="absolute inset-0 z-0">
-            {[10, 35, 60, 85, 110].map((tick) => {
-            const percentage = (tick / 140) * 100; 
-            return (
-                <div
-                key={tick}
-                className="absolute w-full rounded-0.5"
-                style={{ top: `${percentage}%` }}
-                >
-                <div 
-                    className="w-2.5 h-0.5 bg-[#D9D9D9]" 
-                    style={{ transform: 'translateX(-2.5px)' }} 
-                />
-                </div>
-            );
-            })}
-        </div>
-        )}
-          <div
-            style={{ height: `${(seconds / (isAuto ? 20 : 140)) * 100}%` }}
-            className="flex flex-col w-full bg-[#CDA745] "
-          ></div>
-          <div
-            style={{ height: `${(((isAuto ? 20 : 140) - seconds) / (isAuto ? 20 : 140)) * 100}%` }}
-            className="flex flex-col w-full bg-[#CDA745] opacity-70"
-          ></div>
+
+          <div className="flex gap-2.5  w-full h-full">
+            <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
+              <p className="text-xs text-outfit text-[#BF4141]">disabled</p>
             </div>
-          </>
+
+            <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
+              <p className="text-xs text-outfit">penalty</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+          {countdown !== null ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-6xl font-bold text-[#4ADE80] animate-pulse">
+                {countdown}
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-[#CDA745]">
+                {Math.round(seconds) + "/"}
+                {isAuto ? "20" : "140"}
+              </p>
+              <div className="relative flex flex-col gap-0 flex-1 w-1.25">
+                {tickMarks && (
+                  <div className="absolute inset-0 z-0">{tickMarks}</div>
+                )}
+                <div
+                  style={{
+                    height: `${(seconds / (isAuto ? 20 : 140)) * 100}%`,
+                  }}
+                  className="flex flex-col w-full bg-[#CDA745] "
+                ></div>
+                <div
+                  style={{
+                    height: `${(((isAuto ? 20 : 140) - seconds) / (isAuto ? 20 : 140)) * 100}%`,
+                  }}
+                  className="flex flex-col w-full bg-[#CDA745] opacity-70"
+                ></div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Toast notification */}
+        {toastMessage && (
+          <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-[#CDA745] text-black px-6 py-3 rounded-lg shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <p className="text-sm font-medium">{toastMessage}</p>
+          </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

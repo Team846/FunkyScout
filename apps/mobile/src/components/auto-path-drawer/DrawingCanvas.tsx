@@ -153,7 +153,7 @@ function DrawingCanvasComponent({
   // Redraw when paths change
   useEffect(() => {
     redrawCanvas();
-  }, [redrawCanvas]);
+  }, [redrawCanvas, currentPaths]); // Add currentPaths to trigger redraw on undo/redo/erase
 
   // Low-level touch handling - stabilized with refs to prevent listener re-registration
   useEffect(() => {

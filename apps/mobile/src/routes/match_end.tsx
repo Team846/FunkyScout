@@ -216,19 +216,20 @@ function MatchEnd() {
 
       <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950  border-[#1E1E1E]">
         <div className="flex w-full h-full">
-            <Button className="w-full h-full border-[#1E1E1E] bg-black-950 border-2">
+            <Button variant = "secondary" className="w-full h-full border-[#1E1E1E] bg-black-950 border-2">
                 <p className="text-[15px] text-foreground">Go to Match Summary</p>
             </Button>
         </div>
         <div className="flex w-[243px] h-[195px] ">
             <div className="flex items-center w-full gap-2.5 p-2.5 py-2.5 h-full">
                 <Button 
+                variant = "secondary"
                 className="flex-1 w-full h-full border-2 border-[#1E1E1E] bg-black-950"
                 onClick={handlesetDialogOpenState}
                 >
                     <p className="text-[15px] text-foreground text-center">View Stats</p>
                 </Button>
-                <Button className="flex-1 w-full h-full border-2 border-[#1E1E1E] bg-black-950">
+                <Button variant = "secondary" className="flex-1 w-full h-full border-2 border-[#1E1E1E] bg-black-950">
                     <p className="text-[15px] text-foreground text-center">Edit Stats</p>
                 </Button>
             </div>

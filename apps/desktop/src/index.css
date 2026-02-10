@@ -21,4 +21,18 @@ body,
 html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1;
+}
+
+/* Better font rendering for desktop */
+body {
+    font-weight: 400;
+}
+
+/* Override thin fonts for better desktop readability */
+input,
+button,
+.font-thin {
+    font-weight: 400 !important;
 }
