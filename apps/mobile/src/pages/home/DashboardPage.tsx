@@ -656,27 +656,34 @@ export function DashboardPage() {
                 }`}
               >
                 <div className="flex flex-col gap-1">
-                  {nextMatch.redTeams.map((teamNum) => (
-                    <div
-                      key={teamNum}
-                      className="flex justify-between items-center gap-2"
-                    >
-                      <p
-                        className={`text-xs truncate ${
-                          teamNum === OUR_TEAM
-                            ? "font-bold text-primary"
-                            : "text-foreground"
-                        }`}
+                  {nextMatch.redTeams
+                    .sort((a, b) => {
+                      // Sort by rank (lower rank number = better = first)
+                      const rankA = nextMatch.teamRanks[a] ?? 999;
+                      const rankB = nextMatch.teamRanks[b] ?? 999;
+                      return rankA - rankB;
+                    })
+                    .map((teamNum) => (
+                      <div
+                        key={teamNum}
+                        className="flex justify-between items-center gap-2"
                       >
-                        {teamNum}
-                      </p>
-                      {nextMatch.teamRanks[teamNum] !== undefined && (
-                        <span className="text-[10px] text-muted-foreground/60 bg-background/50 rounded-full px-1.5 py-0.5 shrink-0">
-                          #{nextMatch.teamRanks[teamNum]}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                        <p
+                          className={`text-xs truncate ${
+                            teamNum === OUR_TEAM
+                              ? "font-bold text-primary"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {teamNum}
+                        </p>
+                        {nextMatch.teamRanks[teamNum] !== undefined && (
+                          <span className="text-[10px] text-muted-foreground/60 bg-background/50 rounded-full px-1.5 py-0.5 shrink-0">
+                            #{nextMatch.teamRanks[teamNum]}
+                          </span>
+                        )}
+                      </div>
+                    ))}
                 </div>
               </div>
 
@@ -694,17 +701,24 @@ export function DashboardPage() {
                 }`}
               >
                 <div className="flex flex-col gap-1">
-                  {nextMatch.blueTeams.map((teamNum) => (
-                    <div
-                      key={teamNum}
-                      className="flex justify-between items-center gap-2"
-                    >
-                      {nextMatch.teamRanks[teamNum] !== undefined && (
-                        <span className="text-[10px] text-muted-foreground/60 bg-background/50 rounded-full px-1.5 py-0.5 shrink-0">
-                          #{nextMatch.teamRanks[teamNum]}
-                        </span>
-                      )}
-                      <p
+                  {nextMatch.blueTeams
+                    .sort((a, b) => {
+                      // Sort by rank (lower rank number = better = first)
+                      const rankA = nextMatch.teamRanks[a] ?? 999;
+                      const rankB = nextMatch.teamRanks[b] ?? 999;
+                      return rankA - rankB;
+                    })
+                    .map((teamNum) => (
+                      <div
+                        key={teamNum}
+                        className="flex justify-between items-center gap-2"
+                      >
+                        {nextMatch.teamRanks[teamNum] !== undefined && (
+                          <span className="text-[10px] text-muted-foreground/60 bg-background/50 rounded-full px-1.5 py-0.5 shrink-0">
+                            #{nextMatch.teamRanks[teamNum]}
+                          </span>
+                        )}
+                        <p
                         className={`text-xs text-right truncate ${
                           teamNum === OUR_TEAM
                             ? "font-bold text-primary"

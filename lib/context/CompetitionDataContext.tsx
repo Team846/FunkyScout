@@ -134,7 +134,11 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     // 2. Network refresh
     if (isOnline) {
       console.log("[CompetitionData] Fetching schedule from network");
-      setLoading(true);
+      // Only show loading on initial load or event change (prevents flickering on background refreshes)
+      const isInitialLoad = !hasLoadedDataRef.current;
+      if (isInitialLoad || shouldSkipCache) {
+        setLoading(true);
+      }
       try {
         const [supabaseSchedule, tbaData] = await Promise.all([
           getSchedule(currentEvent),
@@ -368,6 +372,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
     console.log('[Competition] Setting up realtime subscriptions');
 
+    // Debounce timers to batch multiple realtime updates
+    let scheduleDebounceTimer: NodeJS.Timeout | null = null;
+    let picklistDebounceTimer: NodeJS.Timeout | null = null;
+    let scheduleUpdateCount = 0;
+    let picklistUpdateCount = 0;
+
     const channel = supabase
       .channel(`competition-data-${currentEvent}`)
       // Listen for schedule changes (rare - manual updates by admin)
@@ -379,9 +389,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           table: 'event_schedule',
           filter: `event=eq.${currentEvent}`
         },
-        (payload) => {
-          console.log('[Competition] Schedule updated:', payload);
-          fetchSchedule(); // Refresh schedule from Supabase
+        () => {
+          scheduleUpdateCount++;
+          if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
+          scheduleDebounceTimer = setTimeout(() => {
+            console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} schedule updates`);
+            scheduleUpdateCount = 0;
+            fetchSchedule();
+          }, 2000);
         }
       )
       // Listen for match data changes (desktop posts results)
@@ -393,9 +408,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           table: 'event_match_data',
           filter: `event=eq.${currentEvent}`
         },
-        (payload) => {
-          console.log('[Competition] Match data updated:', payload);
-          fetchSchedule(); // Refresh (includes match data)
+        () => {
+          scheduleUpdateCount++;
+          if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
+          scheduleDebounceTimer = setTimeout(() => {
+            console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} match updates`);
+            scheduleUpdateCount = 0;
+            fetchSchedule();
+          }, 2000);
         }
       )
       // Listen for picklist changes (desktop or other mobile users edit)
@@ -407,15 +427,22 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           table: 'event_picklist',
           filter: `event=eq.${currentEvent}`
         },
-        (payload) => {
-          console.log('[Competition] Picklist updated:', payload);
-          fetchPicklists(); // Refresh picklists
+        () => {
+          picklistUpdateCount++;
+          if (picklistDebounceTimer) clearTimeout(picklistDebounceTimer);
+          picklistDebounceTimer = setTimeout(() => {
+            console.log(`[Competition] Realtime: Batched ${picklistUpdateCount} picklist updates`);
+            picklistUpdateCount = 0;
+            fetchPicklists();
+          }, 2000);
         }
       )
       .subscribe();
 
     return () => {
       console.log('[Competition] Cleaning up realtime subscriptions');
+      if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
+      if (picklistDebounceTimer) clearTimeout(picklistDebounceTimer);
       supabase.removeChannel(channel);
     };
   }, [currentEvent, dbInitialized, isOnline, fetchSchedule, fetchPicklists]);

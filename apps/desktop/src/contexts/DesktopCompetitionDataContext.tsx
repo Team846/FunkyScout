@@ -134,7 +134,12 @@ export function DesktopCompetitionDataProvider({
       // Step 2: Refresh from Supabase if online
       if (true) {
         console.log("[DesktopCompetitionData] Fetching from Supabase");
-        setLoading(true);
+
+        // Only show loading on initial load or event change (prevents flickering on background refreshes)
+        const isInitialLoad = !hasLoadedDataRef.current;
+        if (isInitialLoad || shouldSkipCache) {
+          setLoading(true);
+        }
 
         const [supabaseSchedule, supabasePicklists, supabaseEntries] =
           await Promise.all([

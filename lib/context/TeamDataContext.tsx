@@ -122,7 +122,12 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     // 2. Refresh from network if online
     if (isOnline) {
       console.log("[TeamData] Fetching from network");
-      setLoading(true);
+      // Only show loading on initial load (no data yet) or event change (skipped cache)
+      // Don't show loading on background refreshes (prevents flickering)
+      const isInitialLoad = !hasLoadedDataRef.current;
+      if (isInitialLoad || shouldSkipCache) {
+        setLoading(true);
+      }
       try {
         const supabaseTeams = await getTeams(currentEvent);
 
@@ -327,12 +332,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       const scouted = new Set(
         data
           .filter((t: EventTeamData) => {
-            // Only count as scouted if data exists and is not empty
-            if (!t.data) return false;
-            if (Array.isArray(t.data)) return t.data.length > 0;
-            if (typeof t.data === "object")
-              return Object.keys(t.data).length > 0;
-            return false;
+            // Only count as scouted if name is registered (someone submitted pit data)
+            return !!t.name;
           })
           .map((t: EventTeamData) => t.team)
       );
@@ -347,6 +348,10 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
     console.log('[TeamData] Setting up realtime subscription for event_team_data');
 
+    // Debounce timer to batch multiple realtime updates
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let updateCount = 0;
+
     const channel = supabase
       .channel(`event-team-data-${currentEvent}`)
       .on(
@@ -357,16 +362,29 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           table: 'event_team_data',
           filter: `event=eq.${currentEvent}`
         },
-        (payload) => {
-          console.log('[TeamData] Realtime update received:', payload);
-          // Desktop updated team data → refresh local cache
-          fetchTeams();
+        () => {
+          updateCount++;
+
+          // Clear existing timer
+          if (debounceTimer) {
+            clearTimeout(debounceTimer);
+          }
+
+          // Set new timer - only fetch after 2s of no updates
+          debounceTimer = setTimeout(() => {
+            console.log(`[TeamData] Realtime: Batched ${updateCount} updates, fetching now`);
+            updateCount = 0;
+            fetchTeams();
+          }, 2000); // 2 second debounce
         }
       )
       .subscribe();
 
     return () => {
       console.log('[TeamData] Cleaning up realtime subscription');
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       supabase.removeChannel(channel);
     };
   }, [currentEvent, dbInitialized, isOnline, fetchTeams]);

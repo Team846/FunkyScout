@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import { useDesktopEvent } from "./DesktopEventContext";
@@ -23,6 +24,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   const [callbacks, setCallbacks] = useState<Set<() => void>>(new Set());
   const [isConnected, setIsConnected] = useState(false);
 
+  // Debouncing state to batch rapid updates
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const updateCountRef = useRef(0);
+
   // Register a callback to be called on realtime updates
   const registerRefreshCallback = useCallback((callback: () => void) => {
     setCallbacks((prev) => {
@@ -41,20 +46,30 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Call all registered callbacks
+  // Call all registered callbacks (debounced)
   const triggerRefresh = useCallback(() => {
-    console.log(
-      "[DesktopRealtime] Triggering refresh for",
-      callbacks.size,
-      "callbacks"
-    );
-    callbacks.forEach((cb) => {
-      try {
-        cb();
-      } catch (error) {
-        console.error("[DesktopRealtime] Callback error:", error);
-      }
-    });
+    updateCountRef.current++;
+
+    // Clear existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new timer to batch updates
+    debounceTimerRef.current = setTimeout(() => {
+      console.log(
+        `[DesktopRealtime] Batched ${updateCountRef.current} updates, triggering ${callbacks.size} callbacks`
+      );
+      updateCountRef.current = 0;
+
+      callbacks.forEach((cb) => {
+        try {
+          cb();
+        } catch (error) {
+          console.error("[DesktopRealtime] Callback error:", error);
+        }
+      });
+    }, 500); // 500ms debounce (shorter than mobile's 2s, for snappier desktop UX)
   }, [callbacks]);
 
   // Subscribe to Supabase realtime
@@ -171,6 +186,12 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     // Cleanup on event change or unmount
     return () => {
       console.log("[DesktopRealtime] Unsubscribing from realtime");
+
+      // Clear any pending debounce timer
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
       supabase.removeChannel(channel);
       setIsConnected(false);
     };

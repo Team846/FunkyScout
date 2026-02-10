@@ -36,9 +36,8 @@ export function DesktopSyncProvider({
   children: ReactNode;
   router: any; // Router instance from createRouter
 }) {
-  const { currentEvent, isOnline } = useDesktopEvent();
+  const { currentEvent } = useDesktopEvent();
   const prevEventRef = useRef<string | null>(null);
-  const prevOnlineRef = useRef<boolean>(isOnline);
 
   // Callback registry for data context refresh functions
   const refreshCallbacks = useRef<Set<() => void>>(new Set());
@@ -117,17 +116,8 @@ export function DesktopSyncProvider({
   }, [router, forceSyncNow]);
 
   /**
-   * Trigger 3: Online/offline transitions
-   * When coming back online, refresh data from Supabase
+   * Note: Desktop is always online (native app), so no online/offline trigger needed
    */
-  useEffect(() => {
-    // Only trigger when coming BACK online (offline → online)
-    if (isOnline && !prevOnlineRef.current) {
-      console.log("[DesktopSync] Back online, triggering refresh");
-      forceSyncNow();
-    }
-    prevOnlineRef.current = isOnline;
-  }, [isOnline, forceSyncNow]);
 
   return (
     <DesktopSyncContext.Provider

@@ -54,7 +54,7 @@ const DesktopTeamDataContext = createContext<
 >(undefined);
 
 export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
-  const { currentEvent, isOnline } = useDesktopEvent();
+  const { currentEvent } = useDesktopEvent();
   const { registerRefreshCallback } = useDesktopRealtime();
 
   const [teams, setTeams] = useState<Team[]>([]);
@@ -75,7 +75,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   const fetchTeams = useCallback(async () => {
     if (!currentEvent) return;
 
-    const shouldSkipCache = skipCacheOnceRef.current && isOnline;
+    const shouldSkipCache = skipCacheOnceRef.current;
     if (shouldSkipCache) {
       skipCacheOnceRef.current = false;
     }
@@ -91,36 +91,39 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Step 2: Refresh from Supabase if online
-      if (isOnline) {
-        console.log("[DesktopTeamData] Fetching from Supabase");
+      // Step 2: Refresh from Supabase (desktop is always online)
+      console.log("[DesktopTeamData] Fetching from Supabase");
+
+      // Only show loading on initial load or event change (prevents flickering on background refreshes)
+      const isInitialLoad = !hasLoadedDataRef.current;
+      if (isInitialLoad || shouldSkipCache) {
         setLoading(true);
+      }
 
-        const { data: supabaseTeams, error } = await supabase
-          .from("event_team_data")
-          .select("event, team, team_name, data, last_modified")
-          .eq("event", currentEvent)
-          .is("deleted_at", null);
+      const { data: supabaseTeams, error } = await supabase
+        .from("event_team_data")
+        .select("event, team, team_name, data, last_modified")
+        .eq("event", currentEvent)
+        .is("deleted_at", null);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        if (supabaseTeams && supabaseTeams.length > 0) {
-          console.log(`[DesktopTeamData] Fetched ${supabaseTeams.length} teams from Supabase`);
+      if (supabaseTeams && supabaseTeams.length > 0) {
+        console.log(`[DesktopTeamData] Fetched ${supabaseTeams.length} teams from Supabase`);
 
-          // Process and display fresh data
-          processTeamData(supabaseTeams as EventTeamData[]);
-          hasLoadedDataRef.current = true;
+        // Process and display fresh data
+        processTeamData(supabaseTeams as EventTeamData[]);
+        hasLoadedDataRef.current = true;
 
-          // Note: Backend handles writing to SQLite from TBA
-          // Frontend just reads and displays the latest from Supabase
-        }
+        // Note: Backend handles writing to SQLite from TBA
+        // Frontend just reads and displays the latest from Supabase
       }
     } catch (error) {
       console.error("[DesktopTeamData] Fetch failed:", error);
     } finally {
       setLoading(false);
     }
-  }, [currentEvent, isOnline]);
+  }, [currentEvent]);
 
   /**
    * Process team data from SQLite or Supabase into display format
@@ -159,7 +162,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
           },
           nextMatch: t.data?.next_match || null,
           lastMatch: t.data?.last_match || null,
-          epa: t.data?.epa ?? null,
+          epa: (typeof t.data?.epa === "object" ? t.data?.epa : null) ?? null,
           opr: t.data?.opr ?? undefined,
           dpr: t.data?.dpr ?? undefined,
           ccwm: t.data?.ccwm ?? undefined,
@@ -182,13 +185,13 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Skip cache when switching events (if online and has prior data)
-    if (isOnline && hasLoadedDataRef.current) {
+    // Skip cache when switching events (if has prior data)
+    if (hasLoadedDataRef.current) {
       skipCacheOnceRef.current = true;
     }
 
     fetchTeams();
-  }, [currentEvent, fetchTeams, isOnline]);
+  }, [currentEvent, fetchTeams]);
 
   // Register refresh callback for realtime updates
   useEffect(() => {

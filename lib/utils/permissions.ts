@@ -24,13 +24,13 @@ export function canEditPicklist(
   picklistUid?: string,
   currentUid?: string,
 ): boolean {
-  if (role === "admin") return true;
-  if (picklistType === "default") return role === "scouter";
+  if (role === "admin") return true; // Admins can always edit public and default
+  if (picklistType === "default") return false; // Only admins can edit default picklists
   if (picklistType === "public") {
-    return role === "scouter" && picklistUid === currentUid;
+    return role === "scouter"; // All scouters can edit public picklists
   }
   if (picklistType === "private") {
-    return picklistUid === currentUid;
+    return picklistUid === currentUid; // Only creator can edit private
   }
   return false;
 }
