@@ -84,8 +84,8 @@ function MatchEnd() {
   return (
     //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
-    <div className="flex flex-row justify-start items-center w-screen h-screen gap-[20px] p-[20px]">
-      <div className="flex flex-col justify-between items-center w-[62px] h-full bg-black-950 gap-[10px] py-[12px] rounded-[15px] border-[2px] border-[#1E1E1E]">
+    <div className="flex flex-row w-screen h-screen gap-5 p-5">
+      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-[10px] py-[12px] rounded-[15px] border-[2px] border-[#1E1E1E]">
         <Dialog open={isOpen} onOpenChange={setDialogOpenState}>
             <DialogContent className="flex items-center justify-center w-[80vw] h-[40vw]">
                 <div className="flex flex-col items-center gap-4">
@@ -95,7 +95,7 @@ function MatchEnd() {
                 </div>
             </DialogContent>
         </Dialog>
-        <div className="flex flex-col text-outfit text-xs justify-start items-centergap-[5px]">
+        <div className="flex flex-col text-outfit text-xs justify-start items-centergap-[5px] gap-1">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
@@ -163,22 +163,21 @@ function MatchEnd() {
         </div>
       </div>
 
-      <div
-        className="w-[410px] h-full px-[41px] py-[41px]"
+      <div className="w-[45vw] h-full flex items-center justify-center"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left - 41; // subtract padding
-          const y = e.clientY - rect.top - 41; // subtract padding
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
           setCoordinates([x, y]);
         }}
       >
-        <div className="relative">
+        <div className="w-full aspect-square max-h-full relative">
           <img
             src={alliance == "red" ? red_field : blue_field}
             alt="Field"
+            className="w-full h-full object-contain transition-transform duration-200"
             style={{
               transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.5s ease",
             }}
           />
           {JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
@@ -215,7 +214,7 @@ function MatchEnd() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-center items-center w-[243px] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950  border-[#1E1E1E]">
+      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950  border-[#1E1E1E]">
         <div className="flex w-full h-full">
             <Button className="w-full h-full border-[#1E1E1E] bg-black-950 border-2">
                 <p className="text-[15px] text-foreground">Go to Match Summary</p>
@@ -237,7 +236,7 @@ function MatchEnd() {
         
       </div>
 
-      <div className="flex flex-col justify-start items-center w-[50px] h-full px-[23px] py-[10px] rounded-[10px] gap-[10px] bg-black-950 border-[2px] border-[#1E1E1E]">
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
         <p className="text-xs text-[#CDA745]">
           Done
         </p>

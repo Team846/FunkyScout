@@ -32,6 +32,7 @@ function MatchStart() {
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [coordinates, setCoordinates] = useState([1000, 1000]);
+  const [showPuff, setShowPuff] = useState(false);
   const handleBackClick = () => {
     if (practice) {
       navigate({ to: "/auth" });
@@ -79,8 +80,8 @@ function MatchStart() {
     //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
 
-    <div className="flex flex-row shrink-0 justify-between items-center w-screen h-screen gap-5 p-5">
-      <div className="flex flex-col justify-between items-center w-[62px] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+    <div className="flex flex-row w-screen h-screen gap-5 p-5">
+      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
@@ -182,23 +183,37 @@ function MatchStart() {
         </div>
       </div>
 
-      <div className="relative flex-1 h-full flex items-center justify-center">
-        <div className="relative inline-block">
+      <div className="w-[45vw] h-full flex items-center justify-center">
+        <div className="w-full aspect-square max-h-full relative">
           <img
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               const x = e.clientX - rect.left;
               const y = e.clientY - rect.top;
               setCoordinates([x, y]);
+              setShowPuff(true);
+              setTimeout(() => setShowPuff(false), 600);
             }}
             src={alliance == "red" ? red_field : blue_field}
             alt="Field"
-            className="max-w-full max-h-full object-contain transition-transform duration-500 ease-in-out"
+            className="w-full h-full object-contain transition-transform duration-200"
             style={{
               transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
             }}
           />
-          {JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
+          {showPuff && JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
+            <div
+              className="absolute pointer-events-none"
+              style={{
+                left: `${coordinates[0]}px`,
+                top: `${coordinates[1]}px`,
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              <div className="w-10 h-10 bg-[#658f6e] rounded-full animate-puff" />
+            </div>
+          )}
+          {!showPuff && JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
             <div
               className="absolute pointer-events-none"
               style={{
@@ -213,9 +228,9 @@ function MatchStart() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-center items-center w-auto h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 border-2 border-[#1E1E1E]">
-        <p className="text-outfit text-s w-[159px] h-[55px]">
-          Select robot starting position
+      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 border-2 border-[#1E1E1E]">
+        <p className="p-2 text-muted-foreground text-sm w-">
+          Please select robot starting position on field!
         </p>
         {JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
           <Button
@@ -246,15 +261,15 @@ function MatchStart() {
           }}
         >
           <div className="flex flex-col justify-center items-center w-[159px] h-[58px] px-6 py-3 rounded-[15px] gap-2.5 fill-none">
-            <p className="text-outfit text-s">Begin Match</p>
+            <p className="text-chart text-s">Begin Match</p>
           </div>
         </Button>
-        <div className="text-wrap text-sm">
-          <p>Begin ONLY when the official match starts</p>
+        <div className="p-2 text-wrap text-xs text-destructive">
+          <p>* Begin ONLY when the official match starts</p>
         </div>
       </div>
 
-      <div className="flex flex-col justify-start items-center w-[50px] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
         <p className="text-xs text-[#CDA745]">
           {Math.round(seconds) + "/" + "20"}
         </p>

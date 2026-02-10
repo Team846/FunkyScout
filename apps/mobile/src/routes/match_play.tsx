@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import React from "react";
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { getMatchLabel } from "@lib/utils/match";
+import { vibrateShake, vibrateBuzz, vibrateTap } from "@lib/utils/haptics";
 
 type MatchType = {
   teamNum?: string | null;
@@ -45,6 +46,16 @@ function MatchPlay() {
     const [isRotated, setIsRotated] = useState(false);
 
     const [shake, setShake] = useState(false);
+  const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
+  const [flashingButton, setFlashingButton] = useState<string | null>(null);
+
+  // Timeout refs for proper cleanup
+  const timer1Ref = useRef<number | null>(null);
+  const timer2Ref = useRef<number | null>(null);
+  const shakeTimerRef = useRef<number | null>(null);
+  const intervalRef = useRef<number | null>(null);
+  const countdownAutoRef = useRef<number | null>(null);
+  const countdownTeleopRef = useRef<number | null>(null);
 
     //timestamp action (maybe value), timestamp, value, x, y
     const [fuel, setFuel] = useState([0, 0, 182.11, 158.84]);
@@ -57,52 +68,112 @@ function MatchPlay() {
     setSeconds(0);
   }, []);
 
+  const triggerButtonFeedback = async (buttonId: string) => {
+    setFlashingButton(buttonId);
+    setTimeout(() => setFlashingButton(null), 300);
+    await vibrateTap();
+  };
+
+  const triggerCountdown = async () => {
+    setCountdown(3);
+    setShake(true);
+    await vibrateShake();
+
+    setTimeout(() => setCountdown(2), 1000);
+    setTimeout(() => setCountdown(1), 2000);
+    setTimeout(async () => {
+      setCountdown(null);
+      setShake(false);
+      await vibrateBuzz();
+    }, 3000);
+  };
+
+  const handleFastForward = () => {
+    // Clear all pending timeouts
+    if (timer1Ref.current) clearTimeout(timer1Ref.current);
+    if (timer2Ref.current) clearTimeout(timer2Ref.current);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    if (countdownAutoRef.current) clearTimeout(countdownAutoRef.current);
+    if (countdownTeleopRef.current) clearTimeout(countdownTeleopRef.current);
+
+    if (isAuto) {
+      // Skip to teleop
+      setSeconds(0);
+      setIsAuto(false);
+      // Restart teleop timer
+      timer2Ref.current = setTimeout(() => {
+        navigate({ to: "/match_end", search: { teamNum, matchNum, alliance, practice } });
+      }, 140 * 1000);
+
+      // Set up teleop countdown
+      countdownTeleopRef.current = setTimeout(() => {
+        console.log('🔔 Triggering TELEOP countdown at 137 seconds (after fast-forward)');
+        triggerCountdown();
+      }, 137 * 1000);
+    } else {
+      // Skip to end
+      navigate({ to: "/match_end", search: { teamNum, matchNum, alliance, practice } });
+    }
+  };
+
   useEffect(() => {
-    let interval = null;
+    intervalRef.current = setInterval(() => {
+      setSeconds(prev => prev + 0.01);
+    }, 10);
 
-        interval = setInterval(() => {
-        setSeconds(prev => prev + 0.01);
-        }, 10);
-        
-        const timer_1 = setTimeout(() => {
-            setIsAuto(false);
-            reset()
+    // Auto mode countdown: trigger at 17s (3 seconds before 20s switch)
+    countdownAutoRef.current = window.setTimeout(() => {
+      triggerCountdown();
+    }, 17 * 1000);
 
-        }, 20 * 1000);
-        const timer_2 = setTimeout(() => {
-            navigate({
-            to: "/match_end",
-            search: {
-              teamNum: teamNum,
-              matchNum: matchNum,
-              alliance: alliance,
-              practice: practice
-            },
-          });
+    // Auto->Teleop switch at 20s
+    timer1Ref.current = window.setTimeout(() => {
+      setIsAuto(false);
+      reset();
 
-        }, 160 * 1000);
-        
-        const shakeTimer = setTimeout(() => {
-            setShake(true);
-            setTimeout(() => {
-              setShake(false);
-            }, 1000);
-        }, 10 * 1000);
-        return () => {
-            if (interval) clearInterval(interval);
-            clearTimeout(timer_1);
-            clearTimeout(timer_2);
-            clearTimeout(shakeTimer);
-        };
-    }, []);
+      // Set up teleop countdown: trigger at 137s after teleop starts (3 seconds before 140s end)
+      countdownTeleopRef.current = window.setTimeout(() => {
+        triggerCountdown();
+      }, 137 * 1000);
+    }, 20 * 1000);
+
+    // Match end at 160s total
+    timer2Ref.current = window.setTimeout(() => {
+      navigate({
+        to: "/match_end",
+        search: {
+          teamNum: teamNum,
+          matchNum: matchNum,
+          alliance: alliance,
+          practice: practice
+        },
+      });
+    }, 160 * 1000);
+
+    shakeTimerRef.current = window.setTimeout(() => {
+      setShake(true);
+      setTimeout(() => {
+        setShake(false);
+      }, 1000);
+    }, 10 * 1000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timer1Ref.current) clearTimeout(timer1Ref.current);
+      if (timer2Ref.current) clearTimeout(timer2Ref.current);
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+      if (countdownAutoRef.current) clearTimeout(countdownAutoRef.current);
+      if (countdownTeleopRef.current) clearTimeout(countdownTeleopRef.current);
+    };
+  }, []);
 
     
    return (
     //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
 
-    <div className={`flex flex-row shrink-0 justify-between items-center w-screen h-screen gap-5 p-5 ${shake ? 'animate-shake' : ''}`}>
-      <div className="flex flex-col justify-between items-center w-[62px] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+    <div className={`flex flex-row w-screen h-screen gap-5 p-5 ${shake ? 'animate-shake' : ''}`}>
+      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
@@ -111,6 +182,20 @@ function MatchPlay() {
           <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>
         </div>
         <div className="flex flex-col items-center gap-[30px]">
+          {/* Fast-forward button */}
+          <svg
+            width="25"
+            height="25"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            onClick={handleFastForward}
+            className="cursor-pointer"
+          >
+            <path d="M13 6L21 12L13 18V6Z" fill="#515151" />
+            <path d="M3 6L11 12L3 18V6Z" fill="#515151" />
+          </svg>
+
           <svg
             viewBox="0 0 25 20"
             onClick={handleBackClick}
@@ -204,14 +289,14 @@ function MatchPlay() {
         </div>
       </div>
 
-      
-        <div className="relative flex-1 h-full flex items-center justify-center">
-          <div className="relative inline-block">
+
+        <div className="w-[45vw] h-full flex items-center justify-center">
+          <div className="w-full aspect-square max-h-full relative">
             <img
-            
+
             src={alliance == "red" ? red_field : blue_field}
             alt="Field"
-            className="max-w-full max-h-full object-contain transition-transform duration-500 ease-in-out"
+            className="w-full h-full object-contain transition-transform duration-200"
             style={{
               transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
             }}
@@ -219,8 +304,11 @@ function MatchPlay() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-center items-center w-auto h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
-        <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
+        <div
+          className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E] cursor-pointer ${flashingButton === 'score-group-1' ? 'animate-flash-yellow' : ''}`}
+          onClick={() => triggerButtonFeedback('score-group-1')}
+        >
           <svg
             width="48"
             height="48"
@@ -288,7 +376,10 @@ function MatchPlay() {
           </svg>
         </div>
 
-        <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
+        <div
+          className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E] cursor-pointer ${flashingButton === 'score-group-3' ? 'animate-flash-yellow' : ''}`}
+          onClick={() => triggerButtonFeedback('score-group-3')}
+        >
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="0.5" y="0.5" width="47" height="47" rx="23.5" stroke="#8A8A8A"/>
             <path d="M18.1186 29.5V19.3182H19.6548V28.1776H24.2685V29.5H18.1186ZM29.1021 19.3182V29.5H27.5609V20.8594H27.5012L25.0652 22.4503V20.9787L27.6056 19.3182H29.1021Z" fill="white" fill-opacity="0.4"/>
@@ -320,12 +411,20 @@ function MatchPlay() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-start items-center w-12.5 h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
-        <p className="text-xs text-[#CDA745]">
-          {Math.round(seconds) + "/"}
-          {isAuto ? "20" : "140"}
-        </p>
-        <div className="relative flex flex-col gap-0 flex-1 w-1.25">
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+        {countdown !== null ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-6xl font-bold text-[#4ADE80] animate-pulse">
+              {countdown}
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-[#CDA745]">
+              {Math.round(seconds) + "/"}
+              {isAuto ? "20" : "140"}
+            </p>
+            <div className="relative flex flex-col gap-0 flex-1 w-1.25">
         
         {!isAuto && (
         <div className="absolute inset-0 z-0">
@@ -354,7 +453,9 @@ function MatchPlay() {
             style={{ height: `${(((isAuto ? 20 : 140) - seconds) / (isAuto ? 20 : 140)) * 100}%` }}
             className="flex flex-col w-full bg-[#CDA745] opacity-70"
           ></div>
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
