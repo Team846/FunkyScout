@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
+import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import {
   Collapsible,
@@ -153,7 +154,7 @@ function AutosSection({
 
   const addEntry = () => {
     const newId = Date.now();
-    setEntries([...entries, { id: newId, climb: false, drawing: null }]);
+    setEntries([...entries, { id: newId, climb: false, drawing: null, name: "", description: "" }]);
     // Open drawer for new entry
     setEditingAutoId(newId);
     setDrawerOpen(true);
@@ -168,6 +169,18 @@ function AutosSection({
   const toggleClimb = (id: number, pressed: boolean) => {
     setEntries(
       entries.map((e) => (e.id === id ? { ...e, climb: pressed } : e))
+    );
+  };
+
+  const updateName = (id: number, name: string) => {
+    setEntries(
+      entries.map((e) => (e.id === id ? { ...e, name } : e))
+    );
+  };
+
+  const updateDescription = (id: number, description: string) => {
+    setEntries(
+      entries.map((e) => (e.id === id ? { ...e, description } : e))
     );
   };
 
@@ -239,19 +252,29 @@ function AutosSection({
       </div>
       <div className=" px-2 flex flex-col gap-3">
         {entries.map((entry) => (
-          <div key={entry.id} className="grid grid-cols-2 gap-3">
-            <Input
-              className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-              placeholder="test"
+          <div key={entry.id} className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                value={entry.name || ""}
+                onChange={(e) => updateName(entry.id, e.target.value)}
+                className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
+                placeholder="Auto name"
+              />
+              <ScoutToggle
+                pressed={entry.climb}
+                onPressedChange={(p) => toggleClimb(entry.id, p)}
+                className="w-full"
+                info="My name is jeff"
+              >
+                Climb
+              </ScoutToggle>
+            </div>
+            <Textarea
+              value={entry.description || ""}
+              onChange={(e) => updateDescription(entry.id, e.target.value)}
+              className="min-h-20 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
+              placeholder="Description (optional)"
             />
-            <ScoutToggle
-              pressed={entry.climb}
-              onPressedChange={(p) => toggleClimb(entry.id, p)}
-              className="w-full"
-              info="My name is jeff"
-            >
-              Climb
-            </ScoutToggle>
           </div>
         ))}
       </div>
@@ -286,6 +309,8 @@ function ScoutPage() {
   // Fuel state
   const [fuelShootMoving, setFuelShootMoving] = useState(false);
   const [fuelPassing, setFuelPassing] = useState(false);
+  const [fuelBps, setFuelBps] = useState("");
+  const [fuelCapacity, setFuelCapacity] = useState("");
 
   // Climb state
   const [climbLevel, setClimbLevel] = useState<string | null>(null);
@@ -307,6 +332,8 @@ function ScoutPage() {
       setIntakeStocking(formData.intake.stocking);
       setFuelShootMoving(formData.fuel.shootMoving);
       setFuelPassing(formData.fuel.passing);
+      setFuelBps(formData.fuel.bps || "");
+      setFuelCapacity(formData.fuel.capacity || "");
       setClimbLevel(formData.climb.level);
       setClimbLeft(formData.climb.left);
       setClimbRight(formData.climb.right);
@@ -338,6 +365,8 @@ function ScoutPage() {
       fuel: {
         shootMoving: fuelShootMoving,
         passing: fuelPassing,
+        bps: fuelBps,
+        capacity: fuelCapacity,
       },
       climb: {
         level: climbLevel,
@@ -473,12 +502,16 @@ function ScoutPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Input
+                value={fuelBps}
+                onChange={(e) => setFuelBps(e.target.value)}
                 className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-                placeholder="test"
+                placeholder="Balls Per Sec"
               />
               <Input
+                value={fuelCapacity}
+                onChange={(e) => setFuelCapacity(e.target.value)}
                 className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-                placeholder="test"
+                placeholder="Ball Capacity"
               />
             </div>
           </div>

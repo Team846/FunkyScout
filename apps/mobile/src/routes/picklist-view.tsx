@@ -104,7 +104,7 @@ function PicklistViewPage() {
     : false;
 
   // Debug logging
-  console.log('[picklist-view] Permission check:', {
+  console.log("[picklist-view] Permission check:", {
     userRole: userData.role,
     picklistType: picklist?.type,
     picklistUid: picklist?.uid,
@@ -222,7 +222,7 @@ function PicklistViewPage() {
 
   const handleDelete = () => {
     if (!isAdmin || !currentEvent) return;
-    toast("Delete this picklist? This cannot be undone.", {
+    toast.warning("Delete this picklist? This cannot be undone.", {
       action: {
         label: "Delete",
         onClick: () => {
@@ -238,7 +238,9 @@ function PicklistViewPage() {
     });
   };
 
-  const handleTypeChange = async (nextType: "public" | "private" | "default") => {
+  const handleTypeChange = async (
+    nextType: "public" | "private" | "default"
+  ) => {
     if (!picklist || !currentEvent) return;
     if (picklist.type === nextType) {
       setTypeMenuOpen(false);
@@ -354,7 +356,9 @@ function PicklistViewPage() {
                     key={type}
                     type="button"
                     className={`w-full rounded-lg px-3 py-2.5 text-left text-sm hover:bg-accent ${
-                      picklist.type === type ? "text-primary" : "text-foreground"
+                      picklist.type === type
+                        ? "text-primary"
+                        : "text-foreground"
                     }`}
                     onClick={() => handleTypeChange(type)}
                   >
@@ -370,7 +374,9 @@ function PicklistViewPage() {
               checked={excludedToBottom}
               onCheckedChange={setExcludedToBottom}
               className={`ring-2 ring-offset-2 ring-offset-background ${
-                excludedToBottom ? "ring-primary/50" : "ring-muted-foreground/50"
+                excludedToBottom
+                  ? "ring-primary/50"
+                  : "ring-muted-foreground/50"
               }`}
             />
             <span className="text-sm text-muted-foreground">
@@ -488,11 +494,7 @@ function SortableTeamRow({
               {...listeners}
               className="cursor-grab text-foreground rounded-xl bg-background/60 p-3"
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="size-5"
-                fill="currentColor"
-              >
+              <svg viewBox="0 0 24 24" className="size-5" fill="currentColor">
                 <circle cx="9" cy="5" r="1" />
                 <circle cx="9" cy="12" r="1" />
                 <circle cx="9" cy="19" r="1" />
@@ -510,9 +512,7 @@ function SortableTeamRow({
             <p className="text-base truncate">
               <span className="font-bold text-primary">{teamNumber}</span>
               <span className="text-foreground"> | </span>
-              <span className="text-foreground">
-                {teamName || entry.team}
-              </span>
+              <span className="text-foreground">{teamName || entry.team}</span>
             </p>
             <div className="flex items-center gap-2 mt-1">
               <p className="text-sm text-border">
@@ -601,9 +601,7 @@ function TeamRow({
   const teamNumber = entry.team.replace("frc", "");
 
   return (
-    <div
-      className="rounded-2xl bg-muted px-5 py-6 mb-3 last:mb-0 min-h-[80px]"
-    >
+    <div className="rounded-2xl bg-muted px-5 py-6 mb-3 last:mb-0 min-h-[80px]">
       <div className="flex w-full items-center justify-between gap-3">
         <div className="text-xs font-semibold text-primary w-4 text-center">
           {entry.rank}

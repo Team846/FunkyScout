@@ -19,5 +19,6 @@ export interface AutoEntry {
   id: number;
   climb: boolean;
   drawing: DrawingData | null;
+  name?: string;
   description?: string;
 }

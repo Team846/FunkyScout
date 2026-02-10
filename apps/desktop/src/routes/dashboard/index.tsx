@@ -119,9 +119,9 @@ function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Header */}
-      <header className="border-b">
+      <header className="border-b flex-shrink-0">
         <div className="container mx-auto px-6 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">FunkyScout Desktop</h1>
@@ -144,7 +144,8 @@ function DashboardPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-8">
+      <main className="flex-1 overflow-y-auto">
+        <div className="container mx-auto px-6 py-8">
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
@@ -329,6 +330,7 @@ function DashboardPage() {
             💡 Test realtime: Edit picklists on mobile or desktop and watch them
             sync instantly!
           </p>
+        </div>
         </div>
       </main>
     </div>

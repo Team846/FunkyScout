@@ -402,12 +402,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       const scouted = new Set(
         data
           .filter((t: EventTeamData) => {
-            // Only count as scouted if data exists and is not empty
-            if (!t.data) return false;
-            if (Array.isArray(t.data)) return t.data.length > 0;
-            if (typeof t.data === "object")
-              return Object.keys(t.data).length > 0;
-            return false;
+            // Only count as scouted if name is registered (someone submitted pit data)
+            return !!t.name;
           })
           .map((t: EventTeamData) => t.team)
       );

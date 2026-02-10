@@ -205,10 +205,13 @@ export function DesktopCompetitionDataProvider({
           console.log("[DesktopCompetitionData] Picklist entries cached successfully");
         }
 
+        console.log("[DesktopCompetitionData] 🔄 UPDATING STATE with Supabase data");
+        console.log(`[DesktopCompetitionData] Picklists:`, supabasePicklists);
+        console.log(`[DesktopCompetitionData] Entries:`, supabaseEntries);
         setPicklists(supabasePicklists || []);
         setPicklistEntries(supabaseEntries || []);
         console.log(
-          `[DesktopCompetitionData] Set state: ${supabasePicklists?.length ?? 0} picklists, ${supabaseEntries?.length ?? 0} entries`
+          `[DesktopCompetitionData] ✅ State updated: ${supabasePicklists?.length ?? 0} picklists, ${supabaseEntries?.length ?? 0} entries`
         );
       }
     } catch (error) {
@@ -374,11 +377,16 @@ export function DesktopCompetitionDataProvider({
 
     const unregister = registerRefreshCallback(() => {
       console.log(
-        "[DesktopCompetitionData] Realtime update - forcing fresh fetch"
+        "[DesktopCompetitionData] 🔔 REALTIME UPDATE RECEIVED - forcing fresh fetch from Supabase"
       );
+      console.log("[DesktopCompetitionData] Current picklists count:", picklists.length);
+      console.log("[DesktopCompetitionData] Current entries count:", picklistEntries.length);
       skipCacheOnceRef.current = true; // Skip cache, fetch from Supabase
       if (fetchDataRef.current) {
+        console.log("[DesktopCompetitionData] Calling fetchDataRef.current()");
         fetchDataRef.current();
+      } else {
+        console.error("[DesktopCompetitionData] ❌ fetchDataRef.current is null!");
       }
     });
 

@@ -58,17 +58,22 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     // Set new timer to batch updates
     debounceTimerRef.current = setTimeout(() => {
       console.log(
-        `[DesktopRealtime] Batched ${updateCountRef.current} updates, triggering ${callbacks.size} callbacks`
+        `[DesktopRealtime] 🔥 Batched ${updateCountRef.current} updates, triggering ${callbacks.size} callbacks`
       );
       updateCountRef.current = 0;
 
+      let callbackNum = 0;
       callbacks.forEach((cb) => {
+        callbackNum++;
         try {
+          console.log(`[DesktopRealtime] Calling callback ${callbackNum}/${callbacks.size}`);
           cb();
+          console.log(`[DesktopRealtime] ✅ Callback ${callbackNum} completed`);
         } catch (error) {
           console.error("[DesktopRealtime] Callback error:", error);
         }
       });
+      console.log("[DesktopRealtime] ✅ All callbacks completed");
     }, 500); // 500ms debounce (shorter than mobile's 2s, for snappier desktop UX)
   }, [callbacks]);
 
@@ -139,9 +144,11 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         },
         (payload: any) => {
           console.log(
-            "[DesktopRealtime] event_picklist_entries update:",
+            "[DesktopRealtime] 🔔 event_picklist_entries update:",
             payload
           );
+          console.log("[DesktopRealtime] Event type:", payload.eventType);
+          console.log("[DesktopRealtime] New data:", payload.new);
           triggerRefresh();
         }
       )

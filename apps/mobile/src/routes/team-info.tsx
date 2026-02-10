@@ -1,10 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
+import { Input } from "@shadcn/ui/components/input.tsx";
+import { Textarea } from "@shadcn/ui/components/textarea.tsx";
+import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { toast } from "sonner";
 import { useEvent } from "@lib/context/EventContext";
 import { getEventTeamData, cacheEventTeamData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
+import { putTeamData } from "@lib/data/writes";
+import { getSession } from "@lib/supabase/auth";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import type { DrawingData } from "../components/auto-path-drawer/types";
@@ -36,6 +41,8 @@ interface PitData {
   fuel: {
     shootMoving: boolean;
     passing: boolean;
+    bps?: string;
+    capacity?: string;
   };
   climb: {
     level: string | null;
@@ -44,7 +51,8 @@ interface PitData {
     declimb: boolean;
   };
   autos: Array<{
-    description: string;
+    name?: string;
+    description?: string;
     climbDuringAuto: boolean;
     drawing: any;
   }>;
@@ -69,6 +77,12 @@ function TeamInfoPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingAutoIndex, setEditingAutoIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"pit" | "match">("pit");
+  const [editingAutoIndex2, setEditingAutoIndex2] = useState<number | null>(
+    null
+  );
+  const [autoNameValue, setAutoNameValue] = useState("");
+  const [autoDescriptionValue, setAutoDescriptionValue] = useState("");
+  const [autoClimbValue, setAutoClimbValue] = useState(false);
 
   useEffect(() => {
     if (!currentEvent || !teamKey) {
@@ -83,7 +97,7 @@ function TeamInfoPage() {
         setTeamName(teamData.team_name || `Team ${teamKey.replace("frc", "")}`);
 
         // Team is scouted if it has a scouter name (not just TBA/Statbotics data)
-        if (teamData.data && teamData.name != null && teamData.name !== '') {
+        if (teamData.data && teamData.name != null && teamData.name !== "") {
           setPitData(teamData.data as PitData);
         } else {
           setPitData(null); // Treat as not scouted
@@ -98,12 +112,96 @@ function TeamInfoPage() {
     setDrawerOpen(true);
   };
 
+  const handleEditAuto2 = (
+    index: number,
+    currentName: string,
+    currentDescription: string,
+    currentClimb: boolean
+  ) => {
+    setEditingAutoIndex2(index);
+    setAutoNameValue(currentName || "");
+    setAutoDescriptionValue(currentDescription || "");
+    setAutoClimbValue(currentClimb);
+  };
+
+  const handleSaveAuto = async () => {
+    if (!pitData || editingAutoIndex2 === null || !currentEvent || !teamKey) {
+      return;
+    }
+
+    try {
+      const session = await getSession();
+      const userName = session?.user?.email || "Unknown";
+      const userId = session?.user?.id || "unknown";
+
+      const updatedAutos = [...pitData.autos];
+      updatedAutos[editingAutoIndex2] = {
+        ...updatedAutos[editingAutoIndex2],
+        name: autoNameValue,
+        description: autoDescriptionValue,
+        climbDuringAuto: autoClimbValue,
+      };
+
+      const updatedData = {
+        ...pitData,
+        autos: updatedAutos,
+      };
+
+      // Save to local DB
+      await cacheEventTeamData([
+        {
+          event: currentEvent,
+          team: teamKey,
+          data: updatedData,
+          last_modified: Date.now(),
+        },
+      ]);
+
+      // Sync to Supabase using offline-first write pattern
+      await putTeamData(currentEvent, teamKey, updatedData, {
+        teamName: teamName,
+        name: userName,
+        uid: userId,
+      });
+
+      // Update local state
+      setPitData(updatedData);
+      setEditingAutoIndex2(null);
+      setAutoNameValue("");
+      setAutoDescriptionValue("");
+      setAutoClimbValue(false);
+
+      toast.success("Auto updated and synced!");
+
+      // Reload data to ensure consistency
+      const refreshedData = await getEventTeamData(currentEvent);
+      const teamData = refreshedData.find((t) => t.team === teamKey);
+      if (teamData && teamData.data) {
+        setPitData(teamData.data as PitData);
+      }
+    } catch (error) {
+      console.error("Failed to save auto:", error);
+      toast.error("Failed to save auto");
+    }
+  };
+
+  const handleCancelAuto = () => {
+    setEditingAutoIndex2(null);
+    setAutoNameValue("");
+    setAutoDescriptionValue("");
+    setAutoClimbValue(false);
+  };
+
   const handleSaveAutoDrawing = async (drawing: DrawingData | null) => {
     if (!pitData || editingAutoIndex === null || !currentEvent || !teamKey) {
       return;
     }
 
     try {
+      const session = await getSession();
+      const userName = session?.user?.email || "Unknown";
+      const userId = session?.user?.id || "unknown";
+
       // Check if we're adding a new auto or updating existing
       const isNewAuto = editingAutoIndex >= pitData.autos.length;
 
@@ -113,7 +211,8 @@ function TeamInfoPage() {
         updatedAutos = [
           ...pitData.autos,
           {
-            description: `${pitData.autos.length + 1}`,
+            name: `Auto ${pitData.autos.length + 1}`,
+            description: "",
             climbDuringAuto: false,
             drawing,
           },
@@ -132,7 +231,7 @@ function TeamInfoPage() {
         autos: updatedAutos,
       };
 
-      // Save to local DB (correct function signature - one parameter)
+      // Save to local DB
       await cacheEventTeamData([
         {
           event: currentEvent,
@@ -142,10 +241,21 @@ function TeamInfoPage() {
         },
       ]);
 
+      // Sync to Supabase using offline-first write pattern
+      await putTeamData(currentEvent, teamKey, updatedData, {
+        teamName: teamName,
+        name: userName,
+        uid: userId,
+      });
+
       // Update local state
       setPitData(updatedData);
 
-      toast.success(isNewAuto ? "New auto added!" : "Auto path updated!");
+      toast.success(
+        isNewAuto
+          ? "New auto added and synced!"
+          : "Auto path updated and synced!"
+      );
       setDrawerOpen(false);
       setEditingAutoIndex(null);
 
@@ -270,7 +380,8 @@ function TeamInfoPage() {
                   Not Scouted Yet
                 </h3>
                 <p className="text-sm text-muted-foreground max-w-xs">
-                  This team hasn't been pit scouted. Visit their pit to gather information.
+                  This team hasn't been pit scouted. Visit their pit to gather
+                  information.
                 </p>
               </div>
 
@@ -413,6 +524,29 @@ function TeamInfoPage() {
                       {pitData.fuel?.passing ? "Yes" : "No"}
                     </p>
                   </div>
+                  {(pitData.fuel?.bps || pitData.fuel?.capacity) && (
+                    <>
+                      <div className="h-px bg-border my-2" />
+                      <div className="grid grid-cols-2 gap-4 py-2">
+                        {pitData.fuel?.bps && (
+                          <div>
+                            <p className="text-foreground text-sm mb-1">BPS</p>
+                            <p className="font-semibold text-foreground">
+                              {pitData.fuel.bps}
+                            </p>
+                          </div>
+                        )}
+                        {pitData.fuel?.capacity && (
+                          <div>
+                            <p className="text-foreground text-sm mb-1">Capacity</p>
+                            <p className="font-semibold text-foreground">
+                              {pitData.fuel.capacity}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -443,12 +577,101 @@ function TeamInfoPage() {
                         <p className="font-bold text-foreground mb-2">
                           Auto #{idx + 1}
                         </p>
-                        <div className="flex items-center justify-between py-2">
-                          <p className="text-foreground">Description</p>
-                          <p className="font-semibold text-foreground">
-                            {auto.description || idx + 1}
-                          </p>
-                        </div>
+                        {editingAutoIndex2 === idx ? (
+                          <div className="flex flex-col gap-4 py-2">
+                            <div>
+                              <p className="text-primary text-sm mb-2">Name</p>
+                              <Input
+                                value={autoNameValue}
+                                onChange={(e) =>
+                                  setAutoNameValue(e.target.value)
+                                }
+                                placeholder="Auto name"
+                                className="h-10"
+                              />
+                            </div>
+                            <div>
+                              <p className="text-primary text-sm mb-2">
+                                Description
+                              </p>
+                              <Textarea
+                                value={autoDescriptionValue}
+                                onChange={(e) =>
+                                  setAutoDescriptionValue(e.target.value)
+                                }
+                                placeholder="Description (optional)"
+                                className="min-h-24"
+                              />
+                            </div>
+                            <div>
+                              <p className="text-primary text-sm mb-2">Climb During Auto</p>
+                              <Toggle
+                                pressed={autoClimbValue}
+                                onPressedChange={setAutoClimbValue}
+                                className="h-10 px-4 rounded-lg border border-border bg-background text-foreground font-light data-[state=on]:border-primary data-[state=on]:border-2 data-[state=on]:text-primary hover:bg-background"
+                              >
+                                {autoClimbValue ? "Yes" : "No"}
+                              </Toggle>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={handleSaveAuto}
+                                className="h-9 flex-1"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleCancelAuto}
+                                className="h-9 flex-1"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3 py-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1">
+                                <p className="text-primary text-sm mb-1">
+                                  Name
+                                </p>
+                                <p className=" text-foreground text-base">
+                                  {auto.name || `Auto ${idx + 1}`}
+                                </p>
+                              </div>
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  handleEditAuto2(
+                                    idx,
+                                    auto.name || "",
+                                    auto.description || "",
+                                    auto.climbDuringAuto || false
+                                  )
+                                }
+                                className="h-7 text-xs"
+                              >
+                                Edit Auto
+                              </Button>
+
+                            </div>
+                            {auto.description && (
+                              <div>
+                                <p className="text-primary text-sm mb-1">
+                                  Description
+                                </p>
+                                <p className="text-muted-foreground text-base leading-relaxed">
+                                  {auto.description}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="h-px bg-border my-2" />
                         <div className="flex items-center justify-between py-2">
                           <p className="text-foreground">Climb during auto</p>

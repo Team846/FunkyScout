@@ -35,6 +35,7 @@ export interface AutoEntry {
   id: number;
   climb: boolean;
   drawing: DrawingData | null;
+  name?: string;
   description?: string;
 }
 
@@ -54,7 +55,8 @@ export interface PitScoutFormData {
   fuel: {
     shootMoving: boolean;
     passing: boolean;
-    // Add any additional fuel fields here
+    bps?: string;
+    capacity?: string;
   };
   climb: {
     level: string | null;
