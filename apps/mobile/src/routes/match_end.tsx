@@ -5,19 +5,21 @@ import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
 
-type MatchType = {
+type MatchEndType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
+  fuel?: number[] | null;
 };
 
 export const Route = createFileRoute("/match_end")({
   component: MatchEnd,
-  validateSearch: (search: Record<string, unknown>) : MatchType => {
+  validateSearch: (search: Record<string, unknown>) : MatchEndType => {
     return {
       teamNum: search.teamNum as string | undefined | null,
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
+      fuel: search.fuels as number[] | undefined | null,
     };
   },
 })

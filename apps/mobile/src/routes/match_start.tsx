@@ -147,6 +147,7 @@ function MatchStart() {
       
         <div className="relative flex-1 h-full flex items-center justify-center">
           <div className="relative inline-block">
+            
             <img
             onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();

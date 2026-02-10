@@ -8,7 +8,8 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^24.8.1",
-    "tailwindcss": "^4.1.14"
+    "tailwindcss": "^4.1.14",
+    "tailwindcss-animated": "^2.0.0"
   },
   "pnpm": {
     "overrides": {
