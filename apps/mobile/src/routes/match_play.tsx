@@ -50,9 +50,16 @@ function MatchPlay() {
         setSeconds(prev => prev + 0.01);
         }, 10);
         
-        const timerId = setTimeout(() => {
+        const timer_1 = setTimeout(() => {
             setIsAuto(false);
+            reset()
+
         }, 20 * 1000);
+        const timer_2 = setTimeout(() => {
+            navigate({ to: "/match_end" });
+
+        }, 160 * 1000);
+        
         
         return () => {
             if (interval) clearInterval(interval);
@@ -210,18 +217,39 @@ function MatchPlay() {
         
       </div>
 
-      <div className="flex flex-col justify-start items-center w-[50px] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-start items-center w-12.5 h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
         <p className="text-xs text-[#CDA745]">
-          {Math.round(seconds) + "/" + "20"}
+          {Math.round(seconds) + "/"}
+          {isAuto ? "20" : "140"}
         </p>
-        <div className="flex flex-col gap-0 flex-1 w-[5px]">
+        <div className="relative flex flex-col gap-0 flex-1 w-1.25">
+        
+        {!isAuto && (
+        <div className="absolute inset-0 z-0">
+            {[10, 35, 60, 85, 110].map((tick) => {
+            const percentage = (tick / 140) * 100; 
+            return (
+                <div
+                key={tick}
+                className="absolute w-full rounded-0.5"
+                style={{ top: `${percentage}%` }}
+                >
+                <div 
+                    className="w-2.5 h-0.5 bg-[#D9D9D9]" 
+                    style={{ transform: 'translateX(-2.5px)' }} 
+                />
+                </div>
+            );
+            })}
+        </div>
+        )}
           <div
-            style={{ height: `${(seconds / 20) * 100}%` }}
-            className="flex flex-col w-full bg-[#CDA745]"
+            style={{ height: `${(seconds / (isAuto ? 20 : 140)) * 100}%` }}
+            className="flex flex-col w-full bg-[#CDA745] "
           ></div>
           <div
-            style={{ height: `${((20 - seconds) / 20) * 100}%` }}
-            className="flex flex-col w-full bg-[#F4F4F4]"
+            style={{ height: `${(((isAuto ? 20 : 140) - seconds) / (isAuto ? 20 : 140)) * 100}%` }}
+            className="flex flex-col w-full bg-[#CDA745] opacity-70"
           ></div>
         </div>
       </div>
