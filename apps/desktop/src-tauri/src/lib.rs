@@ -119,6 +119,9 @@ pub fn run() {
             commands::db::get_schedule,
             commands::db::get_picklists,
             commands::db::get_picklist_entries,
+            commands::db::cache_schedule,
+            commands::db::cache_picklists,
+            commands::db::cache_picklist_entries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

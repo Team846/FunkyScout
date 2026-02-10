@@ -103,6 +103,16 @@ function PicklistViewPage() {
       )
     : false;
 
+  // Debug logging
+  console.log('[picklist-view] Permission check:', {
+    userRole: userData.role,
+    picklistType: picklist?.type,
+    picklistUid: picklist?.uid,
+    currentUid: userData.uid,
+    canView,
+    canEdit,
+  });
+
   const isAdmin = userData.role === "admin";
 
   if (!canView && !loading) {

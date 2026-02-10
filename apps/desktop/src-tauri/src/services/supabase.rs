@@ -305,16 +305,71 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Bulk upsert team data from TBA
-    /// Used to push TBA rankings/statuses to Supabase
-    pub async fn bulk_upsert_team_data(&self, teams: Vec<Value>) -> Result<()> {
+    /// Bulk upsert team data from TBA with merge logic
+    /// Fetches existing data, merges TBA stats with pit scouting data, then upserts
+    pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>) -> Result<()> {
         if teams.is_empty() {
             return Ok(());
         }
 
+        // 1. Fetch existing team data from Supabase to preserve pit scouting
+        let response = self.client
+            .from("event_team_data")
+            .select("event,team,data")
+            .eq("event", event)
+            .execute()
+            .await
+            .context("Failed to fetch existing team data for merge")?;
+
+        let existing_data: Vec<Value> = if response.status().is_success() {
+            let body = response.text().await?;
+            serde_json::from_str(&body).unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        // 2. Build lookup map of existing data
+        let mut existing_map: std::collections::HashMap<String, Value> = existing_data
+            .into_iter()
+            .filter_map(|v| {
+                let team = v.get("team")?.as_str()?.to_string();
+                let data = v.get("data")?.clone();
+                Some((team, data))
+            })
+            .collect();
+
+        // 3. Merge TBA stats with existing pit scouting data
+        let merged_teams: Vec<Value> = teams
+            .into_iter()
+            .map(|mut new_record| {
+                let team = new_record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+                let new_data = new_record.get("data").cloned().unwrap_or(json!({}));
+
+                // If existing data found, merge (pit data + TBA stats)
+                let merged_data = if let Some(existing) = existing_map.remove(team) {
+                    // Merge: keep existing pit fields, overwrite with new TBA stats
+                    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object(), new_data.as_object()) {
+                        let mut merged = existing_obj.clone();
+                        for (key, value) in new_obj {
+                            merged.insert(key.clone(), value.clone());
+                        }
+                        json!(merged)
+                    } else {
+                        new_data // Fallback if not objects
+                    }
+                } else {
+                    new_data // No existing data, use new data as-is
+                };
+
+                new_record["data"] = merged_data;
+                new_record
+            })
+            .collect();
+
+        // 4. Upsert merged data
         self.client
             .from("event_team_data")
-            .upsert(&serde_json::to_string(&teams)?)
+            .upsert(&serde_json::to_string(&merged_teams)?)
             .on_conflict("event,team")
             .execute()
             .await
@@ -337,9 +392,8 @@ impl SupabaseService {
             .await
             .context("Failed to bulk upsert schedule")?;
 
-        // Debug: Print response status
+        // Check response status
         let status = response.status();
-        println!("[Supabase] Schedule upsert response: status={}", status);
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             eprintln!("[Supabase] Schedule upsert failed: {}", body);

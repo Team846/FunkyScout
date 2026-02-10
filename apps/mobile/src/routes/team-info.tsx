@@ -70,20 +70,6 @@ function TeamInfoPage() {
   const [editingAutoIndex, setEditingAutoIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"pit" | "match">("pit");
 
-  // Check if team has actually been scouted (not just empty data structure)
-  const isTeamScouted = (data: any): boolean => {
-    if (!data) return false;
-    // Check if any meaningful pit scouting data exists
-    // Data is considered "scouted" if it has images, autos, or any true boolean values
-    if (data.images?.files?.length > 0) return true;
-    if (data.autos?.length > 0) return true;
-    if (data.movement?.depot || data.movement?.trough) return true;
-    if (data.intake?.ground || data.intake?.station || data.intake?.depot || data.intake?.stocking) return true;
-    if (data.fuel?.shootMoving || data.fuel?.passing) return true;
-    if (data.climb?.level) return true;
-    return false;
-  };
-
   useEffect(() => {
     if (!currentEvent || !teamKey) {
       setLoading(false);
@@ -96,8 +82,8 @@ function TeamInfoPage() {
         // Always store team name (exists even without pit data)
         setTeamName(teamData.team_name || `Team ${teamKey.replace("frc", "")}`);
 
-        // Check if pit data exists and is meaningful
-        if (teamData.data && isTeamScouted(teamData.data)) {
+        // Team is scouted if it has a scouter name (not just TBA/Statbotics data)
+        if (teamData.data && teamData.name != null && teamData.name !== '') {
           setPitData(teamData.data as PitData);
         } else {
           setPitData(null); // Treat as not scouted

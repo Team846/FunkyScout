@@ -262,7 +262,7 @@ function HomePage() {
 
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="w-[80vw] h-auto bg-background justify-center border border-border">
+        <DialogContent className="w-[85vw] h-auto bg-background justify-center border border-border">
           <DialogHeader className="px-6 pt-6">
             <div className="flex flex-col gap-1">
               <DialogTitle className="text-xl text-primary font-md text-center">

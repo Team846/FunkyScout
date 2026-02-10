@@ -224,3 +224,167 @@ pub async fn get_picklist_entries(
         })
         .collect())
 }
+
+/// Cache schedule data to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_schedule(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+    schedule: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in schedule {
+        let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let alliance = record.get("alliance").and_then(|v| v.as_str()).unwrap_or("");
+        let name = record.get("name").and_then(|v| v.as_str());
+        let uid = record.get("uid").and_then(|v| v.as_str());
+        let est_time = record.get("est_time").and_then(|v| v.as_i64());
+        let red_score = record.get("red_score").and_then(|v| v.as_i64());
+        let blue_score = record.get("blue_score").and_then(|v| v.as_i64());
+        let red_win_prob = record.get("red_win_prob").and_then(|v| v.as_f64());
+        let predicted_red_score = record.get("predicted_red_score").and_then(|v| v.as_f64());
+        let predicted_blue_score = record.get("predicted_blue_score").and_then(|v| v.as_f64());
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
+        sqlx::query(
+            "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(event, match, team) DO UPDATE SET
+               alliance = excluded.alliance,
+               name = excluded.name,
+               uid = excluded.uid,
+               est_time = excluded.est_time,
+               red_score = excluded.red_score,
+               blue_score = excluded.blue_score,
+               red_win_prob = excluded.red_win_prob,
+               predicted_red_score = excluded.predicted_red_score,
+               predicted_blue_score = excluded.predicted_blue_score,
+               last_modified = excluded.last_modified"
+        )
+        .bind(&event)
+        .bind(match_key)
+        .bind(team)
+        .bind(alliance)
+        .bind(name)
+        .bind(uid)
+        .bind(est_time)
+        .bind(red_score)
+        .bind(blue_score)
+        .bind(red_win_prob)
+        .bind(predicted_red_score)
+        .bind(predicted_blue_score)
+        .bind(last_modified)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache schedule: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Cache picklists to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_picklists(
+    state: State<'_, Mutex<AppState>>,
+    picklists: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in picklists {
+        let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let title = record.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        let uname = record.get("uname").and_then(|v| v.as_str()).unwrap_or("");
+        let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+        let picklist_type = record.get("type").and_then(|v| v.as_str()).unwrap_or("public");
+        let timestamp = record.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
+        sqlx::query(
+            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+               event = excluded.event,
+               title = excluded.title,
+               uname = excluded.uname,
+               uid = excluded.uid,
+               type = excluded.type,
+               timestamp = excluded.timestamp,
+               last_modified = excluded.last_modified"
+        )
+        .bind(id)
+        .bind(event)
+        .bind(title)
+        .bind(uname)
+        .bind(uid)
+        .bind(picklist_type)
+        .bind(timestamp)
+        .bind(last_modified)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache picklist {}: {}", id, e))?;
+    }
+
+    Ok(())
+}
+
+/// Cache picklist entries to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_picklist_entries(
+    state: State<'_, Mutex<AppState>>,
+    entries: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in entries {
+        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let rank = record.get("rank").and_then(|v| v.as_i64()).unwrap_or(0);
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
+        sqlx::query(
+            "INSERT INTO event_picklist_entries (event, id, team, rank, last_modified)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(event, id, team) DO UPDATE SET
+               rank = excluded.rank,
+               last_modified = excluded.last_modified"
+        )
+        .bind(event)
+        .bind(id)
+        .bind(team)
+        .bind(rank)
+        .bind(last_modified)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache picklist entry: {}", e))?;
+    }
+
+    Ok(())
+}

@@ -13,9 +13,10 @@ import {
   getSchedule as getSQLiteSchedule,
   getPicklists as getSQLitePicklists,
   getPicklistEntries as getSQLitePicklistEntries,
+  cacheSchedule,
+  cachePicklists,
+  cachePicklistEntries,
   type EventScheduleEntry,
-  type EventPicklist,
-  type EventPicklistEntry,
 } from "../lib/db";
 import supabase from "@lib/supabase/supabase";
 
@@ -82,7 +83,7 @@ export function DesktopCompetitionDataProvider({
 }: {
   children: ReactNode;
 }) {
-  const { currentEvent, isOnline } = useDesktopEvent();
+  const { currentEvent } = useDesktopEvent();
   const { registerRefreshCallback } = useDesktopRealtime();
 
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
@@ -104,7 +105,7 @@ export function DesktopCompetitionDataProvider({
   const fetchData = useCallback(async () => {
     if (!currentEvent) return;
 
-    const shouldSkipCache = skipCacheOnceRef.current && isOnline;
+    const shouldSkipCache = skipCacheOnceRef.current && true;
     if (shouldSkipCache) {
       skipCacheOnceRef.current = false;
     }
@@ -125,17 +126,13 @@ export function DesktopCompetitionDataProvider({
           hasLoadedDataRef.current = true;
         }
 
-        if (cachedPicklists.length > 0) {
-          setPicklists(cachedPicklists);
-        }
-
-        if (cachedEntries.length > 0) {
-          setPicklistEntries(cachedEntries);
-        }
+        // Always set picklists from cache (even if empty, to show loading state correctly)
+        setPicklists(cachedPicklists);
+        setPicklistEntries(cachedEntries);
       }
 
       // Step 2: Refresh from Supabase if online
-      if (isOnline) {
+      if (true) {
         console.log("[DesktopCompetitionData] Fetching from Supabase");
         setLoading(true);
 
@@ -150,24 +147,71 @@ export function DesktopCompetitionDataProvider({
           console.log(
             `[DesktopCompetitionData] Fetched ${supabaseSchedule.length} schedule entries from Supabase`
           );
+
+          // Cache to SQLite for offline access (like mobile does)
+          await cacheSchedule(
+            currentEvent,
+            supabaseSchedule.map((d: any) => ({
+              match: d.match,
+              team: d.team,
+              alliance: d.alliance,
+              name: d.name,
+              uid: d.uid,
+              est_time: d.est_time,
+              red_score: d.red_score,
+              blue_score: d.blue_score,
+              red_win_prob: d.red_win_prob,
+              predicted_red_score: d.predicted_red_score,
+              predicted_blue_score: d.predicted_blue_score,
+              last_modified: d.last_modified
+                ? new Date(d.last_modified).getTime()
+                : Date.now(),
+            }))
+          );
+
           processScheduleData(supabaseSchedule);
           hasLoadedDataRef.current = true;
         }
 
-        if (supabasePicklists) {
-          setPicklists(supabasePicklists);
+        // Always cache and update picklists from Supabase (even if empty)
+        console.log(
+          `[DesktopCompetitionData] Fetched ${supabasePicklists?.length ?? 0} picklists, ${supabaseEntries?.length ?? 0} entries from Supabase`
+        );
+
+        if (supabasePicklists && supabasePicklists.length > 0) {
+          console.log("[DesktopCompetitionData] Caching picklists to SQLite");
+          await cachePicklists(
+            supabasePicklists.map((p: any) => ({
+              ...p,
+              event: currentEvent,
+            }))
+          );
+          console.log("[DesktopCompetitionData] Picklists cached successfully");
         }
 
-        if (supabaseEntries) {
-          setPicklistEntries(supabaseEntries);
+        if (supabaseEntries && supabaseEntries.length > 0) {
+          console.log("[DesktopCompetitionData] Caching picklist entries to SQLite");
+          await cachePicklistEntries(
+            supabaseEntries.map((e: any) => ({
+              ...e,
+              event: currentEvent,
+            }))
+          );
+          console.log("[DesktopCompetitionData] Picklist entries cached successfully");
         }
+
+        setPicklists(supabasePicklists || []);
+        setPicklistEntries(supabaseEntries || []);
+        console.log(
+          `[DesktopCompetitionData] Set state: ${supabasePicklists?.length ?? 0} picklists, ${supabaseEntries?.length ?? 0} entries`
+        );
       }
     } catch (error) {
       console.error("[DesktopCompetitionData] Fetch failed:", error);
     } finally {
       setLoading(false);
     }
-  }, [currentEvent, isOnline]);
+  }, [currentEvent, true]);
 
   /**
    * Fetch schedule from Supabase
@@ -224,6 +268,7 @@ export function DesktopCompetitionDataProvider({
    * Fetch picklist entries from Supabase
    */
   const fetchPicklistEntriesFromSupabase = async (eventKey: string) => {
+    console.log("[DesktopCompetitionData] Fetching picklist entries for:", eventKey);
     const { data, error } = await supabase
       .from("event_picklist_entries")
       .select("*")
@@ -231,13 +276,19 @@ export function DesktopCompetitionDataProvider({
       .is("deleted_at", null)
       .order("rank", { ascending: true });
 
-    if (error) throw error;
-    return (data as any[]).map((e) => ({
+    if (error) {
+      console.error("[DesktopCompetitionData] Error fetching picklist entries:", error);
+      throw error;
+    }
+    console.log("[DesktopCompetitionData] Raw picklist entries from Supabase:", data);
+    const entries = (data as any[]).map((e) => ({
       ...e,
       last_modified: e.last_modified
         ? new Date(e.last_modified).getTime()
         : 0,
     })) as PicklistEntry[];
+    console.log("[DesktopCompetitionData] Processed picklist entries:", entries);
+    return entries;
   };
 
   /**
@@ -301,12 +352,12 @@ export function DesktopCompetitionDataProvider({
     }
 
     // Skip cache when switching events (if online and has prior data)
-    if (isOnline && hasLoadedDataRef.current) {
+    if (true && hasLoadedDataRef.current) {
       skipCacheOnceRef.current = true;
     }
 
     fetchData();
-  }, [currentEvent, fetchData, isOnline]);
+  }, [currentEvent, fetchData, true]);
 
   // Register refresh callback for realtime updates
   useEffect(() => {

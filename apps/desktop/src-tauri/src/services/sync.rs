@@ -51,8 +51,6 @@ impl SyncService {
     /// Perform one sync cycle: TBA + Statbotics → Supabase
     /// Fetches comprehensive data: rankings, EPA, OPR, match predictions
     pub async fn sync_once(&self) -> Result<()> {
-        println!("[Sync] Starting sync cycle for event: {}", self.current_event);
-
         // 1. Fetch team statuses from TBA (rankings only, 1 API call)
         let statuses = self
             .tba
@@ -60,28 +58,20 @@ impl SyncService {
             .await
             .context("Failed to fetch team statuses from TBA")?;
 
-        println!("[Sync] Fetched {} team statuses from TBA", statuses.len());
-
         // 2. Fetch EPA from Statbotics (graceful fallback on error)
         let epa_data = match self.statbotics.fetch_event_team_years(&self.current_event).await {
-            Ok(data) => {
-                println!("[Sync] Fetched {} team EPAs from Statbotics", data.len());
-                data
-            }
+            Ok(data) => data,
             Err(e) => {
-                eprintln!("[Sync] Failed to fetch EPA from Statbotics (continuing without EPA): {}", e);
+                eprintln!("[Sync] EPA fetch failed: {}", e);
                 vec![]
             }
         };
 
         // 3. Fetch OPR/DPR from TBA (graceful fallback on error)
         let oprs = match self.tba.fetch_oprs(&self.current_event).await {
-            Ok(data) => {
-                println!("[Sync] Fetched OPR data from TBA");
-                data
-            }
+            Ok(data) => data,
             Err(e) => {
-                eprintln!("[Sync] Failed to fetch OPR from TBA (continuing without OPR): {}", e);
+                eprintln!("[Sync] OPR fetch failed: {}", e);
                 json!({})
             }
         };
@@ -199,26 +189,16 @@ impl SyncService {
             .collect();
 
         if !team_data_records.is_empty() {
-            let record_count = team_data_records.len();
-
-            // Debug: Print first team record to verify data structure
-            if let Some(first_record) = team_data_records.first() {
-                println!("[Sync] DEBUG - Sample team record:");
-                println!("{}", serde_json::to_string_pretty(first_record).unwrap_or_default());
-            }
-
             // Cache to local SQLite FIRST (for offline support)
             self.cache_teams_to_sqlite(&team_data_records)
                 .await
                 .context("Failed to cache team data to SQLite")?;
 
-            // Then push to Supabase
+            // Then push to Supabase with merge logic
             self.supabase
-                .bulk_upsert_team_data(team_data_records)
+                .bulk_upsert_team_data(&self.current_event, team_data_records)
                 .await
                 .context("Failed to push team data to Supabase")?;
-
-            println!("[Sync] Pushed {} team records with EPA/OPR to Supabase", record_count);
         }
 
         // 6. Fetch match schedule from TBA and push
@@ -228,16 +208,11 @@ impl SyncService {
             .await
             .context("Failed to fetch match schedule from TBA")?;
 
-        println!("[Sync] Fetched {} matches from TBA", schedule.len());
-
         // 7. Fetch Statbotics match predictions (graceful fallback on error)
         let predictions = match self.statbotics.fetch_event_matches(&self.current_event).await {
-            Ok(data) => {
-                println!("[Sync] Fetched {} match predictions from Statbotics", data.len());
-                data
-            }
+            Ok(data) => data,
             Err(e) => {
-                eprintln!("[Sync] Failed to fetch match predictions from Statbotics (continuing without predictions): {}", e);
+                eprintln!("[Sync] Predictions fetch failed: {}", e);
                 vec![]
             }
         };
@@ -311,14 +286,6 @@ impl SyncService {
             .collect();
 
         if !schedule_records.is_empty() {
-            let schedule_count = schedule_records.len();
-
-            // Debug: Print first record to verify data structure
-            if let Some(first_record) = schedule_records.first() {
-                println!("[Sync] DEBUG - Sample schedule record:");
-                println!("{}", serde_json::to_string_pretty(first_record).unwrap_or_default());
-            }
-
             // Cache to local SQLite FIRST (for offline support)
             self.cache_schedule_to_sqlite(&schedule_records)
                 .await
@@ -329,11 +296,8 @@ impl SyncService {
                 .bulk_upsert_schedule(schedule_records)
                 .await
                 .context("Failed to push schedule to Supabase")?;
-
-            println!("[Sync] Pushed {} schedule records with scores/predictions to Supabase", schedule_count);
         }
 
-        println!("[Sync] Sync cycle complete");
         Ok(())
     }
 
@@ -382,7 +346,6 @@ impl SyncService {
             .context(format!("Failed to cache team {} to SQLite", team))?;
         }
 
-        println!("[Sync] Cached {} teams to local SQLite", team_records.len());
         Ok(())
     }
 
@@ -434,20 +397,19 @@ impl SyncService {
             .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
         }
 
-        println!("[Sync] Cached {} schedule entries to local SQLite", schedule_records.len());
         Ok(())
     }
 
     /// Update current event
     pub fn set_current_event(&mut self, event: String) {
         self.current_event = event;
-        println!("[Sync] Current event updated to: {}", self.current_event);
+        println!("[Sync] Event changed to: {}", self.current_event);
     }
 
     /// Bootstrap: Full sync with team info (2 TBA API calls)
     /// Call this once when event is first selected
     pub async fn bootstrap_event(&self) -> Result<()> {
-        println!("[Sync] Bootstrapping event: {}", self.current_event);
+        println!("[Sync] Bootstrapping: {}", self.current_event);
 
         // Fetch full team data (teams + rankings, 2 API calls)
         let teams = self
@@ -455,8 +417,6 @@ impl SyncService {
             .fetch_event_teams(&self.current_event)
             .await
             .context("Failed to fetch teams from TBA")?;
-
-        println!("[Sync] Fetched {} teams from TBA (bootstrap)", teams.len());
 
         // Push teams to Supabase
         let team_records: Vec<serde_json::Value> = teams
@@ -480,11 +440,11 @@ impl SyncService {
             .collect();
 
         self.supabase
-            .bulk_upsert_team_data(team_records)
+            .bulk_upsert_team_data(&self.current_event, team_records)
             .await
             .context("Failed to push teams to Supabase (bootstrap)")?;
 
-        println!("[Sync] Bootstrap complete");
+        println!("[Sync] Bootstrap complete for {}", self.current_event);
         Ok(())
     }
 }

@@ -107,3 +107,30 @@ export async function getPicklistEntries(
 ): Promise<EventPicklistEntry[]> {
   return invoke<EventPicklistEntry[]>("get_picklist_entries", { event });
 }
+
+/**
+ * Cache schedule data to SQLite after fetching from Supabase
+ * Allows offline access to Supabase data
+ */
+export async function cacheSchedule(
+  event: string,
+  schedule: any[]
+): Promise<void> {
+  return invoke<void>("cache_schedule", { event, schedule });
+}
+
+/**
+ * Cache picklists to SQLite after fetching from Supabase
+ * Allows offline access to user-created picklists
+ */
+export async function cachePicklists(picklists: any[]): Promise<void> {
+  return invoke<void>("cache_picklists", { picklists });
+}
+
+/**
+ * Cache picklist entries to SQLite after fetching from Supabase
+ * Allows offline access to picklist team rankings
+ */
+export async function cachePicklistEntries(entries: any[]): Promise<void> {
+  return invoke<void>("cache_picklist_entries", { entries });
+}

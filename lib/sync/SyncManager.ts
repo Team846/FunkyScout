@@ -99,13 +99,11 @@ export class SyncManager {
   private async processSyncQueue(): Promise<void> {
     // Skip if already syncing
     if (this.syncInProgress) {
-      console.log("[SyncManager] Sync already in progress, skipping");
       return;
     }
 
     // Skip if offline
     if (!this.getIsOnline()) {
-      console.log("[SyncManager] Offline, skipping sync");
       return;
     }
 
@@ -115,21 +113,17 @@ export class SyncManager {
       const queue = await getSyncQueue();
 
       if (queue.length === 0) {
-        console.log("[SyncManager] Queue empty");
         return;
       }
 
-      console.log(`[SyncManager] Processing ${queue.length} queue items`);
+      console.log(`[Sync] Processing ${queue.length} items`);
 
       // Process each queue item
       for (const item of queue) {
         try {
           await this.processQueueItem(item);
         } catch (error) {
-          console.error(
-            `[SyncManager] Error processing item ${item.id}:`,
-            error,
-          );
+          console.error(`[Sync] Error processing item ${item.id}:`, error);
           // Continue processing other items even if one fails
         }
       }
@@ -145,14 +139,13 @@ export class SyncManager {
     // Check if we've exceeded max retries
     if (item.retries >= DEFAULT_RETRY_CONFIG.maxRetries) {
       console.error(
-        `[SyncManager] Item ${item.id} exceeded max retries (${item.retries}), removing from queue. Last error: ${item.last_error || "unknown"}`,
+        `[Sync] Item ${item.id} exceeded max retries. Last error: ${item.last_error || "unknown"}`,
       );
       await removeSyncQueueItem(item.id);
       return;
     }
 
     try {
-      console.log(`[SyncManager] Syncing item ${item.id} (type: ${item.type})`);
 
       // Execute sync based on type
       switch (item.type as SyncQueueType) {
@@ -193,7 +186,7 @@ export class SyncManager {
           break;
 
         default:
-          console.error(`[SyncManager] Unknown queue item type: ${item.type}`);
+          console.error(`[Sync] Unknown queue type: ${item.type}`);
           // Remove unknown types from queue
           await removeSyncQueueItem(item.id);
           return;
@@ -201,15 +194,12 @@ export class SyncManager {
 
       // Success - remove from queue
       await removeSyncQueueItem(item.id);
-      console.log(`[SyncManager] Successfully synced item ${item.id}`);
     } catch (error: any) {
       // Classify error
       const { retryable, message } = classifyError(error);
 
       if (!retryable) {
-        console.error(
-          `[SyncManager] Non-retryable error for item ${item.id}: ${message}`,
-        );
+        console.error(`[Sync] Non-retryable error for item ${item.id}: ${message}`);
         // Remove non-retryable items from queue
         await removeSyncQueueItem(item.id);
         return;
@@ -220,9 +210,7 @@ export class SyncManager {
 
       // Schedule retry with exponential backoff
       const delay = calculateRetryDelay(item.retries + 1);
-      console.warn(
-        `[SyncManager] Retryable error for item ${item.id}, retrying in ${delay}ms: ${message}`,
-      );
+      console.warn(`[Sync] Retrying item ${item.id} in ${delay}ms: ${message}`);
 
       // Clear existing retry timer if any
       if (this.retryTimers.has(item.id)) {
@@ -240,10 +228,7 @@ export class SyncManager {
             await this.processQueueItem(freshItem);
           }
         } catch (retryError) {
-          console.error(
-            `[SyncManager] Retry error for item ${item.id}:`,
-            retryError,
-          );
+          console.error(`[Sync] Retry error for item ${item.id}:`, retryError);
         }
       }, delay);
 
@@ -252,23 +237,43 @@ export class SyncManager {
   }
 
   /**
-   * Sync team data (pit scouting) to Supabase
+   * Sync team data (pit scouting) to Supabase with merge logic
+   * Fetches existing data, merges pit data with TBA stats, then upserts
    */
   private async syncTeamData(payload: PutTeamDataPayload): Promise<void> {
     const { event, team, data, name, uid } = payload;
 
-    console.log(
-      `[SyncManager] Syncing team data for ${team} in ${event}`,
-      data,
-    );
+    // 1. Fetch existing data to preserve TBA stats
+    const { data: existing, error: fetchError } = await this.supabaseClient
+      .from("event_team_data")
+      .select("data")
+      .eq("event", event)
+      .eq("team", team)
+      .maybeSingle();
 
+    if (fetchError) {
+      // Continue with upsert anyway (might be first write)
+    }
+
+    // 2. Merge pit data with existing TBA stats
+    let mergedData = data;
+    if (existing && existing.data) {
+      // Keep existing TBA stats (rank, record, epa, opr, etc.)
+      // Overwrite with new pit scouting data
+      mergedData = {
+        ...existing.data, // Preserve TBA stats
+        ...data,          // Overwrite with pit data
+      };
+    }
+
+    // 3. Upsert merged data
     const { error } = await this.supabaseClient
       .from("event_team_data")
       .upsert(
         {
           event,
           team,
-          data,
+          data: mergedData,
           name,
           uid,
         },
@@ -278,11 +283,9 @@ export class SyncManager {
       );
 
     if (error) {
-      console.error(`[SyncManager] Sync team data error:`, error);
+      console.error(`[Sync] Team data sync error:`, error);
       throw error;
     }
-
-    console.log(`[SyncManager] Successfully synced team data for ${team}`);
   }
 
   /**
@@ -294,10 +297,6 @@ export class SyncManager {
   ): Promise<void> {
     const { event, team, data, teamName, name, uid, timestamp, localImageIds } =
       payload;
-
-    console.log(
-      `[SyncManager] Syncing team data with ${localImageIds.length} images for ${team}`,
-    );
 
     // 1. Upload images from IndexedDB to Supabase Storage
     const uploadedPaths = await Promise.all(
@@ -317,10 +316,6 @@ export class SyncManager {
           timestamp: image.timestamp,
         };
       }),
-    );
-
-    console.log(
-      `[SyncManager] Uploaded ${uploadedPaths.length} images to Storage`,
     );
 
     // 2. Update data JSON with uploaded paths
