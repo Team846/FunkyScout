@@ -295,6 +295,7 @@ function ScoutPage() {
   const { teamNum, teamName } = Route.useSearch();
   const { formData, setFormData } = usePitScoutForm();
 
+  /* GENERATED:STATE:START */
   // Movement state
   const [movementDepot, setMovementDepot] = useState(false);
   const [movementTrough, setMovementTrough] = useState(false);
@@ -308,14 +309,16 @@ function ScoutPage() {
   // Fuel state
   const [fuelShootMoving, setFuelShootMoving] = useState(false);
   const [fuelPassing, setFuelPassing] = useState(false);
-  const [fuelBps, setFuelBps] = useState("");
-  const [fuelCapacity, setFuelCapacity] = useState("");
+  const [fuelBps, setFuelBps] = useState<string>("");
+  const [fuelCapacity, setFuelCapacity] = useState<string>("");
 
   // Climb state
-  const [climbLevel, setClimbLevel] = useState<string | null>(null);
+  const [climbLevel, setClimbLevel] = useState<string | null>("None");
   const [climbLeft, setClimbLeft] = useState(false);
   const [climbRight, setClimbRight] = useState(false);
   const [climbDeclimb, setClimbDeclimb] = useState(false);
+
+    /* GENERATED:END */
 
   // Autos state (lifted from AutosSection)
   const [autoEntries, setAutoEntries] = useState<AutoEntry[]>([]);
@@ -323,6 +326,7 @@ function ScoutPage() {
   // Restore form data from context if available (for back navigation)
   useEffect(() => {
     if (formData && formData.teamNum === teamNum) {
+      /* GENERATED:RESTORE:START */
       setMovementDepot(formData.movement.depot);
       setMovementTrough(formData.movement.trough);
       setIntakeGround(formData.intake.ground);
@@ -337,6 +341,7 @@ function ScoutPage() {
       setClimbLeft(formData.climb.left);
       setClimbRight(formData.climb.right);
       setClimbDeclimb(formData.climb.declimb);
+    /* GENERATED:END */
       setAutoEntries(formData.autos);
     }
   }, [formData, teamNum]);
@@ -351,6 +356,7 @@ function ScoutPage() {
     const formData = {
       teamNum,
       teamName,
+      /* GENERATED:SAVE:START */
       movement: {
         depot: movementDepot,
         trough: movementTrough,
@@ -373,6 +379,7 @@ function ScoutPage() {
         right: climbRight,
         declimb: climbDeclimb,
       },
+    /* GENERATED:END */
       autos: autoEntries,
     };
 
@@ -419,24 +426,29 @@ function ScoutPage() {
 
       {/* Sections */}
       <div className="flex flex-col gap-6">
+        {/* GENERATED:FORM:START */}
+
         {/* Movement Section */}
         <Section title="Movement">
-          <div className="grid grid-cols-2 gap-3 px-2">
-            <ScoutToggle
-              pressed={movementDepot}
-              onPressedChange={setMovementDepot}
-              className="w-full"
-              info="Im the goat"
-            >
-              Depot
-            </ScoutToggle>
-            <ScoutToggle
-              pressed={movementTrough}
-              onPressedChange={setMovementTrough}
-              className="w-full"
-            >
-              Trough
-            </ScoutToggle>
+          <div className="flex flex-col gap-3 px-2">
+            <div className="grid grid-cols-2 gap-3">
+              <ScoutToggle
+                pressed={movementDepot}
+                onPressedChange={setMovementDepot}
+                className="w-full"
+                info="Can the robot cross through the depot area?"
+              >
+                Depot
+              </ScoutToggle>
+              <ScoutToggle
+                pressed={movementTrough}
+                onPressedChange={setMovementTrough}
+                className="w-full"
+                info="Can the robot traverse through the trough?"
+              >
+                Trough
+              </ScoutToggle>
+            </div>
           </div>
         </Section>
 
@@ -448,6 +460,7 @@ function ScoutPage() {
                 pressed={intakeGround}
                 onPressedChange={setIntakeGround}
                 className="w-full"
+                info="Can the robot intake game pieces from the ground?"
               >
                 Ground
               </ScoutToggle>
@@ -455,26 +468,27 @@ function ScoutPage() {
                 pressed={intakeStation}
                 onPressedChange={setIntakeStation}
                 className="w-full"
+                info="Can the robot intake from the station?"
               >
                 Station
               </ScoutToggle>
             </div>
-            {intakeGround && (
+            <ScoutToggle
+              pressed={intakeStocking}
+              onPressedChange={setIntakeStocking}
+              className="w-full"
+              info="Can the robot intake while stocking? (Only if station intake is available)"
+            >
+              Stocking
+            </ScoutToggle>
+            {intakeGround === true && (
               <ScoutToggle
                 pressed={intakeDepot}
                 onPressedChange={setIntakeDepot}
                 className="w-full"
+                info="Can the robot intake from the depot? (Only if ground intake is available)"
               >
                 Depot
-              </ScoutToggle>
-            )}
-            {intakeStation && (
-              <ScoutToggle
-                pressed={intakeStocking}
-                onPressedChange={setIntakeStocking}
-                className="w-full"
-              >
-                Stocking
               </ScoutToggle>
             )}
           </div>
@@ -488,6 +502,7 @@ function ScoutPage() {
                 pressed={fuelShootMoving}
                 onPressedChange={setFuelShootMoving}
                 className="w-full"
+                info="Can the robot shoot game pieces while moving?"
               >
                 Shoot as moving
               </ScoutToggle>
@@ -495,11 +510,10 @@ function ScoutPage() {
                 pressed={fuelPassing}
                 onPressedChange={setFuelPassing}
                 className="w-full"
+                info="Can the robot pass game pieces to alliance partners?"
               >
                 Passing
               </ScoutToggle>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <Input
                 value={fuelBps}
                 onChange={(e) => setFuelBps(e.target.value)}
@@ -546,38 +560,42 @@ function ScoutPage() {
                 onPressedChange={(p) => setClimbLevel(p ? "None" : null)}
                 className="w-full"
               >
-                N/A
+                None
               </ScoutToggle>
             </div>
-            {(climbLevel === "L1" ||
-              climbLevel === "L2" ||
-              climbLevel === "L3") && (
-              <div className="grid grid-cols-3 gap-3">
-                <ScoutToggle
-                  pressed={climbLeft}
-                  onPressedChange={setClimbLeft}
-                  className="w-full"
-                >
-                  Left
-                </ScoutToggle>
-                <ScoutToggle
-                  pressed={climbRight}
-                  onPressedChange={setClimbRight}
-                  className="w-full"
-                >
-                  Right
-                </ScoutToggle>
+            {climbLevel !== "None" && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <ScoutToggle
+                    pressed={climbLeft}
+                    onPressedChange={setClimbLeft}
+                    className="w-full"
+                    info="Can climb on the left side? (Only if climbing is possible)"
+                  >
+                    Left
+                  </ScoutToggle>
+                  <ScoutToggle
+                    pressed={climbRight}
+                    onPressedChange={setClimbRight}
+                    className="w-full"
+                    info="Can climb on the right side? (Only if climbing is possible)"
+                  >
+                    Right
+                  </ScoutToggle>
+                </div>
                 <ScoutToggle
                   pressed={climbDeclimb}
                   onPressedChange={setClimbDeclimb}
                   className="w-full"
+                  info="Can the robot declimb after climbing? (Only if climbing is possible)"
                 >
                   Declimb
                 </ScoutToggle>
-              </div>
+              </>
             )}
           </div>
         </Section>
+        {/* GENERATED:END */}
 
         {/* Autos Section */}
         <AutosSection entries={autoEntries} setEntries={setAutoEntries} />

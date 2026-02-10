@@ -1,0 +1,140 @@
+{
+    "year": 2026,
+    "game": "Rebuilt",
+    "fixedSections": {
+      "autos": true,
+      "images": true,
+      "rating": true,
+      "description": true
+    },
+    "customSections": [
+      {
+        "id": "movement",
+        "title": "Movement",
+        "fields": [
+          {
+            "name": "depot",
+            "label": "Depot",
+            "type": "boolean",
+            "info": "Can the robot cross through the depot area?"
+          },
+          {
+            "name": "trough",
+            "label": "Trough",
+            "type": "boolean",
+            "info": "Can the robot traverse through the trough?"
+          }
+        ]
+      },
+      {
+        "id": "intake",
+        "title": "Intake",
+        "fields": [
+          {
+            "name": "ground",
+            "label": "Ground",
+            "type": "boolean",
+            "info": "Can the robot intake game pieces from the ground?"
+          },
+          {
+            "name": "station",
+            "label": "Station",
+            "type": "boolean",
+            "info": "Can the robot intake from the station?"
+          },
+          {
+            "name": "depot",
+            "label": "Depot",
+            "type": "boolean",
+            "conditional": {
+              "field": "intake.ground",
+              "equals": true
+            },
+            "info": "Can the robot intake from the depot? (Only if ground intake is available)"
+          },
+          {
+            "name": "stocking",
+            "label": "Stocking",
+            "type": "boolean",
+            "info": "Can the robot intake while stocking? (Only if station intake is available)"
+          }
+        ]
+      },
+      {
+        "id": "fuel",
+        "title": "Fuel",
+        "fields": [
+          {
+            "name": "shootMoving",
+            "label": "Shoot as moving",
+            "type": "boolean",
+            "info": "Can the robot shoot game pieces while moving?"
+          },
+          {
+            "name": "passing",
+            "label": "Passing",
+            "type": "boolean",
+            "info": "Can the robot pass game pieces to alliance partners?"
+          },
+          {
+            "name": "bps",
+            "label": "Balls Per Sec",
+            "type": "text",
+            "optional": true,
+            "info": "Estimated shooting rate (game pieces per second)"
+          },
+          {
+            "name": "capacity",
+            "label": "Ball Capacity",
+            "type": "text",
+            "optional": true,
+            "info": "Maximum number of game pieces the robot can hold"
+          }
+        ]
+      },
+      {
+        "id": "climb",
+        "title": "Climb",
+        "fields": [
+          {
+            "name": "level",
+            "label": "Max Level",
+            "type": "select",
+            "options": ["L1", "L2", "L3", "None"],
+            "info": "Maximum climb level the robot can achieve"
+          },
+          {
+            "name": "left",
+            "label": "Left",
+            "type": "boolean",
+            "conditional": {
+              "field": "climb.level",
+              "notEquals": "None"
+            },
+            "info": "Can climb on the left side? (Only if climbing is possible)"
+          },
+          {
+            "name": "right",
+            "label": "Right",
+            "type": "boolean",
+            "conditional": {
+              "field": "climb.level",
+              "notEquals": "None"
+            },
+            "info": "Can climb on the right side? (Only if climbing is possible)"
+          },
+          {
+            "name": "declimb",
+            "label": "Declimb",
+            "type": "boolean",
+            "conditional": {
+              "field": "climb.level",
+              "notEquals": "None"
+            },
+            "info": "Can the robot declimb after climbing? (Only if climbing is possible)"
+          }
+        ]
+      }
+    ]
+  }
+  

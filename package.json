@@ -4,6 +4,7 @@
     "dev:mobile": "pnpm --filter funkyscout dev",
     "build:desktop": "pnpm --filter funkyscout-desktop tauri build",
     "build:mobile": "pnpm --filter funkyscout build",
+    "generate-pit-form": "tsx scripts/generate-pit-form.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

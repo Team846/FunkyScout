@@ -440,6 +440,8 @@ function TeamInfoPage() {
                   </div>
                 )}
 
+              {/* GENERATED:DISPLAY:START */}
+
               {/* Movement Section */}
               <div>
                 <p className="text-base text-primary font-semibold mb-3">
@@ -482,20 +484,20 @@ function TeamInfoPage() {
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Depot Intake</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.depot ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.depot ? "Yes" : "No"}
-                    </p>
-                  </div>
-                  <div className="h-px bg-border my-2" />
-                  <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Station</p>
                     <p
                       className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}
                     >
                       {pitData.intake?.station ? "Yes" : "No"}
+                    </p>
+                  </div>
+                  <div className="h-px bg-border my-2" />
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Stocking</p>
+                    <p
+                      className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}
+                    >
+                      {pitData.intake?.stocking ? "Yes" : "No"}
                     </p>
                   </div>
                 </div>
@@ -508,7 +510,7 @@ function TeamInfoPage() {
                 </p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Shoot while moving</p>
+                    <p className="text-foreground">Shoot as moving</p>
                     <p
                       className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}
                     >
@@ -524,13 +526,14 @@ function TeamInfoPage() {
                       {pitData.fuel?.passing ? "Yes" : "No"}
                     </p>
                   </div>
+                  <div className="h-px bg-border my-2" />
                   {(pitData.fuel?.bps || pitData.fuel?.capacity) && (
                     <>
                       <div className="h-px bg-border my-2" />
                       <div className="grid grid-cols-2 gap-4 py-2">
                         {pitData.fuel?.bps && (
                           <div>
-                            <p className="text-foreground text-sm mb-1">BPS</p>
+                            <p className="text-foreground text-sm mb-1">Balls Per Sec</p>
                             <p className="font-semibold text-foreground">
                               {pitData.fuel.bps}
                             </p>
@@ -538,7 +541,7 @@ function TeamInfoPage() {
                         )}
                         {pitData.fuel?.capacity && (
                           <div>
-                            <p className="text-foreground text-sm mb-1">Capacity</p>
+                            <p className="text-foreground text-sm mb-1">Ball Capacity</p>
                             <p className="font-semibold text-foreground">
                               {pitData.fuel.capacity}
                             </p>
@@ -564,6 +567,7 @@ function TeamInfoPage() {
                   </div>
                 </div>
               </div>
+        {/* GENERATED:END */}
 
               {/* Autos Section */}
               {pitData.autos && pitData.autos.length > 0 && (

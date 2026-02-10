@@ -42,6 +42,7 @@ export interface AutoEntry {
 export interface PitScoutFormData {
   teamNum: number;
   teamName: string;
+  /* GENERATED:TYPES:START */
   movement: {
     depot: boolean;
     trough: boolean;
@@ -64,6 +65,7 @@ export interface PitScoutFormData {
     right: boolean;
     declimb: boolean;
   };
+    /* GENERATED:END */
   autos: AutoEntry[];
 }
 
