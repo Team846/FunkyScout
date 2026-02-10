@@ -42,7 +42,7 @@ function MatchStart() {
   const toggle = () => {
     setIsActive(!isActive);
   };
-  
+
   const [isRotated, setIsRotated] = useState(false);
 
   const rotateField = () => {
@@ -86,9 +86,7 @@ function MatchStart() {
             {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
 
-          <p>
-            {teamNum?.substring(teamNum.indexOf("frc") + 3)}
-          </p>
+          <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>
         </div>
         <div className="flex flex-col items-center gap-[30px]">
           <svg
@@ -237,7 +235,7 @@ function MatchStart() {
           onClick={() => {
             //navigate({ to: "/" });
             navigate({
-              to: "/match_end",
+              to: "/match_play",
               search: {
                 teamNum: teamNum,
                 matchNum: matchNum,
@@ -251,6 +249,9 @@ function MatchStart() {
             <p className="text-outfit text-s">Begin Match</p>
           </div>
         </Button>
+        <div className="text-wrap text-sm">
+          <p>Begin ONLY when the official match starts</p>
+        </div>
       </div>
 
       <div className="flex flex-col justify-start items-center w-[50px] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">

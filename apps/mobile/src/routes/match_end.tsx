@@ -6,7 +6,7 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
 import { getMatchLabel } from "@lib/utils/match";
 
-type MatchType = {
+type MatchEndType = {
   teamNum?: string | null;
   matchNum?: string | null;
   alliance?: string | null;
@@ -16,7 +16,7 @@ type MatchType = {
 
 export const Route = createFileRoute("/match_end")({
   component: MatchEnd,
-  validateSearch: (search: Record<string, unknown>) : MatchType => {
+  validateSearch: (search: Record<string, unknown>) : MatchEndType => {
     return {
       teamNum: search.teamNum as string | undefined | null,
       matchNum: search.matchNum as string | undefined | null,
