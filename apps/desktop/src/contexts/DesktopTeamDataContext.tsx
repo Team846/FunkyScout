@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useDesktopEvent } from "./DesktopEventContext";
@@ -209,10 +210,14 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
+  const contextValue = useMemo(
+    () => ({ teams, tbaTeams, loading, refresh }),
+    [teams, tbaTeams, loading, refresh]
+  );
+
   return (
-    <DesktopTeamDataContext.Provider
-      value={{ teams, tbaTeams, loading, refresh }}
-    >
+    <DesktopTeamDataContext.Provider value={contextValue}>
       {children}
     </DesktopTeamDataContext.Provider>
   );

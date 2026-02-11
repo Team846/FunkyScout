@@ -13,7 +13,7 @@ function EventsPage() {
   const navigate = useNavigate();
   const { setCurrentEvent, dbInitialized, isOnline } = useEvent();
   const [events, setEvents] = useState<EventList[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -22,7 +22,6 @@ function EventsPage() {
       return;
     }
 
-    setLoading(true);
     getEvents()
       .then((data) => {
         const sorted = (data || []).sort(
@@ -31,7 +30,7 @@ function EventsPage() {
         setEvents(sorted);
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => setInitialLoading(false));
   }, [dbInitialized, isOnline]);
 
   const handleSelectEvent = (eventKey: string) => {
@@ -77,7 +76,7 @@ function EventsPage() {
 
         {/* Events List */}
         <div className="flex max-h-80 overflow-y-auto flex-col gap-3">
-          {loading ? (
+          {initialLoading ? (
             <p className="text-center text-muted-foreground">
               Loading events...
             </p>

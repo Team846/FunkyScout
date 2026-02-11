@@ -108,9 +108,11 @@ export function DashboardPage() {
   const { matchPreds } = useAnalytics();
 
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
-  const [matchLoading, setMatchLoading] = useState(true);
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [initialMatchLoading, setInitialMatchLoading] = useState(true);
   const [nextShift, setNextShift] = useState<NextShiftData | null>(null);
-  const [shiftLoading, setShiftLoading] = useState(true);
+  const [shiftLoading, setShiftLoading] = useState(false);
+  const [initialShiftLoading, setInitialShiftLoading] = useState(true);
   const [shiftStats, setShiftStats] = useState({
     done: 0,
     left: 0,
@@ -133,7 +135,11 @@ export function DashboardPage() {
     // We check if the match label belongs to the current event.
     // (Actually simpler: just clear it whenever currentEvent changes if we want absolute fresh air)
 
-    setMatchLoading(true);
+    // Only show loading on initial load, not on background refreshes
+    const isInitialLoad = initialMatchLoading;
+    if (isInitialLoad) {
+      setMatchLoading(true);
+    }
 
     const fetchMatchData = async () => {
       // DEV TEST: Mock future match data
@@ -290,17 +296,25 @@ export function DashboardPage() {
 
     fetchMatchData()
       .catch(console.error)
-      .finally(() => setMatchLoading(false));
+      .finally(() => {
+        setMatchLoading(false);
+        setInitialMatchLoading(false);
+      });
   }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds]);
 
   // Fetch next shift for current user
   useEffect(() => {
     if (!currentEvent || !userData.name) {
       setShiftLoading(false);
+      setInitialShiftLoading(false);
       return;
     }
 
-    setShiftLoading(true);
+    // Only show loading on initial load, not on background refreshes
+    const isInitialLoad = initialShiftLoading;
+    if (isInitialLoad) {
+      setShiftLoading(true);
+    }
 
     const fetchShiftData = async () => {
       try {
@@ -445,7 +459,10 @@ export function DashboardPage() {
       }
     };
 
-    fetchShiftData().finally(() => setShiftLoading(false));
+    fetchShiftData().finally(() => {
+      setShiftLoading(false);
+      setInitialShiftLoading(false);
+    });
   }, [currentEvent, userData.name, tbaSchedule]);
 
   return (
@@ -468,7 +485,7 @@ export function DashboardPage() {
         </div>
 
         <div className="flex min-h-[18rem] max-h-[60vh] flex-1 items-center justify-center rounded-2xl bg-muted p-6 overflow-hidden">
-          {shiftLoading || (nextShift && !nextShift.timeLabel) ? (
+          {initialShiftLoading || (nextShift && !nextShift.timeLabel) ? (
             <p className="text-sm text-border">Loading shift...</p>
           ) : !nextShift ? (
             <p className="text-sm text-border">No shifts assigned...</p>
@@ -618,7 +635,7 @@ export function DashboardPage() {
 
       {/* Next Match Card */}
       <div className="rounded-2xl bg-muted px-6 py-4">
-        {matchLoading || (nextMatch && !nextMatch.matchTime) ? (
+        {initialMatchLoading || (nextMatch && !nextMatch.matchTime) ? (
           <div className="flex min-h-[10rem] items-center justify-center">
             <p className="text-sm text-border">Loading match details...</p>
           </div>

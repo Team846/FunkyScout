@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useDesktopEvent } from "./DesktopEventContext";
@@ -360,17 +361,21 @@ export function DesktopCompetitionDataProvider({
     }
   }, []);
 
+  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
+  const contextValue = useMemo(
+    () => ({
+      schedule,
+      tbaSchedule,
+      picklists,
+      picklistEntries,
+      loading,
+      refresh,
+    }),
+    [schedule, tbaSchedule, picklists, picklistEntries, loading, refresh]
+  );
+
   return (
-    <DesktopCompetitionDataContext.Provider
-      value={{
-        schedule,
-        tbaSchedule,
-        picklists,
-        picklistEntries,
-        loading,
-        refresh,
-      }}
-    >
+    <DesktopCompetitionDataContext.Provider value={contextValue}>
       {children}
     </DesktopCompetitionDataContext.Provider>
   );

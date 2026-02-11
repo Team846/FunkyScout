@@ -59,15 +59,13 @@ export function ShiftsPage() {
   const { tbaSchedule } = useCompetition();
   const userData = getLocalUserData();
   const [shifts, setShifts] = useState<ShiftDisplay[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
     if (!currentEvent || !userData.name) {
-      setLoading(false);
+      setInitialLoading(false);
       return;
     }
-
-    setLoading(true);
 
     getUserEventScheduleAssignments(currentEvent, userData.name)
       .then((assignments) => {
@@ -116,7 +114,7 @@ export function ShiftsPage() {
         console.error("Failed to load shifts:", error);
         setShifts([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => setInitialLoading(false));
   }, [currentEvent, userData.name, tbaSchedule]);
 
   if (!currentEvent) {
@@ -138,7 +136,7 @@ export function ShiftsPage() {
         />
         <CommandList className="mt-5 flex h-full flex-1 min-h-0 max-h-none flex-col gap-4 overflow-y-auto">
           <CommandEmpty>
-            {loading ? "Loading shifts..." : "No shifts assigned."}
+            {initialLoading ? "Loading shifts..." : "No shifts assigned."}
           </CommandEmpty>
           {shifts.map((shift, idx) => (
             <CommandItem

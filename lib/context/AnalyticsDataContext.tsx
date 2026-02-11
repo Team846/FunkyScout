@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useEvent } from "./EventContext";
@@ -205,10 +206,14 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     };
   }, [registerRefreshCallback, refresh]);
 
+  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
+  const contextValue = useMemo(
+    () => ({ teamEPAs, matchPreds, loading, initialLoading, refresh }),
+    [teamEPAs, matchPreds, loading, initialLoading, refresh]
+  );
+
   return (
-    <AnalyticsDataContext.Provider
-      value={{ teamEPAs, matchPreds, loading, initialLoading, refresh }}
-    >
+    <AnalyticsDataContext.Provider value={contextValue}>
       {children}
     </AnalyticsDataContext.Provider>
   );

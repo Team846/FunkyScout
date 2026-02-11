@@ -24,13 +24,12 @@ export function PicklistSelector({
   const { currentEvent } = useEvent();
   const userData = getLocalUserData();
   const [picklists, setPicklists] = useState<EventPicklist[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!open || !currentEvent) return;
 
-    setLoading(true);
     getEventPicklists(currentEvent)
       .then((lists) => {
         // Filter by permissions
@@ -48,7 +47,7 @@ export function PicklistSelector({
         console.error("Failed to load picklists:", error);
         setPicklists([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => setInitialLoading(false));
   }, [open, currentEvent, userData.role, userData.uid]);
 
   const filteredPicklists = picklists.filter((p) => {
@@ -95,7 +94,7 @@ export function PicklistSelector({
             </div>
           </div>
 
-          {loading ? (
+          {initialLoading ? (
             <p className="text-center text-muted-foreground">Loading...</p>
           ) : picklists.length === 0 ? (
             <p className="text-center text-muted-foreground">

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useEvent } from "./EventContext";
@@ -496,10 +497,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     };
   }, [registerRefreshCallback, refresh]);
 
+  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
+  const contextValue = useMemo(
+    () => ({ schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh }),
+    [schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh]
+  );
+
   return (
-    <CompetitionDataContext.Provider
-      value={{ schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh }}
-    >
+    <CompetitionDataContext.Provider value={contextValue}>
       {children}
     </CompetitionDataContext.Provider>
   );
