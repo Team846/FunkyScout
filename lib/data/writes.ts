@@ -304,6 +304,11 @@ export async function createPicklist(
 
       console.log(`[Writes] Desktop: Queued picklist creation: ${title}`);
 
+      // Trigger instant sync (non-blocking, fire-and-forget)
+      invoke("trigger_sync_now").catch((e) => {
+        console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+      });
+
       return id;
     } catch (error) {
       console.error("[Writes] Desktop path failed:", error);

@@ -6,7 +6,7 @@ import {
   Command,
   CommandInput,
   CommandList,
-  CommandItem,    
+  CommandItem,
   CommandEmpty,
 } from "@shadcn/ui/components/command.js";
 import { useEvent } from "@lib/context/EventContext";
@@ -118,7 +118,7 @@ export function DashboardPage() {
   });
   const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
 
-  const OUR_TEAM = 199;
+  const OUR_TEAM = 233;
 
   // DEV TEST: Set to true to test future match UI with mock data
   const DEV_TEST_FUTURE = false;
@@ -719,16 +719,16 @@ export function DashboardPage() {
                           </span>
                         )}
                         <p
-                        className={`text-xs text-right truncate ${
-                          teamNum === OUR_TEAM
-                            ? "font-bold text-primary"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {teamNum}
-                      </p>
-                    </div>
-                  ))}
+                          className={`text-xs text-right truncate ${
+                            teamNum === OUR_TEAM
+                              ? "font-bold text-primary"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {teamNum}
+                        </p>
+                      </div>
+                    ))}
                 </div>
               </div>
             </div>

@@ -71,7 +71,6 @@ function DashboardPage() {
 
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [events, setEvents] = useState<EventListEntry[]>([]);
-  const [needsRestart, setNeedsRestart] = useState(false);
   const [showBootstrapDialog, setShowBootstrapDialog] = useState(false);
   const [bootstrapEventCode, setBootstrapEventCode] = useState("");
   const [showPicklistDialog, setShowPicklistDialog] = useState(false);
@@ -153,9 +152,6 @@ function DashboardPage() {
     try {
       // Save to Tauri store via context
       await setCurrentEvent(newEvent);
-
-      // Show restart button (backend needs restart to switch event)
-      setNeedsRestart(true);
 
       // Context will trigger DesktopRealtimeProvider to unsubscribe/resubscribe
       // fetchCounts will be called automatically via realtime callback
@@ -416,14 +412,6 @@ function DashboardPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {needsRestart && (
-                <Button
-                  variant="outline"
-                  onClick={() => window.location.reload()}
-                >
-                  Restart to Apply
-                </Button>
-              )}
             </div>
           </div>
         </div>

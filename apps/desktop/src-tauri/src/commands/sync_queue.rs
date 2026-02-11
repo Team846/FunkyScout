@@ -142,6 +142,27 @@ pub async fn retry_failed_sync_queue(
     Ok(result.rows_affected())
 }
 
+/// Trigger instant sync (called by frontend after write operations)
+/// Non-blocking - sends signal to sync service to run sync_once() immediately
+#[tauri::command]
+pub async fn trigger_sync_now(
+    state: State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.lock().unwrap();
+
+    if let Some(sync_trigger) = &app_state.sync_trigger {
+        // Send signal (non-blocking)
+        if let Err(e) = sync_trigger.try_send(()) {
+            eprintln!("[SyncTrigger] Failed to send sync signal: {}", e);
+            return Err(format!("Failed to trigger sync: {}", e));
+        }
+        println!("[SyncTrigger] Instant sync triggered by frontend");
+        Ok(())
+    } else {
+        Err("Sync trigger not initialized".to_string())
+    }
+}
+
 #[derive(serde::Serialize)]
 pub struct SyncQueueStatus {
     pub pending: i64,

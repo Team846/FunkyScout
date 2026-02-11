@@ -33,7 +33,13 @@ pub fn run() {
             let handle = app.handle().clone();
 
             tauri::async_runtime::spawn(async move {
-                let state = AppState::new(&handle).await.expect("Failed to initialize AppState");
+                // Create sync trigger channel (for instant sync on writes)
+                let (sync_tx, sync_rx) = tokio::sync::mpsc::channel::<()>(100);
+
+                let mut state = AppState::new(&handle).await.expect("Failed to initialize AppState");
+
+                // Store sync trigger in AppState for Tauri commands
+                state.sync_trigger = Some(sync_tx);
 
                 // Read config from store, fallback to env vars
                 let (tba_key, supabase_url, supabase_key, event_key, sqlx_pool) = {
@@ -97,8 +103,8 @@ pub fn run() {
                         sqlx_pool,
                     );
 
-                    println!("[App] Starting background sync service...");
-                    sync_service.start_background_sync().await;
+                    println!("[App] Starting background sync service with instant trigger...");
+                    sync_service.start_background_sync(sync_rx).await;
                 } else {
                     println!("[App] Sync service not started - configure API keys");
                     println!("[App] Checked: Store and .env file");
@@ -126,6 +132,7 @@ pub fn run() {
             commands::sync_queue::get_sync_queue_status,
             commands::sync_queue::clear_failed_sync_queue,
             commands::sync_queue::retry_failed_sync_queue,
+            commands::sync_queue::trigger_sync_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -137,6 +144,7 @@ pub struct AppState {
     pub app_handle: AppHandle,
     pub tba_service: TbaService,
     pub supabase_service: SupabaseService,
+    pub sync_trigger: Option<tokio::sync::mpsc::Sender<()>>,
 }
 
 impl AppState {
@@ -161,6 +169,7 @@ impl AppState {
             app_handle: app_handle.clone(),
             tba_service,
             supabase_service,
+            sync_trigger: None, // Set later when channel is created
         })
     }
 

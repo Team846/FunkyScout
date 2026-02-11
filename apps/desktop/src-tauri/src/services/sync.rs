@@ -35,15 +35,28 @@ impl SyncService {
         }
     }
 
-    /// Start background sync loop (30s interval)
-    pub async fn start_background_sync(self) {
+    /// Start background sync loop (30s interval + instant trigger)
+    /// Syncs every 30s OR immediately when triggered
+    pub async fn start_background_sync(self, mut trigger_rx: tokio::sync::mpsc::Receiver<()>) {
         let mut ticker = interval(Duration::from_secs(30));
 
         loop {
-            ticker.tick().await;
+            tokio::select! {
+                // Periodic sync every 30s
+                _ = ticker.tick() => {
+                    println!("[Sync] Periodic sync (30s interval)");
+                    if let Err(e) = self.sync_once().await {
+                        eprintln!("[Sync] Error during periodic sync: {}", e);
+                    }
+                }
 
-            if let Err(e) = self.sync_once().await {
-                eprintln!("[Sync] Error during sync: {}", e);
+                // Instant sync when triggered by write operations
+                Some(_) = trigger_rx.recv() => {
+                    println!("[Sync] Instant sync triggered by write operation");
+                    if let Err(e) = self.sync_once().await {
+                        eprintln!("[Sync] Error during instant sync: {}", e);
+                    }
+                }
             }
         }
     }

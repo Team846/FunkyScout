@@ -50,7 +50,8 @@ function PicklistViewPage() {
   const { teams } = useTeamData();
   const [picklist, setPicklist] = useState<EventPicklist | null>(null);
   const [entries, setEntries] = useState<EventPicklistEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [excludedToBottom, setExcludedToBottom] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
 
@@ -64,7 +65,12 @@ function PicklistViewPage() {
   useEffect(() => {
     if (!currentEvent || !id) return;
 
-    setLoading(true);
+    // Only show full-screen loader on initial load, not on refreshes
+    const isInitialLoad = initialLoading;
+    if (isInitialLoad) {
+      setLoading(true);
+    }
+
     getPicklistById(currentEvent, id)
       .then(({ picklist, entries }) => {
         console.log("[picklist-view] Loaded picklist:", picklist);
@@ -79,9 +85,14 @@ function PicklistViewPage() {
       })
       .catch((error) => {
         console.error("Failed to load picklist:", error);
-        toast.error("Failed to load picklist");
+        if (isInitialLoad) {
+          toast.error("Failed to load picklist");
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setInitialLoading(false);
+      });
   }, [currentEvent, id]);
 
   // Permission checks
@@ -115,7 +126,7 @@ function PicklistViewPage() {
 
   const isAdmin = userData.role === "admin";
 
-  if (!canView && !loading) {
+  if (!canView && !initialLoading) {
     navigate({ to: "/home" });
     return null;
   }
@@ -277,7 +288,7 @@ function PicklistViewPage() {
     ? partitionExcluded(entries)
     : entries;
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="flex items-center justify-center min-h-dvh bg-background">
         <div className="text-muted-foreground">Loading...</div>
