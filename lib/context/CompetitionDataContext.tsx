@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useEvent } from "./EventContext";
 import { useSync } from "./SyncContext";
-import { getSchedule, getPicklists } from "@lib/data";
+import { getSchedule, getMatchData, getPicklists, syncShiftAssignments } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
 import type { EventPicklist as SupabaseEventPicklist, EventPicklistEntry as SupabaseEventPicklistEntry } from "../data/schema";
@@ -239,6 +239,21 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, isOnline]);
 
+  const fetchMatchData = useCallback(async () => {
+    if (!currentEvent || !dbInitialized) return;
+
+    // Network refresh from Supabase (source of truth)
+    if (isOnline) {
+      console.log("[CompetitionData] Fetching match data from Supabase");
+      try {
+        await getMatchData(currentEvent);
+        console.log("[CompetitionData] Match data synced successfully");
+      } catch (error) {
+        console.error("[CompetitionData] Failed to fetch match data:", error);
+      }
+    }
+  }, [currentEvent, dbInitialized, isOnline]);
+
   const fetchPicklists = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
 
@@ -287,6 +302,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchNexusRef.current = fetchNexus;
     fetchPicklistsRef.current = fetchPicklists;
   }, [fetchSchedule, fetchNexus, fetchPicklists]);
+
+  // Initial fetch of match data when event loads
+  useEffect(() => {
+    if (currentEvent && dbInitialized && isOnline) {
+      fetchMatchData();
+    }
+  }, [currentEvent, dbInitialized, isOnline, fetchMatchData]);
 
   // Stable wrappers for polling - always call latest fetch functions
   const fetchScheduleStable = useCallback(async () => {
@@ -392,14 +414,16 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         () => {
           scheduleUpdateCount++;
           if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
-          scheduleDebounceTimer = setTimeout(() => {
+          scheduleDebounceTimer = setTimeout(async () => {
             console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} schedule updates`);
             scheduleUpdateCount = 0;
             fetchSchedule();
+            // Sync shift assignments to match data
+            await syncShiftAssignments(currentEvent);
           }, 2000);
         }
       )
-      // Listen for match data changes (desktop posts results)
+      // Listen for match data changes (mobile scouts, desktop posts results)
       .on(
         'postgres_changes',
         {
@@ -412,9 +436,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           scheduleUpdateCount++;
           if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
           scheduleDebounceTimer = setTimeout(() => {
-            console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} match updates`);
+            console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} match data updates`);
             scheduleUpdateCount = 0;
-            fetchSchedule();
+            fetchMatchData();
           }, 2000);
         }
       )

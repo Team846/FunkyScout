@@ -122,6 +122,10 @@ pub fn run() {
             commands::db::cache_schedule,
             commands::db::cache_picklists,
             commands::db::cache_picklist_entries,
+            commands::sync_queue::add_to_sync_queue,
+            commands::sync_queue::get_sync_queue_status,
+            commands::sync_queue::clear_failed_sync_queue,
+            commands::sync_queue::retry_failed_sync_queue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

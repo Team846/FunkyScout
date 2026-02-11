@@ -1,9 +1,12 @@
 /**
  * Local SQLite database for offline-first functionality.
  * Worker-backed sqlite-wasm so OPFS can work long-term.
+ *
+ * NOTE: Tauri desktop app skips local SQLite and uses Supabase directly.
  */
 
 import { execWorker, initDbWorker } from "./workerClient";
+import { isTauri } from "../utils/platform";
 
 let dbReady: Promise<void> | null = null;
 
@@ -25,6 +28,11 @@ async function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function initDatabase(): Promise<void> {
+  if (isTauri()) {
+    console.log("[LocalDB] Running in Tauri - skipping WASM SQLite");
+    return Promise.resolve();
+  }
+
   if (dbReady) return dbReady;
   dbReady = (async () => {
     console.log("[LocalDB] Initializing SQLite in Worker...");

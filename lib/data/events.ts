@@ -1,7 +1,9 @@
 import supabase from "../supabase/supabase";
 import { fetchTBAEventTeams } from "../tba/event";
 import { refreshSchedule } from "./schedule";
+import { bootstrapMatchData } from "./match-data";
 import { getLocalEventList, cacheEventList } from "../db";
+import { isTauri } from "../utils/platform";
 
 /**
  * Bootstrap an event from TBA into Supabase.
@@ -12,41 +14,70 @@ export async function bootstrapEvent(eventKey: string) {
   // 1. Upsert event_list (guaranteed)
   // Extract year from event key (e.g., "2025cada" → "2025")
   const year = eventKey.slice(0, 4);
+
   const { error: eventError } = await supabase.from("event_list").upsert({
     event: eventKey,
     alias: eventKey,
     date: `${year}-01-01`, // Placeholder date, can be updated later
   });
 
-  if (eventError) throw eventError;
+  if (eventError) {
+    console.error(`[Bootstrap] Failed to create event_list entry:`, eventError);
+    throw eventError;
+  }
 
-  // Cache locally
-  await cacheEventList([
-    {
-      event: eventKey,
-      alias: eventKey,
-      date: `${year}-01-01`,
-    },
-  ]);
+  // Cache locally (skip for Tauri - backend handles caching)
+  if (!isTauri()) {
+    try {
+      await cacheEventList([
+        {
+          event: eventKey,
+          alias: eventKey,
+          date: `${year}-01-01`,
+        },
+      ]);
+    } catch (e) {
+      // Silently fail cache - desktop doesn't need it
+      console.warn("[Bootstrap] Cache failed (expected for desktop):", e);
+    }
+  }
 
   // 2. Fetch teams from TBA → upsert event_team_data (guaranteed)
   const teams = await fetchTBAEventTeams(eventKey);
-  if (!teams) throw new Error("Failed to fetch teams from TBA");
+
+  if (!teams) {
+    throw new Error(
+      `Failed to fetch teams from TBA for event "${eventKey}".\n\n` +
+      `Possible reasons:\n` +
+      `• Event doesn't exist on The Blue Alliance yet\n` +
+      `• Event code is incorrect (check spelling and year)\n` +
+      `• TBA API is temporarily unavailable\n` +
+      `• Network connectivity issue\n\n` +
+      `Check the console logs for more details.`
+    );
+  }
 
   // Store team key and team_name from TBA
   const rows = teams.map((t) => ({
     event: eventKey,
     team: t.key,
     team_name: t.name, // Team nickname from TBA
+    data: {}, // Empty object for pit scouting data (filled later)
   }));
   const { error: teamsError } = await supabase
     .from("event_team_data")
     .upsert(rows, { onConflict: "event,team" });
 
-  if (teamsError) throw teamsError;
+  if (teamsError) {
+    console.error(`[Bootstrap] Failed to upsert teams:`, teamsError);
+    throw teamsError;
+  }
 
   // 3. Try to refresh schedule (may not exist yet - that's OK)
   await refreshSchedule(eventKey);
+
+  // 4. Bootstrap match data from schedule (creates placeholder rows)
+  await bootstrapMatchData(eventKey);
 }
 
 /**

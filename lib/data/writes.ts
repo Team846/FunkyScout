@@ -1,9 +1,14 @@
 /**
  * Write operations with offline-first pattern
  *
- * All write functions:
- * 1. Write to local SQLite cache immediately (optimistic update)
- * 2. Queue the operation for background sync to Supabase
+ * Desktop (Tauri):
+ * 1. Write to local Tauri SQLite cache immediately (optimistic update)
+ * 2. Queue operation in Tauri sync_queue table
+ * 3. Rust background service syncs to Supabase every 30s
+ *
+ * Mobile (Web):
+ * 1. Write to local WASM SQLite cache immediately (optimistic update)
+ * 2. Queue the operation in IndexedDB for background sync
  * 3. Trigger instant sync if online (for immediate collaboration)
  * 4. Return immediately (non-blocking)
  */
@@ -27,6 +32,7 @@ import {
 } from "@lib/db";
 import { addToImageQueue } from "@lib/storage/imageQueue";
 import { compressImage } from "@lib/utils/imageCompression";
+import { isTauri } from "@lib/utils/platform";
 
 /**
  * Global sync trigger - set by SyncContext
@@ -249,7 +255,63 @@ export async function createPicklist(
   const id = crypto.randomUUID();
   const now = Date.now();
 
-  // Cache picklist header locally
+  if (isTauri()) {
+    try {
+      console.log("[Writes] Desktop mode - using Tauri commands directly");
+
+      // DESKTOP: Use Tauri invoke directly (avoids dynamic import issues)
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      const picklist = {
+        id,
+        event: eventKey,
+        title,
+        picklist: null,
+        uname,
+        uid,
+        type,
+        timestamp: now,
+        last_modified: now,
+      };
+
+      const picklistEntries = entries.map((e) => ({
+        event: eventKey,
+        id,
+        team: e.team,
+        rank: e.rank,
+        flags: e.flags,
+        last_modified: now,
+      }));
+
+      // Cache locally (Tauri SQLite) - invoke commands directly
+      await invoke("cache_picklists", { picklists: [picklist] });
+      await invoke("cache_picklist_entries", { entries: picklistEntries });
+
+      // Queue for Rust background sync
+      await invoke("add_to_sync_queue", {
+        operation: "CREATE_PICKLIST",
+        payload: {
+          id,
+          event: eventKey,
+          title,
+          entries,
+          uid,
+          uname,
+          type,
+          timestamp: now,
+        },
+      });
+
+      console.log(`[Writes] Desktop: Queued picklist creation: ${title}`);
+
+      return id;
+    } catch (error) {
+      console.error("[Writes] Desktop path failed:", error);
+      throw error;
+    }
+  }
+
+  // MOBILE: Use WASM SQLite + IndexedDB queue
   const picklist: EventPicklist = {
     id,
     event: eventKey,
@@ -265,7 +327,6 @@ export async function createPicklist(
 
   await cacheEventPicklists([picklist]);
 
-  // Cache picklist entries locally
   const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
     event: eventKey,
     id,
@@ -278,7 +339,6 @@ export async function createPicklist(
 
   await cacheEventPicklistEntries(picklistEntries);
 
-  // Queue for sync
   await addToSyncQueue("CREATE_PICKLIST", {
     id,
     event: eventKey,
@@ -290,9 +350,8 @@ export async function createPicklist(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued picklist creation: ${title}`);
+  console.log(`[Writes] Mobile: Queued picklist creation: ${title}`);
 
-  // Trigger instant sync if online
   await triggerInstantSync();
 
   return id;

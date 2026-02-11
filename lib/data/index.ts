@@ -4,6 +4,7 @@
 export { bootstrapEvent, getEvents } from "./events";
 export { getTeams } from "./teams";
 export { refreshSchedule, getSchedule } from "./schedule";
+export { bootstrapMatchData, getMatchData, syncShiftAssignments } from "./match-data";
 export { getPicklists } from "./picklists";
 
 // Re-export types for convenience

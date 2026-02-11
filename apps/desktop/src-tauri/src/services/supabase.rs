@@ -419,4 +419,126 @@ impl SupabaseService {
 
         Ok(())
     }
+
+    // ============================================================================
+    // Sync Queue Operation Wrappers
+    // These methods match the sync_queue payload structure
+    // ============================================================================
+
+    /// Create picklist (from sync queue)
+    pub async fn create_picklist(
+        &self,
+        id: &str,
+        event: &str,
+        title: &str,
+        uid: &str,
+        uname: &str,
+        picklist_type: &str,
+        timestamp: i64,
+    ) -> Result<()> {
+        self.upsert_picklist(id, event, title, uname, uid, picklist_type, timestamp).await
+    }
+
+    /// Update picklist (from sync queue)
+    pub async fn update_picklist(
+        &self,
+        id: &str,
+        event: &str,
+        title: &str,
+    ) -> Result<()> {
+        let payload = json!({
+            "title": title,
+            "last_modified": Self::now_iso(),
+        });
+
+        self.client
+            .from("event_picklist")
+            .update(&payload.to_string())
+            .eq("id", id)
+            .eq("event", event)
+            .execute()
+            .await
+            .context("Failed to update picklist")?;
+
+        Ok(())
+    }
+
+    /// Bulk upsert picklist entries (from sync queue)
+    pub async fn bulk_upsert_picklist_entries(
+        &self,
+        event: &str,
+        entries: Vec<Value>,
+    ) -> Result<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let payload: Vec<Value> = entries
+            .into_iter()
+            .map(|entry| {
+                json!({
+                    "event": event,
+                    "id": entry.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "team": entry.get("team").and_then(|v| v.as_str()).unwrap_or(""),
+                    "rank": entry.get("rank").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "flags": entry.get("flags").cloned(),
+                    "last_modified": Self::now_iso(),
+                })
+            })
+            .collect();
+
+        self.client
+            .from("event_picklist_entries")
+            .upsert(&serde_json::to_string(&payload)?)
+            .execute()
+            .await
+            .context("Failed to bulk upsert picklist entries")?;
+
+        Ok(())
+    }
+
+    // Note: delete_picklist and delete_picklist_entries already exist above
+    // and don't need event parameter, so sync queue can call them directly
+
+    /// Put team data (from sync queue)
+    pub async fn put_team_data(
+        &self,
+        event: &str,
+        team: &str,
+        data: Value,
+        _team_name: Option<&str>,
+        name: Option<&str>,
+        uid: Option<&str>,
+    ) -> Result<()> {
+        self.upsert_team_data(event, team, data, name, uid).await
+    }
+
+    /// Put match data (from sync queue)
+    pub async fn put_match_data(
+        &self,
+        event: &str,
+        match_key: &str,
+        team: &str,
+        alliance: &str,
+        data_raw: Value,
+        name: Option<&str>,
+        uid: Option<&str>,
+    ) -> Result<()> {
+        let timestamp_ms = chrono::Utc::now().timestamp_millis();
+        self.upsert_match_data(event, match_key, team, alliance, data_raw, name, uid, timestamp_ms).await
+    }
+
+    // Note: delete_match_data already exists above and takes timestamp_ms parameter
+    // sync queue should call it directly with the timestamp from payload
+
+    /// Assign shift (from sync queue)
+    pub async fn assign_shift(
+        &self,
+        event: &str,
+        team: &str,
+        uid: &str,
+        name: Option<&str>,
+    ) -> Result<()> {
+        self.update_schedule_assignment(event, team, Some(uid), name).await
+    }
 }

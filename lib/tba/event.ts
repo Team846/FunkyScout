@@ -42,7 +42,16 @@ async function fetchTBAEventTeams(event: string): Promise<TeamRank[] | undefined
     `/event/${event}/teams/statuses`,
     "GET"
   );
+
+  if (!teamsStatuses) {
+    console.error(`[TBA] Failed to fetch team statuses for ${event}`);
+  }
+
   const teamsData = await fetchTBAData(`/event/${event}/teams`, "GET");
+
+  if (!teamsData) {
+    console.error(`[TBA] Failed to fetch team data for ${event}`);
+  }
 
   if (!teamsStatuses || !teamsData) {
     return;

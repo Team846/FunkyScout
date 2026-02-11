@@ -16,7 +16,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@shadcn/ui/components/select.tsx";
-import { Activity, Users, Calendar, RefreshCw } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@shadcn/ui/components/dialog.tsx";
+import { Input } from "@shadcn/ui/components/input.tsx";
+import { Label } from "@shadcn/ui/components/label.tsx";
+import { bootstrapEvent } from "@lib/data";
+import { createPicklist } from "@lib/data/writes";
+import { getLocalUserData } from "@lib/supabase/user";
+import { Activity, Users, Calendar, RefreshCw, Plus } from "lucide-react";
 import { useDesktopEvent } from "../../contexts/DesktopEventContext";
 import { useDesktopRealtime } from "../../contexts/DesktopRealtimeContext";
 import { useDesktopTeamData } from "../../contexts/DesktopTeamDataContext";
@@ -59,6 +72,12 @@ function DashboardPage() {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [events, setEvents] = useState<EventListEntry[]>([]);
   const [needsRestart, setNeedsRestart] = useState(false);
+  const [showBootstrapDialog, setShowBootstrapDialog] = useState(false);
+  const [bootstrapEventCode, setBootstrapEventCode] = useState("");
+  const [showPicklistDialog, setShowPicklistDialog] = useState(false);
+  const [picklistTitle, setPicklistTitle] = useState("");
+  const [picklistType, setPicklistType] = useState<"public" | "private" | "default">("public");
+  const [creatingPicklist, setCreatingPicklist] = useState(false);
 
   // Update last sync time when data changes
   useEffect(() => {
@@ -97,6 +116,38 @@ function DashboardPage() {
       console.error("Failed to fetch events:", error);
     }
   };
+  const handleBootstrapEvent = () => {
+    setShowBootstrapDialog(true);
+  };
+
+  const handleBootstrapConfirm = async () => {
+    if (!bootstrapEventCode.trim()) return;
+
+    setShowBootstrapDialog(false);
+    const eventCode = bootstrapEventCode.trim();
+
+    try {
+      await bootstrapEvent(eventCode);
+
+      alert(
+        `✅ Event ${eventCode} bootstrapped successfully!\n\n` +
+        `Teams, schedule, and match data have been created. ` +
+        `The event should now appear in your event list.`
+      );
+
+      setBootstrapEventCode("");
+      fetchEvents(); // Refresh event list
+    } catch (error) {
+      console.error("[Dashboard] Bootstrap failed:", error);
+
+      // Show detailed error to user
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(
+        `❌ Bootstrap Failed\n\n${errorMessage}\n\n` +
+        `See the browser console for detailed logs.`
+      );
+    }
+  };
 
   const handleEventChange = async (newEvent: string) => {
     try {
@@ -118,18 +169,216 @@ function DashboardPage() {
     window.location.href = "/auth";
   };
 
+  const handleCreatePicklist = async () => {
+    if (!currentEvent) {
+      alert("Please select an event first");
+      return;
+    }
+
+    if (!picklistTitle.trim()) {
+      alert("Please enter a picklist title");
+      return;
+    }
+
+    if (teams.length === 0) {
+      alert("No teams available for this event");
+      return;
+    }
+
+    // Debug: Check if running in Tauri (v2 uses __TAURI_INTERNALS__)
+    const hasTauriInternals = "__TAURI_INTERNALS__" in window;
+    const hasTauriLegacy = "__TAURI__" in window;
+    const hasTauri = hasTauriInternals || hasTauriLegacy;
+    console.log(`[Dashboard] Tauri v2 check - window.__TAURI_INTERNALS__: ${hasTauriInternals}`);
+    console.log(`[Dashboard] Tauri v1 check - window.__TAURI__: ${hasTauriLegacy}`);
+    console.log(`[Dashboard] Final isTauri: ${hasTauri}`);
+
+    if (!hasTauri) {
+      alert(
+        "⚠️ NOT RUNNING IN TAURI!\n\n" +
+        "You're accessing this through your browser.\n\n" +
+        "Please use the TAURI WINDOW that opens automatically,\n" +
+        "not localhost:1420 in your browser.\n\n" +
+        "Close your browser tab and use the native app window."
+      );
+      return;
+    }
+
+    setCreatingPicklist(true);
+    try {
+      const userData = getLocalUserData();
+
+      // Sort teams by rank and create entries
+      const sortedTeams = [...teams].sort((a, b) => {
+        const rankA = a.rank ?? 999;
+        const rankB = b.rank ?? 999;
+        return rankA - rankB;
+      });
+
+      const entries = sortedTeams.map((team, idx) => ({
+        team: team.key,
+        rank: idx + 1,
+        flags: {},
+      }));
+
+      await createPicklist(
+        currentEvent,
+        picklistTitle,
+        entries,
+        userData.uid,
+        userData.name || "Unknown",
+        picklistType
+      );
+
+      alert(`✅ Picklist "${picklistTitle}" created!\n\nThe picklist has been queued for sync to Supabase.`);
+
+      setShowPicklistDialog(false);
+      setPicklistTitle("");
+      setPicklistType("public");
+    } catch (error) {
+      console.error("Failed to create picklist:", error);
+      alert(`❌ Failed to create picklist:\n\n${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setCreatingPicklist(false);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* Bootstrap Event Dialog */}
+      <Dialog open={showBootstrapDialog} onOpenChange={setShowBootstrapDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bootstrap Event</DialogTitle>
+            <DialogDescription>
+              Enter the event code to fetch teams from TBA and set up the event.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="eventCode">Event Code</Label>
+              <Input
+                id="eventCode"
+                placeholder="e.g., 2026caav"
+                value={bootstrapEventCode}
+                onChange={(e) => setBootstrapEventCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleBootstrapConfirm();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBootstrapDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleBootstrapConfirm}>Bootstrap</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Picklist Dialog */}
+      <Dialog open={showPicklistDialog} onOpenChange={setShowPicklistDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Picklist</DialogTitle>
+            <DialogDescription>
+              Creates a picklist with all {teams.length} teams sorted by current rank.
+              Offline support: queued for sync when online.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="picklist-title">Picklist Title</Label>
+              <Input
+                id="picklist-title"
+                placeholder="Enter picklist title"
+                value={picklistTitle}
+                onChange={(e) => setPicklistTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleCreatePicklist();
+                  }
+                }}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Picklist Type</Label>
+              <div className="flex gap-2">
+                {(["public", "default", "private"] as const).map((type) => (
+                  <Button
+                    key={type}
+                    type="button"
+                    variant={picklistType === type ? "default" : "outline"}
+                    className="flex-1 capitalize"
+                    onClick={() => setPicklistType(type)}
+                  >
+                    {type}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPicklistDialog(false);
+                setPicklistTitle("");
+                setPicklistType("public");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreatePicklist}
+              disabled={creatingPicklist || !picklistTitle.trim()}
+            >
+              {creatingPicklist ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <header className="border-b flex-shrink-0">
         <div className="container mx-auto px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">FunkyScout Desktop</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">FunkyScout Desktop</h1>
+              {"__TAURI_INTERNALS__" in window || "__TAURI__" in window ? (
+                <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+                  Tauri Mode ✓
+                </span>
+              ) : (
+                <span className="text-xs px-2 py-1 rounded-full bg-red-500/10 text-red-600 border border-red-500/20">
+                  Browser Mode (Use Tauri Window!)
+                </span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               Logged in as {user?.email}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="border-green-600 text-green-600 hover:bg-green-600/10"
+              onClick={() => setShowPicklistDialog(true)}
+              disabled={!currentEvent || teams.length === 0}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Picklist
+            </Button>
+            <Button
+              variant="outline"
+              className="border-chart-1 text-chart-1 hover:bg-chart-1/10"
+              onClick={handleBootstrapEvent}
+            >
+              Bootstrap Event
+            </Button>
             {isConnected && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />

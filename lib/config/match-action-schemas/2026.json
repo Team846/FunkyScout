@@ -1,0 +1,172 @@
+{
+  "year": 2026,
+  "game": "Rebuilt",
+  "actions": [
+    {
+      "id": "groundIntake",
+      "label": "Ground Intake",
+      "category": "userPlaced",
+      "phase": "both"
+    },
+    {
+      "id": "passing",
+      "label": "Passing",
+      "category": "userPlaced",
+      "phase": "both"
+    },
+    {
+      "id": "dropped",
+      "label": "Dropped",
+      "category": "userPlaced",
+      "phase": "both"
+    },
+    {
+      "id": "fuelScore1",
+      "label": "Fuel +1",
+      "category": "fixedLocation",
+      "location": { "x": 0.3, "y": 0.6 },
+      "points": 1,
+      "phase": "both"
+    },
+    {
+      "id": "fuelScore2",
+      "label": "Fuel +2",
+      "category": "fixedLocation",
+      "location": { "x": 0.3, "y": 0.6 },
+      "points": 2,
+      "phase": "both"
+    },
+    {
+      "id": "fuelScore5",
+      "label": "Fuel +5",
+      "category": "fixedLocation",
+      "location": { "x": 0.35, "y": 0.65 },
+      "points": 5,
+      "phase": "both"
+    },
+    {
+      "id": "fuelScore8",
+      "label": "Fuel +8",
+      "category": "fixedLocation",
+      "location": { "x": 0.4, "y": 0.7 },
+      "points": 8,
+      "phase": "both"
+    },
+    {
+      "id": "stationIntake",
+      "label": "Station Intake",
+      "category": "fixedLocation",
+      "location": { "x": 0.1, "y": 0.3 },
+      "phase": "both"
+    },
+    {
+      "id": "stationStocked",
+      "label": "Station Stocked",
+      "category": "fixedLocation",
+      "location": { "x": 0.1, "y": 0.35 },
+      "phase": "both"
+    },
+    {
+      "id": "autoDefend",
+      "label": "Defend",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.5 },
+      "phase": "auto"
+    },
+    {
+      "id": "autoDisable",
+      "label": "Disable",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.5 },
+      "phase": "auto"
+    },
+    {
+      "id": "autoClimbL1",
+      "label": "Climb L1",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.9 },
+      "points": 3,
+      "phase": "auto"
+    },
+    {
+      "id": "teleopDefend",
+      "label": "Defend",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.5 },
+      "phase": "teleop"
+    },
+    {
+      "id": "teleopDisable",
+      "label": "Disable",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.5 },
+      "phase": "teleop"
+    },
+    {
+      "id": "teleopClimbL1",
+      "label": "Climb L1",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.9 },
+      "points": 3,
+      "phase": "teleop"
+    },
+    {
+      "id": "teleopClimbL2",
+      "label": "Climb L2",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.9 },
+      "points": 6,
+      "phase": "teleop"
+    },
+    {
+      "id": "teleopClimbL3",
+      "label": "Climb L3",
+      "category": "toggle",
+      "location": { "x": 0.5, "y": 0.9 },
+      "points": 10,
+      "phase": "teleop"
+    },
+    {
+      "id": "trough",
+      "label": "Trough",
+      "category": "postMatch",
+      "phase": "postMatch"
+    },
+    {
+      "id": "bump",
+      "label": "Bump",
+      "category": "postMatch",
+      "phase": "postMatch"
+    },
+    {
+      "id": "climbOrientation",
+      "label": "Climb Orientation",
+      "category": "postMatch",
+      "phase": "postMatch"
+    },
+    {
+      "id": "ratingGroundIntake",
+      "label": "Ground Intake Rating",
+      "category": "postMatch",
+      "phase": "postMatch"
+    },
+    {
+      "id": "ratingStationIntake",
+      "label": "Station Intake Rating",
+      "category": "postMatch",
+      "phase": "postMatch"
+    },
+    {
+      "id": "ratingStationStocking",
+      "label": "Station Stocking Rating",
+      "category": "postMatch",
+      "phase": "postMatch"
+    },
+    {
+      "id": "ratingPassing",
+      "label": "Passing Rating",
+      "category": "postMatch",
+      "phase": "postMatch"
+    }
+  ]
+}

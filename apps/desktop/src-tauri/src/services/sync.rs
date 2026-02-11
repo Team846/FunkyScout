@@ -48,9 +48,15 @@ impl SyncService {
         }
     }
 
-    /// Perform one sync cycle: TBA + Statbotics → Supabase
+    /// Perform one sync cycle: TBA + Statbotics → Supabase + Process sync queue
     /// Fetches comprehensive data: rankings, EPA, OPR, match predictions
     pub async fn sync_once(&self) -> Result<()> {
+        // 0. Process sync queue (desktop offline writes)
+        if let Err(e) = self.process_sync_queue().await {
+            eprintln!("[Sync] Queue processing failed: {}", e);
+            // Don't return early - continue with TBA sync
+        }
+
         // 1. Fetch team statuses from TBA (rankings only, 1 API call)
         let statuses = self
             .tba
@@ -404,6 +410,255 @@ impl SyncService {
     pub fn set_current_event(&mut self, event: String) {
         self.current_event = event;
         println!("[Sync] Event changed to: {}", self.current_event);
+    }
+
+    /// Process sync queue: Push pending operations to Supabase
+    /// Implements offline-first write queue with retry logic
+    async fn process_sync_queue(&self) -> Result<()> {
+        // Fetch pending queue items (limit to 10 per cycle to avoid blocking)
+        let queue_items: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT id, operation, payload FROM sync_queue
+             WHERE status = 'pending'
+             ORDER BY created_at ASC
+             LIMIT 10"
+        )
+        .fetch_all(&self.sqlx_pool)
+        .await
+        .context("Failed to fetch sync queue items")?;
+
+        if queue_items.is_empty() {
+            return Ok(());
+        }
+
+        println!("[SyncQueue] Processing {} pending operations", queue_items.len());
+
+        for (id, operation, payload_str) in queue_items {
+            // Mark as processing
+            sqlx::query("UPDATE sync_queue SET status = 'processing', last_attempt = ? WHERE id = ?")
+                .bind(chrono::Utc::now().timestamp_millis())
+                .bind(id)
+                .execute(&self.sqlx_pool)
+                .await?;
+
+            // Parse payload
+            let payload: serde_json::Value = match serde_json::from_str(&payload_str) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[SyncQueue] Invalid payload for operation {}: {}", id, e);
+                    self.mark_queue_failed(id, format!("Invalid JSON payload: {}", e)).await?;
+                    continue;
+                }
+            };
+
+            // Execute operation
+            let result = match operation.as_str() {
+                "CREATE_PICKLIST" => self.sync_create_picklist(payload).await,
+                "UPDATE_PICKLIST" => self.sync_update_picklist(payload).await,
+                "DELETE_PICKLIST" => self.sync_delete_picklist(payload).await,
+                "PUT_TEAM_DATA" => self.sync_put_team_data(payload).await,
+                "PUT_MATCH_DATA" => self.sync_put_match_data(payload).await,
+                "DELETE_MATCH_DATA" => self.sync_delete_match_data(payload).await,
+                "ASSIGN_SHIFT" => self.sync_assign_shift(payload).await,
+                _ => {
+                    eprintln!("[SyncQueue] Unknown operation: {}", operation);
+                    Err(anyhow::anyhow!("Unknown operation type"))
+                }
+            };
+
+            match result {
+                Ok(_) => {
+                    // Remove from queue on success
+                    sqlx::query("DELETE FROM sync_queue WHERE id = ?")
+                        .bind(id)
+                        .execute(&self.sqlx_pool)
+                        .await?;
+                    println!("[SyncQueue] ✓ Completed operation {} (id: {})", operation, id);
+                }
+                Err(e) => {
+                    // Mark as failed with retry logic
+                    self.mark_queue_failed(id, e.to_string()).await?;
+                    eprintln!("[SyncQueue] ✗ Failed operation {} (id: {}): {}", operation, id, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Mark queue item as failed with retry limit
+    async fn mark_queue_failed(&self, id: i64, error: String) -> Result<()> {
+        let retries: (i64,) = sqlx::query_as(
+            "SELECT retries FROM sync_queue WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_one(&self.sqlx_pool)
+        .await?;
+
+        let new_retries = retries.0 + 1;
+        let status = if new_retries >= 5 { "failed" } else { "pending" };
+
+        sqlx::query(
+            "UPDATE sync_queue
+             SET status = ?, retries = ?, last_error = ?, last_attempt = ?
+             WHERE id = ?"
+        )
+        .bind(status)
+        .bind(new_retries)
+        .bind(error)
+        .bind(chrono::Utc::now().timestamp_millis())
+        .bind(id)
+        .execute(&self.sqlx_pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Sync CREATE_PICKLIST operation to Supabase
+    async fn sync_create_picklist(&self, payload: serde_json::Value) -> Result<()> {
+        let id = payload.get("id").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing picklist id"))?;
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let title = payload.get("title").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing title"))?;
+        let uid = payload.get("uid").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uid"))?;
+        let uname = payload.get("uname").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uname"))?;
+        let type_str = payload.get("type").and_then(|v| v.as_str()).unwrap_or("public");
+        let timestamp = payload.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
+        let entries = payload.get("entries").and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing entries"))?;
+
+        // Create picklist header
+        self.supabase.create_picklist(id, event, title, uid, uname, type_str, timestamp).await?;
+
+        // Create picklist entries
+        let entry_records: Vec<serde_json::Value> = entries.iter().map(|e| {
+            json!({
+                "id": id,
+                "event": event,
+                "team": e.get("team").and_then(|v| v.as_str()).unwrap_or(""),
+                "rank": e.get("rank").and_then(|v| v.as_i64()).unwrap_or(0),
+                "flags": e.get("flags").cloned().unwrap_or(json!({})),
+            })
+        }).collect();
+
+        self.supabase.bulk_upsert_picklist_entries(event, entry_records).await?;
+
+        Ok(())
+    }
+
+    /// Sync UPDATE_PICKLIST operation to Supabase
+    async fn sync_update_picklist(&self, payload: serde_json::Value) -> Result<()> {
+        let id = payload.get("id").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing picklist id"))?;
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let title = payload.get("title").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing title"))?;
+        let entries = payload.get("entries").and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing entries"))?;
+
+        // Update picklist header
+        self.supabase.update_picklist(id, event, title).await?;
+
+        // Delete old entries and insert new ones
+        self.supabase.delete_picklist_entries(id).await?;
+
+        let entry_records: Vec<serde_json::Value> = entries.iter().map(|e| {
+            json!({
+                "id": id,
+                "event": event,
+                "team": e.get("team").and_then(|v| v.as_str()).unwrap_or(""),
+                "rank": e.get("rank").and_then(|v| v.as_i64()).unwrap_or(0),
+                "flags": e.get("flags").cloned().unwrap_or(json!({})),
+            })
+        }).collect();
+
+        self.supabase.bulk_upsert_picklist_entries(event, entry_records).await?;
+
+        Ok(())
+    }
+
+    /// Sync DELETE_PICKLIST operation to Supabase
+    async fn sync_delete_picklist(&self, payload: serde_json::Value) -> Result<()> {
+        let id = payload.get("id").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing picklist id"))?;
+        let _event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+
+        self.supabase.delete_picklist(id).await?;
+
+        Ok(())
+    }
+
+    /// Sync PUT_TEAM_DATA operation to Supabase
+    async fn sync_put_team_data(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let team = payload.get("team").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing team"))?;
+        let data = payload.get("data").cloned().unwrap_or(json!({}));
+        let team_name = payload.get("teamName").and_then(|v| v.as_str());
+        let name = payload.get("name").and_then(|v| v.as_str());
+        let uid = payload.get("uid").and_then(|v| v.as_str());
+
+        self.supabase.put_team_data(event, team, data, team_name, name, uid).await?;
+
+        Ok(())
+    }
+
+    /// Sync PUT_MATCH_DATA operation to Supabase
+    async fn sync_put_match_data(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let match_key = payload.get("match").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing match"))?;
+        let team = payload.get("team").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing team"))?;
+        let alliance = payload.get("alliance").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing alliance"))?;
+        let data_raw = payload.get("dataRaw").cloned().unwrap_or(json!({}));
+        let name = payload.get("name").and_then(|v| v.as_str());
+        let uid = payload.get("uid").and_then(|v| v.as_str());
+
+        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid).await?;
+
+        Ok(())
+    }
+
+    /// Sync DELETE_MATCH_DATA operation to Supabase
+    async fn sync_delete_match_data(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let match_key = payload.get("match").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing match"))?;
+        let team = payload.get("team").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing team"))?;
+        let uid = payload.get("uid").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uid"))?;
+        let timestamp = payload.get("timestamp").and_then(|v| v.as_i64())
+            .ok_or_else(|| anyhow::anyhow!("Missing timestamp"))?;
+
+        self.supabase.delete_match_data(event, match_key, team, uid, timestamp).await?;
+
+        Ok(())
+    }
+
+    /// Sync ASSIGN_SHIFT operation to Supabase
+    async fn sync_assign_shift(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let team = payload.get("team").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing team"))?;
+        let uid = payload.get("uid").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uid"))?;
+        let name = payload.get("name").and_then(|v| v.as_str());
+
+        self.supabase.assign_shift(event, team, uid, name).await?;
+
+        Ok(())
     }
 
     /// Bootstrap: Full sync with team info (2 TBA API calls)
