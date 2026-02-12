@@ -20,6 +20,7 @@ import { Route as PicklistCreatorRouteImport } from "./routes/picklist-creator"
 import { Route as Match_startRouteImport } from "./routes/match_start"
 import { Route as Match_playRouteImport } from "./routes/match_play"
 import { Route as Match_endRouteImport } from "./routes/match_end"
+import { Route as Match_edit_statsRouteImport } from "./routes/match_edit_stats"
 import { Route as MatchRouteImport } from "./routes/match"
 import { Route as HomeRouteImport } from "./routes/home"
 import { Route as EventsRouteImport } from "./routes/events"
@@ -81,6 +82,11 @@ const Match_endRoute = Match_endRouteImport.update({
   path: "/match_end",
   getParentRoute: () => rootRouteImport,
 } as any)
+const Match_edit_statsRoute = Match_edit_statsRouteImport.update({
+  id: "/match_edit_stats",
+  path: "/match_edit_stats",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MatchRoute = MatchRouteImport.update({
   id: "/match",
   path: "/match",
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_edit_stats": typeof Match_edit_statsRoute
   "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_edit_stats": typeof Match_edit_statsRoute
   "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   "/events": typeof EventsRoute
   "/home": typeof HomeRoute
   "/match": typeof MatchRoute
+  "/match_edit_stats": typeof Match_edit_statsRoute
   "/match_end": typeof Match_endRoute
   "/match_play": typeof Match_playRoute
   "/match_start": typeof Match_startRoute
@@ -170,6 +179,7 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_edit_stats"
     | "/match_end"
     | "/match_play"
     | "/match_start"
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_edit_stats"
     | "/match_end"
     | "/match_play"
     | "/match_start"
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | "/events"
     | "/home"
     | "/match"
+    | "/match_edit_stats"
     | "/match_end"
     | "/match_play"
     | "/match_start"
@@ -225,6 +237,7 @@ export interface RootRouteChildren {
   EventsRoute: typeof EventsRoute
   HomeRoute: typeof HomeRoute
   MatchRoute: typeof MatchRoute
+  Match_edit_statsRoute: typeof Match_edit_statsRoute
   Match_endRoute: typeof Match_endRoute
   Match_playRoute: typeof Match_playRoute
   Match_startRoute: typeof Match_startRoute
@@ -317,6 +330,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof Match_endRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/match_edit_stats": {
+      id: "/match_edit_stats"
+      path: "/match_edit_stats"
+      fullPath: "/match_edit_stats"
+      preLoaderRoute: typeof Match_edit_statsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/match": {
       id: "/match"
       path: "/match"
@@ -361,6 +381,7 @@ const rootRouteChildren: RootRouteChildren = {
   EventsRoute: EventsRoute,
   HomeRoute: HomeRoute,
   MatchRoute: MatchRoute,
+  Match_edit_statsRoute: Match_edit_statsRoute,
   Match_endRoute: Match_endRoute,
   Match_playRoute: Match_playRoute,
   Match_startRoute: Match_startRoute,

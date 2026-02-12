@@ -2,10 +2,23 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import React from "react";
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
-import { Button } from "@shadcn/ui/components/button.tsx";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { getMatchLabel } from "@lib/utils/match";
 import { vibrateShake, vibrateBuzz, vibrateTap } from "@lib/utils/haptics";
+import type {
+  MatchScoutingData,
+  LocationAction,
+  PresetAction,
+  ToggleAction,
+  PresetActionType,
+  ToggleActionType,
+  LocationActionType,
+} from "@lib/types/matchScouting";
+import {
+  createEmptyMatchData,
+  pixelToNormalized,
+  getActiveToggles,
+} from "@lib/types/matchScouting";
 
 type MatchType = {
   teamNum?: string | null;
@@ -29,6 +42,8 @@ export const Route = createFileRoute("/match_play")({
 function MatchPlay() {
   const navigate = useNavigate();
   const handleBackClick = () => {
+    // Clear in-progress data when leaving
+    sessionStorage.removeItem("inProgressMatchData");
     if (practice) {
       navigate({ to: "/auth" });
     } else {
@@ -44,7 +59,6 @@ function MatchPlay() {
 
   const [shake, setShake] = useState(false);
   const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
-  const [flashingButton, setFlashingButton] = useState<string | null>(null);
 
   // Timeout refs for proper cleanup
   const timer1Ref = useRef<number | null>(null);
@@ -54,53 +68,304 @@ function MatchPlay() {
   const countdownAutoRef = useRef<number | null>(null);
   const countdownTeleopRef = useRef<number | null>(null);
   const baseTimeRef = useRef<number>(performance.now());
-  const flashTimeoutRef = useRef<number | null>(null);
 
-  // Action history for undo/redo
-  const [actionHistory, setActionHistory] = useState<string[]>([]);
-  const [undoneActions, setUndoneActions] = useState<string[]>([]);
+  // Match scouting data - load from localStorage if exists
+  const [matchData, setMatchData] = useState<MatchScoutingData>(() => {
+    const saved = sessionStorage.getItem("inProgressMatchData");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return createEmptyMatchData();
+      }
+    }
+    return createEmptyMatchData();
+  });
+  const matchDataRef = useRef<MatchScoutingData>(matchData);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  //timestamp action (maybe value), timestamp, value, x, y
-  const [fuel, setFuel] = useState([0, 0, 182.11, 158.84]);
+  // Undo/redo history
+  type UndoableAction =
+    | { type: "location"; action: LocationAction }
+    | { type: "preset"; action: PresetAction }
+    | { type: "toggle"; action: ToggleAction };
+  const [undoStack, setUndoStack] = useState<UndoableAction[]>([]);
 
-  const rotateField = () => {
-    setIsRotated(!isRotated);
-  };
+  // Track which location action is being placed (user selects button, then clicks field)
+  const [pendingLocationAction, setPendingLocationAction] = useState<LocationActionType | null>(null);
+
+  // Field container ref for coordinate calculations
+  const fieldContainerRef = useRef<HTMLDivElement>(null);
+
+  // Keep matchDataRef in sync with matchData state AND save to sessionStorage (throttled)
+  useEffect(() => {
+    matchDataRef.current = matchData;
+
+    // Throttle sessionStorage writes to improve performance
+    const timeoutId = setTimeout(() => {
+      sessionStorage.setItem("inProgressMatchData", JSON.stringify(matchData));
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [matchData]);
+
+  // Get active toggle states
+  const activeToggles = useMemo(
+    () => getActiveToggles(matchData.toggleActions),
+    [matchData.toggleActions]
+  );
+
+  // Reset auto climb when transitioning from auto to teleop
+  const prevIsAutoRef = useRef(isAuto);
+  useEffect(() => {
+    // Check if we just transitioned from auto to teleop
+    if (prevIsAutoRef.current === true && isAuto === false) {
+      // Check if climb_L1 is active from auto phase
+      const hasAutoClimb = matchData.toggleActions.some(
+        a => a.type === 'climb_L1' && a.active && a.phase === 'auto'
+      );
+
+      if (hasAutoClimb) {
+        // Deactivate the auto climb
+        const deactivateAction: ToggleAction = {
+          type: 'climb_L1',
+          timestamp: Date.now(),
+          active: false,
+          phase: 'teleop',
+        };
+
+        setMatchData((prev) => ({
+          ...prev,
+          toggleActions: [...prev.toggleActions, deactivateAction],
+        }));
+      }
+    }
+
+    prevIsAutoRef.current = isAuto;
+  }, [isAuto, matchData.toggleActions]);
+
+  // Memoize total action count for undo button
+  const totalActions = useMemo(
+    () =>
+      matchData.locationActions.length +
+      matchData.presetActions.length +
+      matchData.toggleActions.length,
+    [
+      matchData.locationActions.length,
+      matchData.presetActions.length,
+      matchData.toggleActions.length,
+    ]
+  );
+
+  const rotateField = useCallback(() => {
+    setIsRotated((prev) => !prev);
+  }, []);
 
   const reset = useCallback(() => {
     baseTimeRef.current = performance.now();
     setSeconds(0);
   }, []);
 
-  const triggerButtonFeedback = (buttonId: string) => {
-    // Prevent multiple flashes on same button
-    if (flashingButton === buttonId) return;
+  // Add preset action (fuel, station)
+  const addPresetAction = (actionType: PresetActionType) => {
+    // Auto-cancel disabled if it's active
+    const updates: Partial<MatchScoutingData> = {};
 
-    // Clear previous timeout to prevent conflicts
-    if (flashTimeoutRef.current) {
-      clearTimeout(flashTimeoutRef.current);
+    if (activeToggles.disable) {
+      const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
+      updates.toggleActions = [
+        ...(matchDataRef.current.toggleActions || []),
+        {
+          type: 'disable',
+          timestamp: Date.now(),
+          active: false,
+          phase,
+        },
+      ];
     }
 
-    setFlashingButton(buttonId);
-    flashTimeoutRef.current = window.setTimeout(() => {
-      setFlashingButton(null);
-      flashTimeoutRef.current = null;
-    }, 120);
+    const newAction: PresetAction = {
+      type: actionType,
+      timestamp: Date.now(),
+      phase: isAuto ? "auto" : "teleop",
+    };
 
-    // Add to action history
-    setActionHistory((prev) => [...prev, buttonId]);
-    setUndoneActions([]); // Clear redo stack when new action is performed
+    setMatchData((prev) => ({
+      ...prev,
+      ...updates,
+      presetActions: [...prev.presetActions, newAction],
+    }));
 
-    vibrateTap(); // Fire and forget
+    // Clear undo stack when new action is added
+    setUndoStack([]);
+
+    vibrateTap();
+  };
+
+  // Toggle action (disable, defend, climb)
+  const toggleAction = (actionType: ToggleActionType) => {
+    const currentlyActive = activeToggles[actionType];
+    const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
+
+    const newActions: ToggleAction[] = [];
+
+    // Auto-cancel disabled if it's active and we're toggling a different action
+    if (activeToggles.disable && actionType !== 'disable') {
+      newActions.push({
+        type: 'disable',
+        timestamp: Date.now(),
+        active: false,
+        phase,
+      });
+    }
+
+    // Handle climb exclusivity - only one climb level can be active at a time
+    if (actionType.startsWith('climb_') && !currentlyActive) {
+      // Deactivate any other active climb levels
+      const climbTypes: ToggleActionType[] = ['climb_L1', 'climb_L2', 'climb_L3'];
+      climbTypes.forEach(climbType => {
+        if (climbType !== actionType && activeToggles[climbType]) {
+          newActions.push({
+            type: climbType,
+            timestamp: Date.now(),
+            active: false,
+            phase,
+          });
+        }
+      });
+    }
+
+    // Add the main toggle action
+    newActions.push({
+      type: actionType,
+      timestamp: Date.now(),
+      active: !currentlyActive,
+      phase,
+    });
+
+    setMatchData((prev) => ({
+      ...prev,
+      toggleActions: [...prev.toggleActions, ...newActions],
+    }));
+
+    // Clear undo stack when new action is added
+    setUndoStack([]);
+
+    vibrateTap();
+  };
+
+  // Start placing a location action (toggle on/off)
+  const startLocationAction = useCallback((actionType: LocationActionType) => {
+    // Auto-cancel disabled if it's active (batched with state update)
+    if (activeToggles.disable) {
+      const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
+      setMatchData((prev) => ({
+        ...prev,
+        toggleActions: [
+          ...prev.toggleActions,
+          {
+            type: 'disable',
+            timestamp: Date.now(),
+            active: false,
+            phase,
+          },
+        ],
+      }));
+    }
+
+    setPendingLocationAction((prev) => (prev === actionType ? null : actionType));
+    vibrateTap();
+  }, [activeToggles.disable, isAuto, seconds]);
+
+  // Handle field click for location actions
+  const handleFieldClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!pendingLocationAction || !fieldContainerRef.current) return;
+
+    const rect = fieldContainerRef.current.getBoundingClientRect();
+    const pixelX = e.clientX - rect.left;
+    const pixelY = e.clientY - rect.top;
+    const [normalizedX, normalizedY] = pixelToNormalized(
+      pixelX,
+      pixelY,
+      rect.width,
+      rect.height
+    );
+
+    const newAction: LocationAction = {
+      type: pendingLocationAction,
+      timestamp: Date.now(),
+      coords: [normalizedX, normalizedY],
+      phase: isAuto ? "auto" : "teleop",
+    };
+
+    setMatchData((prev) => ({
+      ...prev,
+      locationActions: [...prev.locationActions, newAction],
+    }));
+
+    // Clear undo stack when new action is added
+    setUndoStack([]);
+
+    setPendingLocationAction(null);
+    vibrateTap();
   };
 
   const handleUndo = () => {
-    if (actionHistory.length === 0) return;
+    // Find and remove the most recent action across all arrays
+    const locationActions = matchData.locationActions.map((a) => ({
+      type: "location" as const,
+      action: a,
+      timestamp: a.timestamp,
+    }));
+    const presetActions = matchData.presetActions.map((a) => ({
+      type: "preset" as const,
+      action: a,
+      timestamp: a.timestamp,
+    }));
+    const toggleActions = matchData.toggleActions.map((a) => ({
+      type: "toggle" as const,
+      action: a,
+      timestamp: a.timestamp,
+    }));
 
-    const lastAction = actionHistory[actionHistory.length - 1];
-    setActionHistory((prev) => prev.slice(0, -1));
-    setUndoneActions((prev) => [...prev, lastAction]);
+    const allActions = [...locationActions, ...presetActions, ...toggleActions].sort(
+      (a, b) => b.timestamp - a.timestamp
+    );
+
+    if (allActions.length === 0) return;
+
+    const lastAction = allActions[0];
+
+    // Remove from matchData and add to undo stack
+    setMatchData((prev) => {
+      if (lastAction.type === "location") {
+        return {
+          ...prev,
+          locationActions: prev.locationActions.filter(
+            (a) => a.timestamp !== lastAction.timestamp
+          ),
+        };
+      } else if (lastAction.type === "preset") {
+        return {
+          ...prev,
+          presetActions: prev.presetActions.filter(
+            (a) => a.timestamp !== lastAction.timestamp
+          ),
+        };
+      } else {
+        return {
+          ...prev,
+          toggleActions: prev.toggleActions.filter(
+            (a) => a.timestamp !== lastAction.timestamp
+          ),
+        };
+      }
+    });
+
+    setUndoStack((prev) => [
+      ...prev,
+      { type: lastAction.type, action: lastAction.action } as UndoableAction,
+    ]);
 
     setToastMessage("Action undone");
     setTimeout(() => setToastMessage(null), 2000);
@@ -108,11 +373,32 @@ function MatchPlay() {
   };
 
   const handleRedo = () => {
-    if (undoneActions.length === 0) return;
+    if (undoStack.length === 0) return;
 
-    const actionToRedo = undoneActions[undoneActions.length - 1];
-    setUndoneActions((prev) => prev.slice(0, -1));
-    setActionHistory((prev) => [...prev, actionToRedo]);
+    const actionToRedo = undoStack[undoStack.length - 1];
+
+    // Add back to matchData
+    setMatchData((prev) => {
+      if (actionToRedo.type === "location") {
+        return {
+          ...prev,
+          locationActions: [...prev.locationActions, actionToRedo.action],
+        };
+      } else if (actionToRedo.type === "preset") {
+        return {
+          ...prev,
+          presetActions: [...prev.presetActions, actionToRedo.action],
+        };
+      } else {
+        return {
+          ...prev,
+          toggleActions: [...prev.toggleActions, actionToRedo.action],
+        };
+      }
+    });
+
+    // Remove from undo stack
+    setUndoStack((prev) => prev.slice(0, -1));
 
     setToastMessage("Action redone");
     setTimeout(() => setToastMessage(null), 2000);
@@ -148,6 +434,9 @@ function MatchPlay() {
       setIsAuto(false);
       // Restart teleop timer
       timer2Ref.current = setTimeout(() => {
+        // Store matchData in sessionStorage to pass to match_end
+        sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
+        sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
         navigate({
           to: "/match_end",
           search: { teamNum, matchNum, alliance, practice },
@@ -163,6 +452,8 @@ function MatchPlay() {
       }, 137 * 1000);
     } else {
       // Skip to end
+      sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
+      sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
       navigate({
         to: "/match_end",
         search: { teamNum, matchNum, alliance, practice },
@@ -206,6 +497,9 @@ function MatchPlay() {
 
     // Match end at 160s total
     timer2Ref.current = window.setTimeout(() => {
+      // Store matchData in sessionStorage to pass to match_end
+      sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
+      sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
       navigate({
         to: "/match_end",
         search: {
@@ -257,31 +551,9 @@ function MatchPlay() {
   }, [isAuto]);
 
   return (
-    <>
-      <style>{`
-        @keyframes button-flash {
-          0% { fill: none; }
-          1% { fill: #CDA745; }
-          99% { fill: #CDA745; }
-          100% { fill: none; }
-        }
-        @keyframes text-flash {
-          0% { fill-opacity: 0.4; }
-          1% { fill-opacity: 1; }
-          99% { fill-opacity: 1; }
-          100% { fill-opacity: 0.4; }
-        }
-        .flash-btn rect {
-          animation: button-flash 120ms ease-in-out;
-        }
-        .flash-btn path {
-          animation: text-flash 120ms ease-in-out;
-        }
-      `}</style>
-
-      <div
-        className={`flex flex-row w-screen h-screen gap-5 p-5 ${shake ? "animate-shake" : ""}`}
-      >
+    <div
+      className={`flex flex-row w-screen h-screen gap-5 p-5 ${shake ? "animate-shake" : ""}`}
+    >
         <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
           <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
             <p className="text-[#CDA745]">
@@ -363,7 +635,7 @@ function MatchPlay() {
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               onClick={handleRedo}
-              className={`cursor-pointer ${undoneActions.length === 0 ? "opacity-30" : ""}`}
+              className={`cursor-pointer ${undoStack.length === 0 ? "opacity-30" : ""}`}
             >
               <g clipPath="url(#clip0_681_274)">
                 <path
@@ -385,7 +657,7 @@ function MatchPlay() {
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               onClick={handleUndo}
-              className={`cursor-pointer ${actionHistory.length === 0 ? "opacity-30" : ""}`}
+              className={`cursor-pointer ${totalActions === 0 ? "opacity-30" : ""}`}
             >
               <g clipPath="url(#clip0_681_272)">
                 <path
@@ -403,19 +675,65 @@ function MatchPlay() {
         </div>
 
         <div className="w-[45vw] h-full flex items-center justify-center">
-          <div className="w-full aspect-square max-h-full relative">
+          <div
+            ref={fieldContainerRef}
+            onClick={handleFieldClick}
+            className={`w-full aspect-square max-h-full relative rounded-2xl overflow-hidden ${pendingLocationAction ? "cursor-crosshair" : ""}`}
+          >
             <img
               src={alliance == "red" ? red_field : blue_field}
               alt="Field"
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain pointer-events-none"
               style={{
                 transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
               }}
             />
+
+            {/* Yellow arrows - always rendered, toggled with opacity for performance */}
+            {/* Top arrow - pointing DOWN (inward) */}
+            <div
+              className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-75"
+              style={{ opacity: pendingLocationAction ? 1 : 0 }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7 10L12 15L17 10" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+
+            {/* Right arrow - pointing LEFT (inward) */}
+            <div
+              className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-75"
+              style={{ opacity: pendingLocationAction ? 1 : 0 }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 7L9 12L14 17" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+
+            {/* Bottom arrow - pointing UP (inward) */}
+            <div
+              className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-75"
+              style={{ opacity: pendingLocationAction ? 1 : 0 }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17 14L12 9L7 14" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+
+            {/* Left arrow - pointing RIGHT (inward) */}
+            <div
+              className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-75"
+              style={{ opacity: pendingLocationAction ? 1 : 0 }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 17L15 12L10 7" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
           </div>
         </div>
 
         <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
+          {/* Fuel buttons - 2x2 grid */}
           <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
             <svg
               width="48"
@@ -423,9 +741,8 @@ function MatchPlay() {
               viewBox="0 0 48 48"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              onClick={() => triggerButtonFeedback("btn-1-1")}
-              className={`cursor-pointer ${flashingButton === "btn-1-1" ? "flash-btn scale-95" : ""}`}
-              style={{ transition: "transform 0.1s" }}
+              onClick={() => addPresetAction("fuel_1")}
+              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
             >
               <rect
                 x="0.5"
@@ -449,9 +766,8 @@ function MatchPlay() {
               viewBox="0 0 48 48"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              onClick={() => triggerButtonFeedback("btn-1-2")}
-              className={`cursor-pointer ${flashingButton === "btn-1-2" ? "flash-btn scale-95" : ""}`}
-              style={{ transition: "transform 0.1s" }}
+              onClick={() => addPresetAction("fuel_2")}
+              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
             >
               <rect
                 x="0.5"
@@ -468,32 +784,6 @@ function MatchPlay() {
                 fillOpacity="0.4"
               />
             </svg>
-
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={() => triggerButtonFeedback("btn-1-3")}
-              className={`cursor-pointer ${flashingButton === "btn-1-3" ? "flash-btn scale-95" : ""}`}
-              style={{ transition: "transform 0.1s" }}
-            >
-              <rect
-                x="0.5"
-                y="0.5"
-                width="47"
-                height="47"
-                rx="23.5"
-                fill="none"
-                stroke="#8A8A8A"
-              />
-              <path
-                d="M14.9922 27.7898V21.0682H16.3295V27.7898H14.9922ZM12.3026 25.0952V23.7628H19.0241V25.0952H12.3026ZM24.6644 29.6392C24.0413 29.6392 23.4812 29.5199 22.984 29.2812C22.4902 29.0393 22.0958 28.7079 21.8008 28.2869C21.5058 27.866 21.3484 27.3854 21.3285 26.8452H22.82C22.8564 27.2827 23.0503 27.6423 23.4016 27.924C23.753 28.2057 24.1739 28.3466 24.6644 28.3466C25.0555 28.3466 25.4019 28.2571 25.7035 28.0781C26.0084 27.8958 26.247 27.6456 26.4194 27.3274C26.5951 27.0092 26.6829 26.6463 26.6829 26.2386C26.6829 25.8243 26.5934 25.4548 26.4144 25.13C26.2354 24.8052 25.9885 24.55 25.6737 24.3643C25.3621 24.1787 25.0041 24.0843 24.5998 24.081C24.2915 24.081 23.9817 24.134 23.6701 24.2401C23.3585 24.3461 23.1067 24.4853 22.9144 24.6577L21.5075 24.4489L22.0792 19.3182H27.6772V20.6357H23.3569L23.0337 23.4844H23.0934C23.2923 23.2921 23.5558 23.1314 23.8839 23.0021C24.2153 22.8729 24.57 22.8082 24.9478 22.8082C25.5676 22.8082 26.1194 22.9557 26.6033 23.2507C27.0906 23.5457 27.4734 23.9484 27.7518 24.4588C28.0335 24.9659 28.1727 25.5492 28.1694 26.2088C28.1727 26.8684 28.0236 27.4567 27.7219 27.9737C27.4237 28.4908 27.0094 28.8984 26.479 29.1967C25.9521 29.4917 25.3472 29.6392 24.6644 29.6392ZM35.7275 23.728L34.3801 23.9666C34.3238 23.7943 34.2343 23.6302 34.1117 23.4744C33.9924 23.3187 33.83 23.1911 33.6245 23.0916C33.419 22.9922 33.1621 22.9425 32.8539 22.9425C32.4329 22.9425 32.0816 23.0369 31.7999 23.2259C31.5182 23.4115 31.3773 23.6518 31.3773 23.9467C31.3773 24.2019 31.4718 24.4074 31.6607 24.5632C31.8496 24.719 32.1545 24.8466 32.5755 24.946L33.7885 25.2244C34.4912 25.3868 35.0149 25.6371 35.3596 25.9751C35.7042 26.3132 35.8766 26.7524 35.8766 27.2926C35.8766 27.75 35.744 28.1577 35.4789 28.5156C35.217 28.8703 34.8508 29.1487 34.3801 29.3509C33.9128 29.553 33.3709 29.6541 32.7544 29.6541C31.8993 29.6541 31.2016 29.4718 30.6614 29.1072C30.1212 28.7393 29.7897 28.2173 29.6671 27.5412L31.1039 27.3224C31.1934 27.697 31.3773 27.9804 31.6557 28.1726C31.9341 28.3615 32.2971 28.456 32.7445 28.456C33.2317 28.456 33.6212 28.3549 33.9128 28.1527C34.2045 27.9472 34.3503 27.697 34.3503 27.402C34.3503 27.1634 34.2608 26.9628 34.0819 26.8004C33.9062 26.638 33.6361 26.5154 33.2715 26.4325L31.9789 26.1491C31.2663 25.9867 30.7393 25.7282 30.3979 25.3736C30.0598 25.0189 29.8908 24.5698 29.8908 24.0263C29.8908 23.5755 30.0167 23.1811 30.2686 22.843C30.5205 22.505 30.8685 22.2415 31.3127 22.0526C31.7568 21.8603 32.2656 21.7642 32.839 21.7642C33.6642 21.7642 34.3139 21.9432 34.7878 22.3011C35.2618 22.6558 35.575 23.1314 35.7275 23.728Z"
-                fill="white"
-                fillOpacity="0.4"
-              />
-            </svg>
           </div>
 
           <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
@@ -503,9 +793,8 @@ function MatchPlay() {
               viewBox="0 0 48 48"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              onClick={() => triggerButtonFeedback("btn-2-1")}
-              className={`cursor-pointer ${flashingButton === "btn-2-1" ? "flash-btn scale-95" : ""}`}
-              style={{ transition: "transform 0.1s" }}
+              onClick={() => addPresetAction("fuel_5")}
+              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
             >
               <rect
                 x="0.5"
@@ -517,7 +806,7 @@ function MatchPlay() {
                 stroke="#8A8A8A"
               />
               <path
-                d="M18.1186 29.5V19.3182H19.6548V28.1776H24.2685V29.5H18.1186ZM29.1021 19.3182V29.5H27.5609V20.8594H27.5012L25.0652 22.4503V20.9787L27.6056 19.3182H29.1021Z"
+                d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 29.5V28.1825H26.4744V27.0085L30.2034 19.3182H31.4311V27.0085H32.5379V28.1825H31.4311V29.5H30.1665ZM27.7404 27.0085H30.1665V21.6719H30.1068L27.7404 27.0085Z"
                 fill="white"
                 fillOpacity="0.4"
               />
@@ -529,9 +818,8 @@ function MatchPlay() {
               viewBox="0 0 48 48"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              onClick={() => triggerButtonFeedback("btn-2-2")}
-              className={`cursor-pointer ${flashingButton === "btn-2-2" ? "flash-btn scale-95" : ""}`}
-              style={{ transition: "transform 0.1s" }}
+              onClick={() => addPresetAction("fuel_8")}
+              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
             >
               <rect
                 x="0.5"
@@ -543,47 +831,131 @@ function MatchPlay() {
                 stroke="#8A8A8A"
               />
               <path
-                d="M16.6186 29.5V19.3182H18.1548V28.1776H22.7685V29.5H16.6186ZM24.3817 29.5V28.3864L27.8271 24.8168C28.195 24.429 28.4982 24.0893 28.7369 23.7976C28.9788 23.5026 29.1594 23.2225 29.2788 22.9574C29.3981 22.6922 29.4577 22.4105 29.4577 22.1122C29.4577 21.7741 29.3782 21.4825 29.2191 21.2372C29.06 20.9886 28.8429 20.7981 28.5678 20.6655C28.2927 20.5296 27.9828 20.4616 27.6381 20.4616C27.2736 20.4616 26.9554 20.5362 26.6836 20.6854C26.4118 20.8345 26.203 21.045 26.0572 21.3168C25.9113 21.5885 25.8384 21.9067 25.8384 22.2713H24.3718C24.3718 21.6515 24.5143 21.1096 24.7994 20.6456C25.0844 20.1816 25.4755 19.822 25.9727 19.5668C26.4698 19.3082 27.0349 19.179 27.668 19.179C28.3076 19.179 28.8711 19.3066 29.3583 19.5618C29.8488 19.8137 30.2317 20.1584 30.5067 20.5959C30.7818 21.0301 30.9194 21.5206 30.9194 22.0675C30.9194 22.4453 30.8481 22.8149 30.7056 23.1761C30.5664 23.5374 30.3228 23.9401 29.9748 24.3842C29.6268 24.825 29.1429 25.3603 28.5231 25.9901L26.4996 28.108V28.1825H31.0835V29.5H24.3817Z"
-                fill="white"
-                fillOpacity="0.4"
-              />
-            </svg>
-
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={() => triggerButtonFeedback("btn-2-3")}
-              className={`cursor-pointer ${flashingButton === "btn-2-3" ? "flash-btn scale-95" : ""}`}
-              style={{ transition: "transform 0.1s" }}
-            >
-              <rect
-                x="0.5"
-                y="0.5"
-                width="47"
-                height="47"
-                rx="23.5"
-                fill="none"
-                stroke="#8A8A8A"
-              />
-              <path
-                d="M16.6186 29.5V19.3182H18.1548V28.1776H22.7685V29.5H16.6186ZM27.9265 29.6392C27.2437 29.6392 26.6339 29.5215 26.0969 29.2862C25.5633 29.0509 25.1407 28.7244 24.8292 28.3068C24.521 27.8859 24.3552 27.3987 24.332 26.8452H25.8931C25.913 27.1468 26.0141 27.4086 26.1964 27.6307C26.382 27.8494 26.6239 28.0185 26.9222 28.1378C27.2205 28.2571 27.552 28.3168 27.9165 28.3168C28.3176 28.3168 28.6722 28.2472 28.9805 28.108C29.292 27.9687 29.5356 27.7749 29.7113 27.5263C29.887 27.2744 29.9748 26.9844 29.9748 26.6562C29.9748 26.3149 29.887 26.0149 29.7113 25.7564C29.5389 25.4946 29.2854 25.2891 28.9506 25.1399C28.6192 24.9908 28.2182 24.9162 27.7475 24.9162H26.8874V23.6634H27.7475C28.1254 23.6634 28.4568 23.5954 28.7418 23.4595C29.0302 23.3236 29.2556 23.1347 29.418 22.8928C29.5804 22.6475 29.6616 22.3608 29.6616 22.0327C29.6616 21.7178 29.5903 21.4444 29.4478 21.2124C29.3086 20.977 29.1097 20.7931 28.8512 20.6605C28.596 20.5279 28.2944 20.4616 27.9464 20.4616C27.6149 20.4616 27.305 20.523 27.0167 20.6456C26.7317 20.7649 26.4996 20.9373 26.3207 21.1626C26.1417 21.3847 26.0456 21.6515 26.0323 21.9631H24.5458C24.5624 21.4129 24.7248 20.929 25.033 20.5114C25.3446 20.0937 25.7556 19.7673 26.266 19.532C26.7764 19.2966 27.3432 19.179 27.9663 19.179C28.6192 19.179 29.1826 19.3066 29.6566 19.5618C30.1339 19.8137 30.5018 20.1501 30.7603 20.571C31.0221 20.992 31.1514 21.4527 31.1481 21.9531C31.1514 22.5232 30.9923 23.0071 30.6708 23.4048C30.3526 23.8026 29.9284 24.0694 29.3981 24.2053V24.2848C30.0742 24.3875 30.5979 24.656 30.9691 25.0902C31.3436 25.5244 31.5292 26.063 31.5259 26.706C31.5292 27.2661 31.3735 27.7682 31.0586 28.2124C30.747 28.6565 30.3211 29.0062 29.7809 29.2614C29.2406 29.5133 28.6225 29.6392 27.9265 29.6392Z"
+                d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 29.6392C29.5865 29.6392 29.0595 29.5199 28.5854 29.2812C28.1113 29.0393 27.7169 28.7079 27.4219 28.2869C27.1269 27.866 26.9695 27.3854 26.9496 26.8452H28.4311C28.4675 27.2827 28.6614 27.6423 29.0128 27.924C29.3641 28.2057 29.785 28.3466 30.2755 28.3466C30.6666 28.3466 31.013 28.2571 31.3146 28.0781C31.6195 27.8958 31.8581 27.6456 32.0305 27.3274C32.2062 27.0092 32.294 26.6463 32.294 26.2386C32.294 25.8243 32.2045 25.4548 32.0255 25.13C31.8465 24.8052 31.5996 24.55 31.2848 24.3643C30.9732 24.1787 30.6152 24.0843 30.2109 24.081C29.9026 24.081 29.5928 24.134 29.2812 24.2401C28.9696 24.3461 28.7178 24.4853 28.5255 24.6577L27.1186 24.4489L27.6903 19.3182H33.2883V20.6357H28.968L28.6448 23.4844H28.7045C28.9034 23.2921 29.1669 23.1314 29.495 23.0021C29.8264 22.8729 30.1811 22.8082 30.5589 22.8082C31.1787 22.8082 31.7305 22.9557 32.2144 23.2507C32.7017 23.5457 33.0845 23.9484 33.3629 24.4588C33.6446 24.9659 33.7838 25.5492 33.7805 26.2088C33.7838 26.8684 33.6347 27.4567 33.333 27.9737C33.0348 28.4908 32.6205 28.8984 32.0901 29.1967C31.5632 29.4917 30.9583 29.6392 30.2755 29.6392H30.1665Z"
                 fill="white"
                 fillOpacity="0.4"
               />
             </svg>
           </div>
 
-          <div className="flex gap-2.5  w-full h-full">
-            <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
-              <p className="text-xs text-outfit text-[#BF4141]">disabled</p>
+          {/* Location action buttons */}
+          <div className="flex gap-2.5 w-full h-full">
+            <div
+              onClick={() => startLocationAction("ground_intake")}
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                pendingLocationAction === "ground_intake"
+                  ? "border-2 border-[#CDA745]"
+                  : "border-2 border-[#1E1E1E]"
+              }`}
+            >
+              <p
+                className={`text-xs text-outfit ${pendingLocationAction === "ground_intake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+              >
+                Intake
+              </p>
             </div>
 
-            <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
-              <p className="text-xs text-outfit">penalty</p>
+            <div
+              onClick={() => startLocationAction("passing")}
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                pendingLocationAction === "passing"
+                  ? "border-2 border-[#CDA745]"
+                  : "border-2 border-[#1E1E1E]"
+              }`}
+            >
+              <p
+                className={`text-xs text-outfit ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+              >
+                Pass
+              </p>
             </div>
+          </div>
+
+          {/* Disable and Defend toggles - defend only in teleop */}
+          <div className="flex gap-2.5  w-full h-full">
+            <div
+              onClick={() => toggleAction("disable")}
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+                activeToggles.disable
+                  ? "border-2 border-[#BF4141]"
+                  : "border-2 border-[#1E1E1E]"
+              }`}
+            >
+              <p
+                className={`text-xs text-outfit ${activeToggles.disable ? "text-[#BF4141]" : "text-muted-foreground"}`}
+              >
+                disabled
+              </p>
+            </div>
+
+            {!isAuto && (
+              <div
+                onClick={() => toggleAction("defend")}
+                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                  activeToggles.defend
+                    ? "border-2 border-[#CDA745]"
+                    : "border-2 border-[#1E1E1E]"
+                }`}
+              >
+                <p
+                  className={`text-xs text-outfit ${activeToggles.defend ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                >
+                  defend
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Climb toggles - L1 always available, L2/L3 teleop only */}
+          <div className="flex gap-2.5 w-full h-full">
+            <div
+              onClick={() => toggleAction("climb_L1")}
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                activeToggles.climb_L1
+                  ? "border-2 border-[#4ADE80]"
+                  : "border-2 border-[#1E1E1E]"
+              }`}
+            >
+              <p
+                className={`text-xs text-outfit ${activeToggles.climb_L1 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
+              >
+                L1
+              </p>
+            </div>
+
+            {!isAuto && (
+              <>
+                <div
+                  onClick={() => toggleAction("climb_L2")}
+                  className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                    activeToggles.climb_L2
+                      ? "border-2 border-[#4ADE80]"
+                      : "border-2 border-[#1E1E1E]"
+                  }`}
+                >
+                  <p
+                    className={`text-xs text-outfit ${activeToggles.climb_L2 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
+                  >
+                    L2
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => toggleAction("climb_L3")}
+                  className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                    activeToggles.climb_L3
+                      ? "border-2 border-[#4ADE80]"
+                      : "border-2 border-[#1E1E1E]"
+                  }`}
+                >
+                  <p
+                    className={`text-xs text-outfit ${activeToggles.climb_L3 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
+                  >
+                    L3
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -628,6 +1000,5 @@ function MatchPlay() {
           </div>
         )}
       </div>
-    </>
   );
 }
