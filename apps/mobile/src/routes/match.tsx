@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
+import { getSession } from "@lib/supabase/auth";
 import {
   Select,
   SelectContent,
@@ -38,7 +39,17 @@ export function Match() {
   const [showMatchDropdown, setShowMatchDropdown] = useState(false);
   const [matchQuery, setMatchQuery] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [currentUserUid, setCurrentUserUid] = useState<string>("");
   const matchInputRef = useRef<HTMLInputElement>(null);
+
+  // Get current user's uid
+  useEffect(() => {
+    getSession().then((session) => {
+      if (session?.user?.id) {
+        setCurrentUserUid(session.user.id);
+      }
+    });
+  }, []);
 
   // Get unique matches from schedule
   const uniqueMatches = [...new Set(schedule.map((s) => s.match))].sort(
@@ -67,6 +78,19 @@ export function Match() {
     : [];
   const redTeamsInMatch = teamsInMatch.filter((t) => t.alliance === "red");
   const blueTeamsInMatch = teamsInMatch.filter((t) => t.alliance === "blue");
+
+  // Helper to get assignment badge
+  const getAssignmentBadge = (teamKey: string, matchKey: string) => {
+    const assignment = schedule.find(
+      (s) => s.team === teamKey && s.match === matchKey
+    );
+
+    if (!assignment || !assignment.name) return null;
+
+    const isAssignedToUser = assignment.uid === currentUserUid;
+
+    return isAssignedToUser ? "ASSIGNED" : "COVERED";
+  };
 
   const handleBackClick = () => {
     navigate({ to: "/home" });
@@ -233,6 +257,7 @@ export function Match() {
                           const team = teams.find(
                             (t: any) => t.key === entry.team,
                           );
+                          const badge = getAssignmentBadge(entry.team, entry.match);
                           return (
                             <SelectItem
                               key={`${entry.match}-${entry.team}`}
@@ -248,6 +273,17 @@ export function Match() {
                                     {team?.name ?? ""}
                                   </span>
                                 </div>
+                                {badge && (
+                                  <span
+                                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                      badge === "ASSIGNED"
+                                        ? "bg-[#CDA745]/20 text-[#CDA745]"
+                                        : "bg-muted-foreground/20 text-muted-foreground"
+                                    }`}
+                                  >
+                                    {badge}
+                                  </span>
+                                )}
                               </div>
                             </SelectItem>
                           );
@@ -262,6 +298,7 @@ export function Match() {
                           const team = teams.find(
                             (t: any) => t.key === entry.team,
                           );
+                          const badge = getAssignmentBadge(entry.team, entry.match);
                           return (
                             <SelectItem
                               key={`${entry.match}-${entry.team}`}
@@ -277,6 +314,17 @@ export function Match() {
                                     {team?.name ?? ""}
                                   </span>
                                 </div>
+                                {badge && (
+                                  <span
+                                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                      badge === "ASSIGNED"
+                                        ? "bg-[#CDA745]/20 text-[#CDA745]"
+                                        : "bg-muted-foreground/20 text-muted-foreground"
+                                    }`}
+                                  >
+                                    {badge}
+                                  </span>
+                                )}
                               </div>
                             </SelectItem>
                           );

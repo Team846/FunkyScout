@@ -16,6 +16,11 @@ import type {
   ToggleActionType,
 } from "@lib/types/matchScouting";
 import { getActiveToggles } from "@lib/types/matchScouting";
+import { putMatchData } from "@lib/data/writes";
+import { transformMatchData } from "@lib/data/matchDataTransform";
+import { getSession } from "@lib/supabase/auth";
+import { useEvent } from "@lib/context/EventContext";
+import { toast } from "sonner";
 
 type MatchEditStatsType = {
   teamNum?: string | null;
@@ -40,8 +45,10 @@ function MatchEditStats() {
   const { isWrongOrientation } = useOrientation('portrait');
   const navigate = useNavigate();
   const { teamNum, matchNum, alliance, practice } = Route.useSearch();
+  const { currentEvent } = useEvent();
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
   const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load match data from sessionStorage
   useEffect(() => {
@@ -64,14 +71,54 @@ function MatchEditStats() {
     });
   };
 
-  const handleSubmit = () => {
-    if (matchData) {
-      const updatedData = {
+  const handleSubmit = async () => {
+    if (!matchData || !currentEvent || !teamNum || !matchNum) {
+      toast.error("Missing match data");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Get user session
+      const session = await getSession();
+      const scoutName = session?.user?.email || "Unknown";
+      const scoutUid = session?.user?.id || "unknown";
+
+      // Complete match data with notes
+      const completeMatchData: MatchScoutingData = {
         ...matchData,
         notes,
+        scoutName,
+        scoutUid,
       };
-      sessionStorage.setItem("currentMatchData", JSON.stringify(updatedData));
-      handleBack();
+
+      // Transform to database format
+      const transformedData = transformMatchData(completeMatchData, 2025);
+
+      // Upload via offline-first pattern
+      await putMatchData(
+        currentEvent,
+        matchNum,
+        teamNum,
+        transformedData,
+        scoutUid,
+        alliance as "red" | "blue",
+        { name: scoutName }
+      );
+
+      // Clear sessionStorage
+      sessionStorage.removeItem("currentMatchData");
+
+      toast.success("Match data uploaded!");
+
+      // Navigate back to home page
+      navigate({ to: "/home" });
+    } catch (error) {
+      console.error("Failed to upload:", error);
+      toast.error("Failed to upload match data");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1028,10 +1075,10 @@ function MatchEditStats() {
       <div className="fixed bottom-4 left-4 right-4 z-40">
         <Button
           onClick={handleSubmit}
-          disabled={!isFormComplete}
+          disabled={!isFormComplete || isSubmitting}
           className="w-full h-12 bg-[#CDA745] hover:bg-[#CDA745]/90 text-black disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Submit
+          {isSubmitting ? "Uploading..." : "Submit"}
         </Button>
       </div>
     </div>

@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
 import { Badge } from "@shadcn/ui/components/badge.js";
 import { useTeamData } from "@lib/context/TeamDataContext";
+import { getSession } from "@lib/supabase/auth";
 
 export const Route = createFileRoute("/pit")({
   component: Pit,
@@ -10,15 +11,44 @@ export const Route = createFileRoute("/pit")({
 
 export function Pit() {
   const navigate = useNavigate();
-  const { teams, loading, scoutedTeams } = useTeamData();
+  const { teams, loading, scoutedTeams, teamAssignments } = useTeamData();
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [query, setQuery] = useState("");
+  const [currentUserUid, setCurrentUserUid] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Get current user's uid
+  useEffect(() => {
+    getSession().then((session) => {
+      if (session?.user?.id) {
+        setCurrentUserUid(session.user.id);
+      }
+    });
+  }, []);
 
   const handleBackClick = () => {
     navigate({ to: "/home" });
+  };
+
+  // Helper to get assignment badge
+  const getTeamBadge = (teamKey: string) => {
+    // Priority: SCOUTED > ASSIGNED > COVERED
+    if (scoutedTeams.has(teamKey)) {
+      return { type: "SCOUTED", style: "bg-primary/20 text-primary border-primary" };
+    }
+
+    const assignedUid = teamAssignments.get(teamKey);
+    if (assignedUid) {
+      if (assignedUid === currentUserUid) {
+        return { type: "ASSIGNED", style: "bg-[#CDA745]/20 text-[#CDA745] border-[#CDA745]" };
+      } else {
+        return { type: "COVERED", style: "bg-muted-foreground/20 text-muted-foreground border-muted-foreground" };
+      }
+    }
+
+    return null;
   };
 
   const filteredTeams = teams.filter((team: any) =>
@@ -104,51 +134,56 @@ export function Pit() {
 
         {showDropdown && filteredTeams.length > 0 && (
           <div className="absolute left-0 right-0 top-full mt-3 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background  shadow-lg">
-            {filteredTeams.map((team: any) => (
-              <div
-                key={team.key}
-                className={`px-2.5 py-1.5  cursor-pointer ${
-                  selectedTeam === team.key
-                    ? "bg-primary/20"
-                    : "hover:bg-background/50"
-                }`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setSelectedTeam(team.key);
-                  setQuery(`${team.num} | ${team.name}`);
-                  setShowDropdown(false);
-                }}
-              >
-                <div className="flex items-center justify-between bg-muted px-3 py-3 rounded-xl">
-                  <p className="text-base">
-                    <span className="font-bold text-primary">{team.num}</span>
-                    <span className="text-foreground"> | {team.name}</span>
-                  </p>
-                  {scoutedTeams.has(team.key) && (
-                    <Badge
-                      variant="default"
-                      className="ml-2 bg-primary/20 text-primary border-primary"
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="size-3 mr-1"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
+            {filteredTeams.map((team: any) => {
+              const badge = getTeamBadge(team.key);
+              return (
+                <div
+                  key={team.key}
+                  className={`px-2.5 py-1.5  cursor-pointer ${
+                    selectedTeam === team.key
+                      ? "bg-primary/20"
+                      : "hover:bg-background/50"
+                  }`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setSelectedTeam(team.key);
+                    setQuery(`${team.num} | ${team.name}`);
+                    setShowDropdown(false);
+                  }}
+                >
+                  <div className="flex items-center justify-between bg-muted px-3 py-3 rounded-xl">
+                    <p className="text-base">
+                      <span className="font-bold text-primary">{team.num}</span>
+                      <span className="text-foreground"> | {team.name}</span>
+                    </p>
+                    {badge && (
+                      <Badge
+                        variant="default"
+                        className={`ml-2 ${badge.style}`}
                       >
-                        <path
-                          d="M20 6L9 17L4 12"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      Scouted
-                    </Badge>
-                  )}
+                        {badge.type === "SCOUTED" && (
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="size-3 mr-1"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M20 6L9 17L4 12"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                        {badge.type}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -165,52 +200,57 @@ export function Pit() {
         <p className="text-muted-foreground">Loading teams...</p>
       ) : (
         <div className="flex flex-col">
-          {teams.slice(0, 3).map((team: any) => (
-            <div
-              key={team.key}
-              className="mt-3 rounded-2xl bg-muted px-6 py-6 cursor-pointer"
-              onClick={() =>
-                navigate({
-                  to: "/pitscout",
-                  search: { teamNum: team.num, teamName: team.name },
-                })
-              }
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-base">
-                    <span className="font-bold text-primary">{team.num}</span>
-                    <span> | {team.name}</span>
-                  </p>
-                  {team.rank > 0 && (
-                    <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+          {teams.slice(0, 3).map((team: any) => {
+            const badge = getTeamBadge(team.key);
+            return (
+              <div
+                key={team.key}
+                className="mt-3 rounded-2xl bg-muted px-6 py-6 cursor-pointer"
+                onClick={() =>
+                  navigate({
+                    to: "/pitscout",
+                    search: { teamNum: team.num, teamName: team.name },
+                  })
+                }
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-base">
+                      <span className="font-bold text-primary">{team.num}</span>
+                      <span> | {team.name}</span>
+                    </p>
+                    {team.rank > 0 && (
+                      <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+                    )}
+                  </div>
+                  {badge && (
+                    <Badge
+                      variant="outline"
+                      className={`ml-2 ${badge.style}`}
+                    >
+                      {badge.type === "SCOUTED" && (
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="size-3 mr-1"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M20 6L9 17L4 12"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                      {badge.type}
+                    </Badge>
                   )}
                 </div>
-                {scoutedTeams.has(team.key) && (
-                  <Badge
-                    variant="outline"
-                    className="ml-2 border-primary text-primary"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="size-3 mr-1"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M20 6L9 17L4 12"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Scouted
-                  </Badge>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

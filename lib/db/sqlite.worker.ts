@@ -86,6 +86,14 @@ CREATE TABLE IF NOT EXISTS event_schedule (
   last_modified INTEGER,
   deleted_at INTEGER,
 
+  -- Match data synced from desktop
+  est_time INTEGER,
+  red_score INTEGER,
+  blue_score INTEGER,
+  red_win_prob REAL,
+  predicted_red_score INTEGER,
+  predicted_blue_score INTEGER,
+
   PRIMARY KEY (event, match, team)
 );
 

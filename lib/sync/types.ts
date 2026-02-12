@@ -44,6 +44,7 @@ export interface PutMatchDataPayload extends BaseSyncPayload {
   team: string;
   alliance: "red" | "blue";
   dataRaw: any;
+  data: any;
   name?: string;
   uid: string;
 }

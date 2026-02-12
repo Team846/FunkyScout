@@ -310,11 +310,15 @@ export async function cacheEventSchedule(
       for (const entry of entries) {
         await execWorker(
           `INSERT INTO event_schedule
-           (event, match, team, alliance, name, uid, last_modified, deleted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           (event, match, team, alliance, name, uid, last_modified, deleted_at,
+            est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(event, match, team) DO UPDATE SET
            alliance=excluded.alliance, name=excluded.name, uid=excluded.uid,
-           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
+           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at,
+           est_time=excluded.est_time, red_score=excluded.red_score, blue_score=excluded.blue_score,
+           red_win_prob=excluded.red_win_prob, predicted_red_score=excluded.predicted_red_score,
+           predicted_blue_score=excluded.predicted_blue_score`,
           [
             entry.event,
             entry.match,
@@ -324,6 +328,12 @@ export async function cacheEventSchedule(
             entry.uid,
             entry.last_modified,
             entry.deleted_at,
+            (entry as any).est_time,
+            (entry as any).red_score,
+            (entry as any).blue_score,
+            (entry as any).red_win_prob,
+            (entry as any).predicted_red_score,
+            (entry as any).predicted_blue_score,
           ],
         );
       }

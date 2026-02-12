@@ -58,6 +58,7 @@ interface TeamDataContextType {
   initialLoading: boolean;
   refresh: () => Promise<void>;
   scoutedTeams: Set<string>; // Team keys that have been pit scouted
+  teamAssignments: Map<string, string>; // Map of teamKey -> assignedUid
 }
 
 const TeamDataContext = createContext<TeamDataContextType | undefined>(
@@ -71,6 +72,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
   const [loading, setLoading] = useState(false);
   const [scoutedTeams, setScoutedTeams] = useState<Set<string>>(new Set());
+  const [teamAssignments, setTeamAssignments] = useState<Map<string, string>>(new Map());
   const [initialLoading, setInitialLoading] = useState(true);
   const pollingController = useRef<PollingController | null>(null);
 
@@ -322,10 +324,11 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, dbInitialized, fetchTeams, isOnline]);
 
-  // Fetch scouted teams when event changes
+  // Fetch scouted teams and assignments when event changes
   useEffect(() => {
     if (!currentEvent || !dbInitialized) {
       setScoutedTeams(new Set());
+      setTeamAssignments(new Map());
       return;
     }
 
@@ -339,7 +342,15 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           .map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
-      console.log(`[TeamData] Found ${scouted.size} scouted teams`);
+
+      // Build assignment map
+      const assignments = new Map<string, string>();
+      data.forEach((t: EventTeamData) => {
+        if (t.assigned) {
+          assignments.set(t.team, t.assigned);
+        }
+      });
+      setTeamAssignments(assignments);
     });
   }, [currentEvent, dbInitialized]);
 
@@ -391,13 +402,12 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   }, [currentEvent, dbInitialized, isOnline, fetchTeams]);
 
   const refresh = useCallback(async () => {
-    console.log("[TeamDataContext] Refresh callback triggered");
     // Use ref to call current fetch function without changing callback identity
     if (fetchTeamsRef.current) {
       await fetchTeamsRef.current();
     }
 
-    // Also refresh scouted teams
+    // Also refresh scouted teams and assignments
     if (currentEventRef.current) {
       const data = await getEventTeamData(currentEventRef.current);
       const scouted = new Set(
@@ -409,6 +419,15 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           .map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
+
+      // Build assignment map
+      const assignments = new Map<string, string>();
+      data.forEach((t: EventTeamData) => {
+        if (t.assigned) {
+          assignments.set(t.team, t.assigned);
+        }
+      });
+      setTeamAssignments(assignments);
     }
   }, []); // Empty dependencies - callback never changes!
 
@@ -429,8 +448,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
   // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
-    () => ({ teams, tbaTeams, loading, initialLoading, refresh, scoutedTeams }),
-    [teams, tbaTeams, loading, initialLoading, refresh, scoutedTeams]
+    () => ({ teams, tbaTeams, loading, initialLoading, refresh, scoutedTeams, teamAssignments }),
+    [teams, tbaTeams, loading, initialLoading, refresh, scoutedTeams, teamAssignments]
   );
 
   return (

@@ -343,7 +343,7 @@ export class SyncManager {
    * Sync match data (match scouting) to Supabase
    */
   private async syncMatchData(payload: PutMatchDataPayload): Promise<void> {
-    const { event, match, team, alliance, dataRaw, name, uid, timestamp } =
+    const { event, match, team, alliance, dataRaw, data, name, uid, timestamp } =
       payload;
 
     const { error } = await this.supabaseClient
@@ -355,13 +355,14 @@ export class SyncManager {
           team,
           alliance,
           data_raw: dataRaw,
+          data: "{}",
           name,
           uid,
-          timestamp,
-          last_modified: Date.now(),
+          timestamp: new Date(timestamp).toISOString(), // Convert milliseconds to ISO string
+          last_modified: new Date().toISOString(), // Convert to ISO string for PostgreSQL
         },
         {
-          onConflict: "event,match,team,uid,timestamp",
+          onConflict: "event,match,team",
         },
       );
 

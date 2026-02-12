@@ -33,6 +33,8 @@ export interface ScheduleEntry {
   match: string;
   team: string;
   alliance: "red" | "blue";
+  name?: string; // Assigned scout name
+  uid?: string;  // Assigned scout uid
   // Match timing & scores (from TBA via desktop)
   est_time?: number;
   red_score?: number | null;
@@ -156,6 +158,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             match: s.match,
             team: s.team,
             alliance: s.alliance as "red" | "blue",
+            name: s.name,
+            uid: s.uid,
             est_time: s.est_time,
             red_score: s.red_score,
             blue_score: s.blue_score,

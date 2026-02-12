@@ -85,13 +85,6 @@ export async function getSchedule(eventKey: string) {
 
     if (error) throw error;
 
-    console.log(`[Schedule] Fetched ${data?.length ?? 0} schedule entries from Supabase`);
-    if (data && data.length > 0) {
-      console.log('[Schedule] Sample entry:', data[0]);
-      const entriesWithNames = data.filter(d => d.name).length;
-      console.log(`[Schedule] ${entriesWithNames} entries have name field (shift assignments)`);
-    }
-
     if (data) {
       await cacheEventSchedule(
         data.map((d) => ({
@@ -113,7 +106,6 @@ export async function getSchedule(eventKey: string) {
           predicted_blue_score: d.predicted_blue_score,
         })),
       );
-      console.log(`[Schedule] Cached ${data.length} entries to local SQLite`);
     }
 
     return data ?? [];

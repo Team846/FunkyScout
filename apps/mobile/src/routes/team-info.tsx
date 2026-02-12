@@ -12,6 +12,7 @@ import { putTeamData } from "@lib/data/writes";
 import { getSession } from "@lib/supabase/auth";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
+import { MatchScoutingTab } from "../components/MatchScoutingTab";
 import type { DrawingData } from "../components/auto-path-drawer/types";
 
 type TeamInfoSearch = {
@@ -340,11 +341,7 @@ function TeamInfoPage() {
       <div className="h-px w-full bg-border mb-3" />
 
       {activeTab === "match" ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-muted-foreground">
-            Match scouting screen — will add
-          </p>
-        </div>
+        <MatchScoutingTab eventKey={currentEvent} teamKey={teamKey || ""} />
       ) : (
         <>
           {loading ? (
