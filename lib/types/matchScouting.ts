@@ -12,7 +12,7 @@
 // Category 1: Location Actions with User-Selected Field Position
 // ============================================================================
 
-export type LocationActionType = 'ground_intake' | 'passing';
+export type LocationActionType = 'ground_intake' | 'passing' | 'shoot';
 
 export interface LocationAction {
   type: LocationActionType;
@@ -23,10 +23,13 @@ export interface LocationAction {
 }
 
 // ============================================================================
-// Category 2: Fuel Actions (Preset Values)
+// Category 2: Preset Actions (Fixed Location)
 // ============================================================================
 
 export type PresetActionType =
+  | 'station_intake'  // Station intake (fixed location)
+  | 'stocking'        // Stocking (fixed location)
+  // Fuel actions - kept in structure but not used in UI currently
   | 'fuel_1'
   | 'fuel_2'
   | 'fuel_5'
@@ -50,11 +53,12 @@ export interface PresetAction {
 // - climb_L3: TELEOP ONLY
 
 export type ToggleActionType =
-  | 'disable'      // No location needed (both phases)
-  | 'defend'       // No location needed (TELEOP ONLY)
-  | 'climb_L1'     // Has preset location (both phases)
-  | 'climb_L2'     // Has preset location (TELEOP ONLY)
-  | 'climb_L3';    // Has preset location (TELEOP ONLY)
+  | 'disable'         // No location needed (both phases)
+  | 'defend'          // No location needed (TELEOP ONLY)
+  | 'climb_L1'        // Has preset location (both phases)
+  | 'climb_L2'        // Has preset location (TELEOP ONLY)
+  | 'climb_L3'        // Has preset location (TELEOP ONLY)
+  | 'climb_dismount'; // Dismount - available in auto and first 5s of teleop
 
 export interface ToggleAction {
   type: ToggleActionType;
@@ -68,20 +72,18 @@ export interface ToggleAction {
 // ============================================================================
 
 export interface PostMatchData {
-  // Capability checkboxes
+  // Capability toggles
+  depot?: boolean;
   through?: boolean;
-  bump?: boolean;
+  climb_orientation?: 'left' | 'right' | 'center';
 
   // 1-5 ratings for various abilities
   ratings?: {
-    ground_intake?: 1 | 2 | 3 | 4 | 5;
-    station_intake?: 1 | 2 | 3 | 4 | 5;
-    stocking?: 1 | 2 | 3 | 4 | 5;
+    ground?: 1 | 2 | 3 | 4 | 5;
+    station?: 1 | 2 | 3 | 4 | 5;
     passing?: 1 | 2 | 3 | 4 | 5;
+    driver?: 1 | 2 | 3 | 4 | 5;
   };
-
-  // Climb orientation (if climb was performed)
-  climb_orientation?: 'left' | 'right' | 'center';
 }
 
 // ============================================================================
@@ -119,6 +121,7 @@ export interface ActiveToggles {
   climb_L1: boolean;
   climb_L2: boolean;
   climb_L3: boolean;
+  climb_dismount: boolean;
 }
 
 /**
@@ -187,6 +190,7 @@ export function getActiveToggles(actions: ToggleAction[]): ActiveToggles {
     climb_L1: false,
     climb_L2: false,
     climb_L3: false,
+    climb_dismount: false,
   };
 
   // Process actions in order to get final state

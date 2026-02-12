@@ -284,12 +284,18 @@ function MatchPlay() {
     const rect = fieldContainerRef.current.getBoundingClientRect();
     const pixelX = e.clientX - rect.left;
     const pixelY = e.clientY - rect.top;
-    const [normalizedX, normalizedY] = pixelToNormalized(
+    let [normalizedX, normalizedY] = pixelToNormalized(
       pixelX,
       pixelY,
       rect.width,
       rect.height
     );
+
+    // If field is rotated, invert coordinates to normalize them back to standard orientation
+    if (isRotated) {
+      normalizedX = 1 - normalizedX;
+      normalizedY = 1 - normalizedY;
+    }
 
     const newAction: LocationAction = {
       type: pendingLocationAction,
@@ -733,112 +739,24 @@ function MatchPlay() {
         </div>
 
         <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
-          {/* Fuel buttons - 2x2 grid */}
-          <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={() => addPresetAction("fuel_1")}
-              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
+          {/* Preset action buttons (fixed location) */}
+          <div className="flex gap-2.5 w-full h-full">
+            <div
+              onClick={() => addPresetAction("station_intake")}
+              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
             >
-              <rect
-                x="0.5"
-                y="0.5"
-                width="47"
-                height="47"
-                rx="23.5"
-                fill="none"
-                stroke="#8A8A8A"
-              />
-              <path
-                d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 19.3182V29.5H28.6254V20.8594H28.5657L26.1296 22.4503V20.9787L28.6701 19.3182H30.1665Z"
-                fill="white"
-                fillOpacity="0.4"
-              />
-            </svg>
+              <p className="text-xs text-outfit text-muted-foreground">Station</p>
+            </div>
 
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={() => addPresetAction("fuel_2")}
-              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
+            <div
+              onClick={() => addPresetAction("stocking")}
+              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
             >
-              <rect
-                x="0.5"
-                y="0.5"
-                width="47"
-                height="47"
-                rx="23.5"
-                fill="none"
-                stroke="#8A8A8A"
-              />
-              <path
-                d="M18.9922 27.7898V21.0682H20.3295V27.7898H18.9922ZM16.3026 25.0952V23.7628H23.0241V25.0952H16.3026ZM24.8935 29.5V28.3864L28.3388 24.8168C28.7067 24.429 29.0099 24.0893 29.2486 23.7976C29.4905 23.5026 29.6712 23.2225 29.7905 22.9574C29.9098 22.6922 29.9695 22.4105 29.9695 22.1122C29.9695 21.7741 29.8899 21.4825 29.7308 21.2372C29.5717 20.9886 29.3546 20.7981 29.0795 20.6655C28.8045 20.5296 28.4946 20.4616 28.1499 20.4616C27.7853 20.4616 27.4671 20.5362 27.1953 20.6854C26.9235 20.8345 26.7147 21.045 26.5689 21.3168C26.4231 21.5885 26.3501 21.9067 26.3501 22.2713H24.8835C24.8835 21.6515 25.026 21.1096 25.3111 20.6456C25.5961 20.1816 25.9872 19.822 26.4844 19.5668C26.9815 19.3082 27.5466 19.179 28.1797 19.179C28.8194 19.179 29.3828 19.3066 29.87 19.5618C30.3606 19.8137 30.7434 20.1584 31.0185 20.5959C31.2936 21.0301 31.4311 21.5206 31.4311 22.0675C31.4311 22.4453 31.3598 22.8149 31.2173 23.1761C31.0781 23.5374 30.8345 23.9401 30.4865 24.3842C30.1385 24.825 29.6546 25.3603 29.0348 25.9901L27.0114 28.108V28.1825H31.5952V29.5H24.8935Z"
-                fill="white"
-                fillOpacity="0.4"
-              />
-            </svg>
+              <p className="text-xs text-outfit text-muted-foreground">Stocking</p>
+            </div>
           </div>
 
-          <div className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] border-2 border-[#1E1E1E]">
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={() => addPresetAction("fuel_5")}
-              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
-            >
-              <rect
-                x="0.5"
-                y="0.5"
-                width="47"
-                height="47"
-                rx="23.5"
-                fill="none"
-                stroke="#8A8A8A"
-              />
-              <path
-                d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 29.5V28.1825H26.4744V27.0085L30.2034 19.3182H31.4311V27.0085H32.5379V28.1825H31.4311V29.5H30.1665ZM27.7404 27.0085H30.1665V21.6719H30.1068L27.7404 27.0085Z"
-                fill="white"
-                fillOpacity="0.4"
-              />
-            </svg>
-
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={() => addPresetAction("fuel_8")}
-              className="cursor-pointer active:scale-[0.85] transition-transform duration-75"
-            >
-              <rect
-                x="0.5"
-                y="0.5"
-                width="47"
-                height="47"
-                rx="23.5"
-                fill="none"
-                stroke="#8A8A8A"
-              />
-              <path
-                d="M19.9922 27.7898V21.0682H21.3295V27.7898H19.9922ZM17.3026 25.0952V23.7628H24.0241V25.0952H17.3026ZM30.1665 29.6392C29.5865 29.6392 29.0595 29.5199 28.5854 29.2812C28.1113 29.0393 27.7169 28.7079 27.4219 28.2869C27.1269 27.866 26.9695 27.3854 26.9496 26.8452H28.4311C28.4675 27.2827 28.6614 27.6423 29.0128 27.924C29.3641 28.2057 29.785 28.3466 30.2755 28.3466C30.6666 28.3466 31.013 28.2571 31.3146 28.0781C31.6195 27.8958 31.8581 27.6456 32.0305 27.3274C32.2062 27.0092 32.294 26.6463 32.294 26.2386C32.294 25.8243 32.2045 25.4548 32.0255 25.13C31.8465 24.8052 31.5996 24.55 31.2848 24.3643C30.9732 24.1787 30.6152 24.0843 30.2109 24.081C29.9026 24.081 29.5928 24.134 29.2812 24.2401C28.9696 24.3461 28.7178 24.4853 28.5255 24.6577L27.1186 24.4489L27.6903 19.3182H33.2883V20.6357H28.968L28.6448 23.4844H28.7045C28.9034 23.2921 29.1669 23.1314 29.495 23.0021C29.8264 22.8729 30.1811 22.8082 30.5589 22.8082C31.1787 22.8082 31.7305 22.9557 32.2144 23.2507C32.7017 23.5457 33.0845 23.9484 33.3629 24.4588C33.6446 24.9659 33.7838 25.5492 33.7805 26.2088C33.7838 26.8684 33.6347 27.4567 33.333 27.9737C33.0348 28.4908 32.6205 28.8984 32.0901 29.1967C31.5632 29.4917 30.9583 29.6392 30.2755 29.6392H30.1665Z"
-                fill="white"
-                fillOpacity="0.4"
-              />
-            </svg>
-          </div>
-
-          {/* Location action buttons */}
+          {/* Location action buttons (user selects position on field) */}
           <div className="flex gap-2.5 w-full h-full">
             <div
               onClick={() => startLocationAction("ground_intake")}
@@ -851,7 +769,7 @@ function MatchPlay() {
               <p
                 className={`text-xs text-outfit ${pendingLocationAction === "ground_intake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
               >
-                Intake
+                Ground
               </p>
             </div>
 
@@ -867,6 +785,21 @@ function MatchPlay() {
                 className={`text-xs text-outfit ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
               >
                 Pass
+              </p>
+            </div>
+
+            <div
+              onClick={() => startLocationAction("shoot")}
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                pendingLocationAction === "shoot"
+                  ? "border-2 border-[#CDA745]"
+                  : "border-2 border-[#1E1E1E]"
+              }`}
+            >
+              <p
+                className={`text-xs text-outfit ${pendingLocationAction === "shoot" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+              >
+                Shoot
               </p>
             </div>
           </div>
@@ -906,7 +839,7 @@ function MatchPlay() {
             )}
           </div>
 
-          {/* Climb toggles - L1 always available, L2/L3 teleop only */}
+          {/* Climb toggles - L1 always available, L2/L3 teleop only, dismount auto & first 5s teleop */}
           <div className="flex gap-2.5 w-full h-full">
             <div
               onClick={() => toggleAction("climb_L1")}
@@ -955,6 +888,24 @@ function MatchPlay() {
                   </p>
                 </div>
               </>
+            )}
+
+            {/* Dismount button - appears during auto and first 5s of teleop */}
+            {(isAuto || seconds <= 5) && (
+              <div
+                onClick={() => toggleAction("climb_dismount")}
+                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                  activeToggles.climb_dismount
+                    ? "border-2 border-[#4ADE80]"
+                    : "border-2 border-[#1E1E1E]"
+                }`}
+              >
+                <p
+                  className={`text-xs text-outfit ${activeToggles.climb_dismount ? "text-[#4ADE80]" : "text-muted-foreground"}`}
+                >
+                  Dismount
+                </p>
+              </div>
             )}
           </div>
         </div>

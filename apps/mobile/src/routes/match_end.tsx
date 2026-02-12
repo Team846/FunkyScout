@@ -1,12 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useState, useEffect, useCallback } from "react"
+import { useState } from "react"
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@shadcn/ui/components/dialog.js";
 import { getMatchLabel } from "@lib/utils/match";
-import type { MatchScoutingData } from "@lib/types/matchScouting";
-import { calculateFuelTotal } from "@lib/types/matchScouting";
 
 type MatchEndType = {
   teamNum?: string | null;
@@ -31,27 +28,7 @@ export const Route = createFileRoute("/match_end")({
 function MatchEnd() {
   const navigate = useNavigate();
   const { teamNum, matchNum, alliance, practice } = Route.useSearch();
-  const [seconds, setSeconds] = useState(0);
-  const [isActive, setIsActive] = useState(false);
   const [coordinates, setCoordinates] = useState([1000, 1000]);
-  const [isOpen, setDialogOpenState] = useState(false);
-  const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
-
-  // Load match data from sessionStorage
-  useEffect(() => {
-    const saved = sessionStorage.getItem("currentMatchData");
-    if (saved) {
-      try {
-        setMatchData(JSON.parse(saved));
-      } catch (error) {
-        console.error("Failed to load match data:", error);
-      }
-    }
-  }, []);
-
-  const handlesetDialogOpenState = () => {
-    setDialogOpenState(true);
-  }
   const handleBackClick = () => {
     if (practice) {
       navigate({ to: "/auth" });
@@ -60,17 +37,12 @@ function MatchEnd() {
     }
   };
 
-  const handleEditStats = () => {
+  const handleGoToSummary = () => {
     navigate({
       to: "/match_edit_stats",
       search: { teamNum, matchNum, alliance, practice }
     });
   };
-
-  const toggle = () => {
-    setIsActive(!isActive);
-  };
-
 
   const [isRotated, setIsRotated] = useState(false);
 
@@ -78,135 +50,12 @@ function MatchEnd() {
     setIsRotated(!isRotated);
   };
 
-  const reset = useCallback(() => {
-    setIsActive(false);
-    setSeconds(0);
-  }, []);
-
-  useEffect(() => {
-    let interval = null;
-
-    if (isActive) {
-      interval = setInterval(() => {
-        setSeconds((prev) => prev + 0.01);
-      }, 10);
-      const timerId = setTimeout(() => {
-        reset();
-      }, 20 * 1000);
-    } else if (interval) {
-      clearInterval(interval);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isActive]);
-
-  useEffect(() => {}, [coordinates]);
-
   return (
     //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
     //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
     <div className="flex flex-row w-screen h-screen gap-5 p-5">
       <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-[10px] py-[12px] rounded-[15px] border-[2px] border-[#1E1E1E]">
-        <Dialog open={isOpen} onOpenChange={setDialogOpenState}>
-            <DialogContent className="w-[80vw] max-w-3xl max-h-[80vh] p-0">
-              <div className="flex flex-col w-full p-6 gap-4 max-h-[80vh]">
-                <DialogHeader>
-                  <DialogTitle className="text-primary">Match Statistics</DialogTitle>
-                </DialogHeader>
-
-                {matchData ? (
-                  <div className="flex-1 overflow-auto">
-                    <div className="rounded-2xl bg-muted p-6 space-y-4">
-                      <h2 className="text-lg font-semibold text-primary">Match Summary</h2>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* Auto Column */}
-                        <div className="space-y-3">
-                          <h3 className="text-sm font-semibold text-[#CDA745]">Autonomous</h3>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Fuel:</span>
-                              <span className="text-foreground font-medium">{calculateFuelTotal(matchData.presetActions.filter(a => a.phase === 'auto')).auto}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Intakes:</span>
-                              <span className="text-foreground font-medium">{matchData.locationActions.filter(a => a.type === 'ground_intake' && a.phase === 'auto').length}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Passes:</span>
-                              <span className="text-foreground font-medium">{matchData.locationActions.filter(a => a.type === 'passing' && a.phase === 'auto').length}</span>
-                            </div>
-                            {matchData.toggleActions.some(a => a.type === 'climb_L1' && a.active && a.phase === 'auto') && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Auto Climb:</span>
-                                <span className="text-[#4ADE80] font-medium">Yes</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Teleop Column */}
-                        <div className="space-y-3">
-                          <h3 className="text-sm font-semibold text-[#CDA745]">Teleop</h3>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Fuel:</span>
-                              <span className="text-foreground font-medium">{calculateFuelTotal(matchData.presetActions.filter(a => a.phase === 'teleop')).teleop}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Intakes:</span>
-                              <span className="text-foreground font-medium">{matchData.locationActions.filter(a => a.type === 'ground_intake' && a.phase === 'teleop').length}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Passes:</span>
-                              <span className="text-foreground font-medium">{matchData.locationActions.filter(a => a.type === 'passing' && a.phase === 'teleop').length}</span>
-                            </div>
-                            {matchData.toggleActions.some(a => a.type === 'defend' && a.active) && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Defense:</span>
-                                <span className="text-[#CDA745] font-medium">Yes</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Endgame Row */}
-                      <div className="pt-3 border-t border-border">
-                        <div className="flex justify-between items-center text-sm">
-                          <div className="flex gap-6">
-                            {(matchData.toggleActions.some(a => a.type.startsWith('climb_') && a.active && (a.phase === 'teleop' || a.phase === 'endgame'))) && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Climb:</span>
-                                <span className="text-[#4ADE80] font-medium">
-                                  Level {matchData.toggleActions.find(a => a.type.startsWith('climb_') && a.active && (a.phase === 'teleop' || a.phase === 'endgame'))?.type.replace('climb_L', '') || '-'}
-                                </span>
-                              </div>
-                            )}
-                            {matchData.toggleActions.some(a => a.type === 'disable' && a.active) && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Issues:</span>
-                                <span className="text-[#BF4141] font-medium">Disabled</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-primary font-semibold">Total Fuel:</span>
-                            <span className="text-[#CDA745] font-bold text-lg">{calculateFuelTotal(matchData.presetActions).total}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-center text-muted-foreground">No match data available</p>
-                )}
-              </div>
-            </DialogContent>
-        </Dialog>
-        <div className="flex flex-col text-outfit text-xs justify-start items-centergap-[5px] gap-1">
+        <div className="flex flex-col text-outfit text-xs justify-start items-center gap-1">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
@@ -325,31 +174,14 @@ function MatchEnd() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950  border-[#1E1E1E]">
-        <div className="flex w-full h-full">
-            <Button variant = "secondary" className="w-full h-full border-[#1E1E1E] bg-black-950 border-2">
-                <p className="text-[15px] text-foreground">Go to Match Summary</p>
-            </Button>
-        </div>
-        <div className="flex w-[243px] h-[195px] ">
-            <div className="flex items-center w-full gap-2.5 p-2.5 py-2.5 h-full">
-                <Button 
-                variant = "secondary"
-                className="flex-1 w-full h-full border-2 border-[#1E1E1E] bg-black-950"
-                onClick={handlesetDialogOpenState}
-                >
-                    <p className="text-[15px] text-foreground text-center">View Stats</p>
-                </Button>
-                <Button
-                variant = "secondary"
-                className="flex-1 w-full h-full border-2 border-[#1E1E1E] bg-black-950"
-                onClick={handleEditStats}
-                >
-                    <p className="text-[15px] text-foreground text-center">Edit Stats</p>
-                </Button>
-            </div>
-        </div>
-        
+      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950">
+        <Button
+          variant="secondary"
+          className="w-full h-full border-[#CDA745] bg-black-950 border-2 hover:bg-[#CDA745]/10"
+          onClick={handleGoToSummary}
+        >
+          <p className="text-[20px] text-[#CDA745]">Go to Match Summary</p>
+        </Button>
       </div>
 
       <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
