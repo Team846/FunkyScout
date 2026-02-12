@@ -4,6 +4,8 @@ import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { getMatchLabel } from "@lib/utils/match";
+import { useOrientation } from "@lib/hooks/useOrientation";
+import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
 
 type MatchEndType = {
   teamNum?: string | null;
@@ -26,6 +28,7 @@ export const Route = createFileRoute("/match_end")({
 })
 
 function MatchEnd() {
+  const { isWrongOrientation } = useOrientation('landscape');
   const navigate = useNavigate();
   const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [coordinates, setCoordinates] = useState([1000, 1000]);
@@ -51,11 +54,13 @@ function MatchEnd() {
   };
 
   return (
-    //{teamNum && <span className="text-foreground"> | {teamNum}</span>}
-    //{matchNum && <span className="text-foreground"> | {matchNum}</span>}
-    <div className="flex flex-row w-screen h-screen gap-5 p-5">
-      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-[10px] py-[12px] rounded-[15px] border-[2px] border-[#1E1E1E]">
-        <div className="flex flex-col text-outfit text-xs justify-start items-center gap-1">
+    <>
+      {isWrongOrientation && <RotateDevicePrompt />}
+      {/* {teamNum && <span className="text-foreground"> | {teamNum}</span>} */}
+      {/* {matchNum && <span className="text-foreground"> | {matchNum}</span>} */}
+      <div className="flex flex-row w-screen h-screen gap-5 p-5">
+      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+        <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
           </p>
@@ -177,10 +182,10 @@ function MatchEnd() {
       <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950">
         <Button
           variant="secondary"
-          className="w-full h-full border-[#CDA745] bg-black-950 border-2 hover:bg-[#CDA745]/10"
+          className="w-full h-full border-[#CDA745] bg-black-950 border-2 hover:bg-[#CDA745]/10 px-8"
           onClick={handleGoToSummary}
         >
-          <p className="text-[20px] text-[#CDA745]">Go to Match Summary</p>
+          <p className="text-[18px] text-[#CDA745] leading-tight">Go to Match Summary</p>
         </Button>
       </div>
 
@@ -188,17 +193,14 @@ function MatchEnd() {
         <p className="text-xs text-[#CDA745]">
           Done
         </p>
-        <div className="flex flex-col gap-[0px]">
+        <div className="relative flex flex-col gap-0 flex-1 w-1.25">
           <div
-            style={{ height: "300px" }}
-            className="flex flex-col w-[5px] bg-[#CDA745]"
-          ></div>
-          <div
-            style={{ height: "0px" }}
-            className="flex flex-col w-[5px] bg-[#F4F4F4]"
+            style={{ height: "100%" }}
+            className="flex flex-col w-full bg-[#CDA745]"
           ></div>
         </div>
       </div>
     </div>
+    </>
   );
 }

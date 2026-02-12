@@ -4,6 +4,8 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import { getMatchLabel } from "@lib/utils/match";
+import { useOrientation } from "@lib/hooks/useOrientation";
+import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
 import type {
   MatchScoutingData,
   PresetAction,
@@ -35,11 +37,11 @@ export const Route = createFileRoute("/match_edit_stats")({
 });
 
 function MatchEditStats() {
+  const { isWrongOrientation } = useOrientation('portrait');
   const navigate = useNavigate();
   const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
   const [notes, setNotes] = useState("");
-  const [showToast, setShowToast] = useState(false);
 
   // Load match data from sessionStorage
   useEffect(() => {
@@ -62,20 +64,24 @@ function MatchEditStats() {
     });
   };
 
-  const handleSave = () => {
+  const handleSubmit = () => {
     if (matchData) {
       const updatedData = {
         ...matchData,
         notes,
       };
       sessionStorage.setItem("currentMatchData", JSON.stringify(updatedData));
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-        handleBack();
-      }, 1000);
+      handleBack();
     }
   };
+
+  // Check if form is complete (all ratings filled and notes not empty)
+  const isFormComplete =
+    matchData?.postMatch?.ratings?.ground !== undefined &&
+    matchData?.postMatch?.ratings?.station !== undefined &&
+    matchData?.postMatch?.ratings?.passing !== undefined &&
+    matchData?.postMatch?.ratings?.driver !== undefined &&
+    notes.trim() !== "";
 
   // Helper functions to add/remove actions
   const addFuelAction = (
@@ -453,7 +459,9 @@ function MatchEditStats() {
   };
 
   return (
-    <div className="flex flex-col w-screen h-screen gap-5 p-5">
+    <>
+      {isWrongOrientation && <RotateDevicePrompt message="Please rotate to portrait mode to edit match data" />}
+      <div className="flex flex-col w-screen h-screen gap-5 p-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -478,16 +486,10 @@ function MatchEditStats() {
             </p>
           </div>
         </div>
-        <Button
-          onClick={handleSave}
-          className="bg-[#CDA745] text-black hover:bg-[#CDA745]/90"
-        >
-          Save Changes
-        </Button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-20">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Data Table */}
           <div className="rounded-2xl bg-muted p-6 space-y-4">
@@ -1022,12 +1024,17 @@ function MatchEditStats() {
         </div>
       </div>
 
-      {/* Toast notification */}
-      {showToast && (
-        <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-[#4ADE80] text-black px-6 py-3 rounded-lg shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200 z-50">
-          <p className="text-sm font-medium">Changes saved successfully!</p>
-        </div>
-      )}
+      {/* Submit Button - Fixed at bottom */}
+      <div className="fixed bottom-4 left-4 right-4 z-40">
+        <Button
+          onClick={handleSubmit}
+          disabled={!isFormComplete}
+          className="w-full h-12 bg-[#CDA745] hover:bg-[#CDA745]/90 text-black disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Submit
+        </Button>
+      </div>
     </div>
+    </>
   );
 }
