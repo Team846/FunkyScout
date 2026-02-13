@@ -3,8 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
 import { getMatchLabel } from "@lib/utils/match";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select";
-import { Button } from "@shadcn/ui/components/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select.tsx";
+import { Button } from "@shadcn/ui/components/button.tsx";
 
 interface MatchScoutingTabProps {
   eventKey: string;
@@ -172,7 +172,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const selectedMatchData = matchData.filter((d) => d.match === selectedMatch);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-10 p-2.5">
       {/* OPR/EPA Stats */}
       {teamStats && (teamStats.opr !== null && teamStats.opr !== undefined || teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined) && (
         <div className="grid grid-cols-2 gap-3">
@@ -202,9 +202,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           <SelectTrigger className="w-full h-12 bg-muted border-0">
             <SelectValue placeholder="Select a match" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-muted p-2.5">
             {uniqueMatches.map((match) => (
-              <SelectItem key={match} value={match}>
+              <SelectItem key={match} className="bg-input focus:bg-input"  value={match}>
                 {getMatchLabel(match)}
               </SelectItem>
             ))}
@@ -300,37 +300,40 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
       </div>
 
       {matchDataRaw.postMatch?.ratings && (
-        <div className="space-y-2">
+        <div className="flex flex-col space-y-2 p-5 bg-background rounded-lg">
           <p className="text-sm font-semibold text-foreground">Ratings</p>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {matchDataRaw.postMatch.ratings.groundIntake && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Ground:</span>
-                <span>{matchDataRaw.postMatch.ratings.groundIntake}/5</span>
-              </div>
-            )}
-            {matchDataRaw.postMatch.ratings.stationIntake && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Station:</span>
-                <span>{matchDataRaw.postMatch.ratings.stationIntake}/5</span>
-              </div>
-            )}
-            {matchDataRaw.postMatch.ratings.passing && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Passing:</span>
-                <span>{matchDataRaw.postMatch.ratings.passing}/5</span>
-              </div>
-            )}
+            <div className="grid grid-cols-2 space-y-4 py-2.5 gap-4">
+              {[
+              { label: "Ground", value: matchDataRaw.postMatch.ratings.groundIntake },
+              { label: "Station", value: matchDataRaw.postMatch.ratings.stationIntake },
+              { label: "Passing", value: matchDataRaw.postMatch.ratings.passing },
+              { label: "Driver", value: matchDataRaw.driverRating }
+              ].map(
+                (rating) =>
+                  rating.value && (
+                    <div key={rating.label} className="flex flex-col">
+                    <span className="text-muted-foreground">{rating.label}:</span>
+                  <div className="flex flex-row">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <svg
+                        key={star}
+                        viewBox="0 0 24 24"
+                        className={`size-6 ${
+                          star <= (rating.value ?? 0)
+                            ? "text-primary"
+                            : "text-border"
+                        }`}
+                        fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                      </svg>
+                    ))}
+                  </div>
+                  </div>
+                )
+              )}
           </div>
-        </div>
-      )}
-
-      {matchDataRaw.driverRating && (
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-foreground">Driver Rating</p>
-          <p className="text-sm text-muted-foreground">
-            {matchDataRaw.driverRating}/5
-          </p>
         </div>
       )}
 
