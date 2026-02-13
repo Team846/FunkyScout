@@ -71,11 +71,17 @@ impl SyncService {
         }
 
         // 1. Fetch team statuses from TBA (rankings only, 1 API call)
-        let statuses = self
-            .tba
-            .fetch_team_statuses(&self.current_event)
-            .await
-            .context("Failed to fetch team statuses from TBA")?;
+        let statuses = match self.tba.fetch_team_statuses(&self.current_event).await {
+            Ok(data) => {
+                println!("[Sync] TBA team statuses fetched: {} teams", data.len());
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] TBA team statuses fetch failed: {}", e);
+                // Return early - can't proceed without team list
+                return Ok(());
+            }
+        };
 
         // 2. Fetch EPA from Statbotics (graceful fallback on error)
         let epa_data = match self.statbotics.fetch_event_team_years(&self.current_event).await {
@@ -88,7 +94,11 @@ impl SyncService {
 
         // 3. Fetch OPR/DPR from TBA (graceful fallback on error)
         let oprs = match self.tba.fetch_oprs(&self.current_event).await {
-            Ok(data) => data,
+            Ok(data) => {
+                let opr_count = data.get("oprs").and_then(|o| o.as_object()).map(|o| o.len()).unwrap_or(0);
+                println!("[Sync] OPR data fetched: {} teams", opr_count);
+                data
+            },
             Err(e) => {
                 eprintln!("[Sync] OPR fetch failed: {}", e);
                 json!({})
@@ -104,40 +114,43 @@ impl SyncService {
             })
             .collect();
 
+        println!("[Sync] EPA map built with {} teams", epa_map.len());
+
         // 5. Transform TBA statuses + EPA + OPR to comprehensive Supabase format
+        // Include ALL teams, even those without match data yet
         let team_data_records: Vec<serde_json::Value> = statuses
             .into_iter()
-            .filter_map(|(team_key, status)| {
-                // Extract rank and record
+            .map(|(team_key, status)| {
+                // Extract rank and record (optional - teams without matches will have 0/null)
                 let rank = status
-                    .get("qual")?
-                    .get("ranking")?
-                    .get("rank")?
-                    .as_i64()
+                    .get("qual")
+                    .and_then(|q| q.get("ranking"))
+                    .and_then(|r| r.get("rank"))
+                    .and_then(|v| v.as_i64())
                     .unwrap_or(0);
 
                 let wins = status
-                    .get("qual")?
-                    .get("ranking")?
-                    .get("record")?
-                    .get("wins")?
-                    .as_i64()
+                    .get("qual")
+                    .and_then(|q| q.get("ranking"))
+                    .and_then(|r| r.get("record"))
+                    .and_then(|rec| rec.get("wins"))
+                    .and_then(|v| v.as_i64())
                     .unwrap_or(0);
 
                 let losses = status
-                    .get("qual")?
-                    .get("ranking")?
-                    .get("record")?
-                    .get("losses")?
-                    .as_i64()
+                    .get("qual")
+                    .and_then(|q| q.get("ranking"))
+                    .and_then(|r| r.get("record"))
+                    .and_then(|rec| rec.get("losses"))
+                    .and_then(|v| v.as_i64())
                     .unwrap_or(0);
 
                 let ties = status
-                    .get("qual")?
-                    .get("ranking")?
-                    .get("record")?
-                    .get("ties")?
-                    .as_i64()
+                    .get("qual")
+                    .and_then(|q| q.get("ranking"))
+                    .and_then(|r| r.get("record"))
+                    .and_then(|rec| rec.get("ties"))
+                    .and_then(|v| v.as_i64())
                     .unwrap_or(0);
 
                 // Extract next/last match
@@ -199,15 +212,25 @@ impl SyncService {
                     "last_synced": chrono::Utc::now().timestamp_millis(), // For mobile TBA failsafe detection
                 });
 
-                Some(json!({
+                json!({
                     "event": self.current_event,
                     "team": team_key,
                     "data": data,
-                }))
+                })
             })
             .collect();
 
         if !team_data_records.is_empty() {
+            // Log how many teams have EPA/OPR data
+            let teams_with_epa = team_data_records.iter()
+                .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
+                .count();
+            let teams_with_opr = team_data_records.iter()
+                .filter(|r| r.get("data").and_then(|d| d.get("opr")).is_some())
+                .count();
+            println!("[Sync] Pushing {} teams ({} with EPA, {} with OPR)",
+                team_data_records.len(), teams_with_epa, teams_with_opr);
+
             // Cache to local SQLite FIRST (for offline support)
             self.cache_teams_to_sqlite(&team_data_records)
                 .await

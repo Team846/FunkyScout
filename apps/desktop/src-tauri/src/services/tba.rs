@@ -98,41 +98,47 @@ impl TbaService {
                 .collect());
         }
 
-        // Merge teams with statuses
+        // Merge teams with statuses - include all teams even if status is missing
         Ok(teams
             .into_iter()
             .filter_map(|team| {
                 let key = team["key"].as_str()?.to_string();
-                let status = statuses.get(&key)?;
+                let team_number = team["team_number"].as_i64()? as i32;
+                let name = team["nickname"].as_str()?.to_string();
+
+                // Get status if available, otherwise use defaults
+                let status = statuses.get(&key);
 
                 Some(TeamRank {
-                    key: key.clone(),
-                    team: team["team_number"].as_i64()? as i32,
-                    name: team["nickname"].as_str()?.to_string(),
-                    rank: status["qual"]["ranking"]["rank"].as_i64().unwrap_or(0) as i32,
+                    key,
+                    team: team_number,
+                    name,
+                    rank: status
+                        .and_then(|s| s["qual"]["ranking"]["rank"].as_i64())
+                        .unwrap_or(0) as i32,
                     record: TeamRecord {
-                        wins: status["qual"]["ranking"]["record"]["wins"]
-                            .as_i64()
+                        wins: status
+                            .and_then(|s| s["qual"]["ranking"]["record"]["wins"].as_i64())
                             .unwrap_or(0) as i32,
-                        losses: status["qual"]["ranking"]["record"]["losses"]
-                            .as_i64()
+                        losses: status
+                            .and_then(|s| s["qual"]["ranking"]["record"]["losses"].as_i64())
                             .unwrap_or(0) as i32,
-                        ties: status["qual"]["ranking"]["record"]["ties"]
-                            .as_i64()
+                        ties: status
+                            .and_then(|s| s["qual"]["ranking"]["record"]["ties"].as_i64())
                             .unwrap_or(0) as i32,
                     },
-                    next_match: status["next_match_key"].as_str().map(|s| s.to_string()),
-                    last_match: status["last_match_key"].as_str().map(|s| s.to_string()),
-                    matches: status["qual"]["ranking"]["matches_played"]
-                        .as_i64()
+                    next_match: status
+                        .and_then(|s| s["next_match_key"].as_str())
+                        .map(|s| s.to_string()),
+                    last_match: status
+                        .and_then(|s| s["last_match_key"].as_str())
+                        .map(|s| s.to_string()),
+                    matches: status
+                        .and_then(|s| s["qual"]["ranking"]["matches_played"].as_i64())
                         .unwrap_or(0) as i32,
-                    orders: status["qual"]["ranking"]["sort_orders"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| v.as_f64())
-                                .collect()
-                        })
+                    orders: status
+                        .and_then(|s| s["qual"]["ranking"]["sort_orders"].as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
                         .unwrap_or_default(),
                 })
             })

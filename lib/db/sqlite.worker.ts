@@ -105,8 +105,31 @@ CREATE INDEX IF NOT EXISTS idx_event_schedule_match
 
 CREATE INDEX IF NOT EXISTS idx_event_schedule_team
   ON event_schedule(event, team);
+`);
 
+      // Migration: Add columns to existing event_schedule tables
+      // These columns were added for TBA match data and Statbotics predictions
+      const scheduleColumns = [
+        'est_time INTEGER',
+        'red_score INTEGER',
+        'blue_score INTEGER',
+        'red_win_prob REAL',
+        'predicted_red_score INTEGER',
+        'predicted_blue_score INTEGER',
+      ];
 
+      for (const column of scheduleColumns) {
+        try {
+          db.exec(`ALTER TABLE event_schedule ADD COLUMN ${column}`);
+        } catch (e: any) {
+          // Ignore "duplicate column" errors - column already exists
+          if (!e.message?.includes('duplicate column')) {
+            console.warn(`[LocalDB] Migration warning for ${column}:`, e.message);
+          }
+        }
+      }
+
+      db.exec(`
 CREATE TABLE IF NOT EXISTS event_match_data (
   event TEXT NOT NULL,
   match TEXT NOT NULL,

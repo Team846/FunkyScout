@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { getEventMatchData, type EventMatchData } from "@lib/db";
+import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
 import { getMatchLabel } from "@lib/utils/match";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select";
 
 interface MatchScoutingTabProps {
   eventKey: string;
@@ -11,13 +12,61 @@ interface MatchScoutingTabProps {
 export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const [matchData, setMatchData] = useState<EventMatchData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedMatch, setSelectedMatch] = useState<string>("");
+  const [teamStats, setTeamStats] = useState<{ opr?: number; epa?: any } | null>(null);
+  const [nextMatch, setNextMatch] = useState<{ match: string; time?: number } | null>(null);
 
   useEffect(() => {
     if (!eventKey || !teamKey) return;
 
-    getEventMatchData(eventKey, undefined, teamKey).then((data) => {
-      const validData = data.filter((d) => !d.deleted_at);
+    Promise.all([
+      getEventMatchData(eventKey, undefined, teamKey),
+      getEventTeamData(eventKey),
+      getEventSchedule(eventKey),
+    ]).then(([matchDataResult, teamDataResult, scheduleResult]) => {
+      // Only include match data that has been scouted (has name field)
+      const validData = matchDataResult.filter((d) => !d.deleted_at && d.name);
       setMatchData(validData);
+
+      // Set first match as default selection
+      if (validData.length > 0) {
+        setSelectedMatch(validData[0].match);
+      }
+
+      // Get team stats (OPR/EPA)
+      const teamData = teamDataResult.find((t) => t.team === teamKey);
+      if (teamData?.data) {
+        setTeamStats({
+          opr: teamData.data.opr,
+          epa: teamData.data.epa,
+        });
+      }
+
+      // Find next qual match for this team
+      const now = Math.floor(Date.now() / 1000); // Current time in seconds
+
+      const teamMatches = scheduleResult
+        .filter((s) => s.team === teamKey && s.match.toLowerCase().includes("qm"))
+        .sort((a, b) => {
+          const aNum = parseInt(a.match.split("qm")[1]);
+          const bNum = parseInt(b.match.split("qm")[1]);
+          return aNum - bNum;
+        });
+
+      // Find first match that hasn't been scouted AND is in the future
+      const unscoutedMatch = teamMatches.find(
+        (tm) =>
+          !validData.some((md) => md.match === tm.match) &&
+          (tm.est_time == null || tm.est_time > now) // Include if no time or if future
+      );
+
+      if (unscoutedMatch) {
+        setNextMatch({
+          match: unscoutedMatch.match,
+          time: unscoutedMatch.est_time,
+        });
+      }
+
       setLoading(false);
     });
   }, [eventKey, teamKey]);
@@ -49,33 +98,104 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           <p className="text-sm text-muted-foreground max-w-xs">
             This team hasn't been match scouted yet.
           </p>
+          {nextMatch ? (
+            <div className="mt-4 p-4 rounded-xl bg-muted">
+              <p className="text-sm font-semibold text-foreground mb-1">
+                Next Qual Match
+              </p>
+              <p className="text-lg font-bold text-primary">
+                {getMatchLabel(nextMatch.match)}
+              </p>
+              {nextMatch.time && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {new Date(nextMatch.time * 1000).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-2">
+              No upcoming qual matches
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  // Group by match
-  const matchGroups = matchData.reduce(
-    (acc, data) => {
-      if (!acc[data.match]) acc[data.match] = [];
-      acc[data.match].push(data);
-      return acc;
-    },
-    {} as Record<string, EventMatchData[]>
+  // Get unique matches sorted
+  const uniqueMatches = Array.from(new Set(matchData.map((d) => d.match))).sort(
+    (a, b) => {
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const aIsQual = aLower.includes("qm");
+      const bIsQual = bLower.includes("qm");
+
+      if (aIsQual && bIsQual) {
+        const aNum = parseInt(a.split("qm")[1]);
+        const bNum = parseInt(b.split("qm")[1]);
+        return aNum - bNum;
+      }
+      return a.localeCompare(b);
+    }
   );
 
+  const selectedMatchData = matchData.filter((d) => d.match === selectedMatch);
+
   return (
-    <div className="flex flex-col gap-6">
-      {Object.entries(matchGroups).map(([matchKey, entries]) => (
-        <div key={matchKey} className="rounded-2xl bg-muted p-6">
+    <div className="flex flex-col gap-4">
+      {/* OPR/EPA Stats */}
+      {teamStats && (teamStats.opr !== null && teamStats.opr !== undefined || teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined) && (
+        <div className="grid grid-cols-2 gap-3">
+          {teamStats.opr !== null && teamStats.opr !== undefined && (
+            <div className="rounded-xl bg-muted p-4">
+              <p className="text-xs text-muted-foreground mb-1">OPR</p>
+              <p className="text-xl font-bold text-primary">
+                {teamStats.opr.toFixed(1)}
+              </p>
+            </div>
+          )}
+          {teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined && (
+            <div className="rounded-xl bg-muted p-4">
+              <p className="text-xs text-muted-foreground mb-1">EPA</p>
+              <p className="text-xl font-bold text-primary">
+                {teamStats.epa.total_points.mean.toFixed(1)}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Match Selector */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-foreground">Select Match</p>
+        <Select value={selectedMatch} onValueChange={setSelectedMatch}>
+          <SelectTrigger className="w-full h-12 bg-muted border-0">
+            <SelectValue placeholder="Select a match" />
+          </SelectTrigger>
+          <SelectContent>
+            {uniqueMatches.map((match) => (
+              <SelectItem key={match} value={match}>
+                {getMatchLabel(match)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Selected Match Data */}
+      {selectedMatchData.length > 0 && (
+        <div className="rounded-2xl bg-muted p-6">
           <p className="font-bold text-foreground mb-4">
-            {getMatchLabel(matchKey)}
+            {getMatchLabel(selectedMatch)}
           </p>
-          {entries.map((entry) => (
+          {selectedMatchData.map((entry) => (
             <MatchDataCard key={entry.timestamp} data={entry} />
           ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
