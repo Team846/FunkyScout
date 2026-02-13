@@ -241,12 +241,12 @@ export class SyncManager {
    * Fetches existing data, merges pit data with TBA stats, then upserts
    */
   private async syncTeamData(payload: PutTeamDataPayload): Promise<void> {
-    const { event, team, data, name, uid } = payload;
+    const { event, team, data, name, uid, teamName } = payload;
 
-    // 1. Fetch existing data to preserve TBA stats
+    // 1. Fetch existing data to preserve TBA stats and team_name
     const { data: existing, error: fetchError } = await this.supabaseClient
       .from("event_team_data")
-      .select("data")
+      .select("data, team_name")
       .eq("event", event)
       .eq("team", team)
       .maybeSingle();
@@ -266,7 +266,10 @@ export class SyncManager {
       };
     }
 
-    // 3. Upsert merged data
+    // 3. Preserve existing team_name from TBA bootstrap if not provided
+    const finalTeamName = teamName || existing?.team_name || null;
+
+    // 4. Upsert merged data
     const { error } = await this.supabaseClient
       .from("event_team_data")
       .upsert(
@@ -274,6 +277,7 @@ export class SyncManager {
           event,
           team,
           data: mergedData,
+          team_name: finalTeamName,
           name,
           uid,
         },
@@ -345,6 +349,12 @@ export class SyncManager {
   private async syncMatchData(payload: PutMatchDataPayload): Promise<void> {
     const { event, match, team, alliance, dataRaw, name, uid, timestamp } =
       payload;
+
+    // Validate alliance is provided
+    if (!alliance) {
+      console.error('[Sync] Alliance is null/undefined for match data:', payload);
+      throw new Error('Alliance is required for match data');
+    }
 
     const { error } = await this.supabaseClient
       .from("event_match_data")

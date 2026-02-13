@@ -242,6 +242,20 @@ pub async fn cache_schedule(
             .clone()
     };
 
+    // CRITICAL: Ensure event exists in event_list first (for foreign key constraint)
+    sqlx::query(
+        "INSERT INTO event_list (event, alias, date, last_modified)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+    )
+    .bind(&event)
+    .bind(&event)
+    .bind("")
+    .bind(chrono::Utc::now().timestamp_millis())
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to ensure event exists: {}", e))?;
+
     for record in schedule {
         let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
         let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
@@ -308,6 +322,30 @@ pub async fn cache_picklists(
             .clone()
     };
 
+    // CRITICAL: Ensure all events exist in event_list first (for foreign key constraint)
+    // Extract unique events from picklists
+    let mut events: Vec<String> = picklists
+        .iter()
+        .filter_map(|p| p.get("event").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    events.sort();
+    events.dedup();
+
+    for event in events {
+        sqlx::query(
+            "INSERT INTO event_list (event, alias, date, last_modified)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+        )
+        .bind(&event)
+        .bind(&event)
+        .bind("")
+        .bind(chrono::Utc::now().timestamp_millis())
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to ensure event {} exists: {}", event, e))?;
+    }
+
     for record in picklists {
         let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
         let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
@@ -361,6 +399,30 @@ pub async fn cache_picklist_entries(
             .get_sqlx_pool()
             .clone()
     };
+
+    // CRITICAL: Ensure all events exist in event_list first (for foreign key constraint)
+    // Extract unique events from entries
+    let mut events: Vec<String> = entries
+        .iter()
+        .filter_map(|e| e.get("event").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    events.sort();
+    events.dedup();
+
+    for event in events {
+        sqlx::query(
+            "INSERT INTO event_list (event, alias, date, last_modified)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+        )
+        .bind(&event)
+        .bind(&event)
+        .bind("")
+        .bind(chrono::Utc::now().timestamp_millis())
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to ensure event {} exists: {}", event, e))?;
+    }
 
     for record in entries {
         let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");

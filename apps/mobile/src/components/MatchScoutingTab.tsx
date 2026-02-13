@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
 import { getMatchLabel } from "@lib/utils/match";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select";
+import { Button } from "@shadcn/ui/components/button";
 
 interface MatchScoutingTabProps {
   eventKey: string;
@@ -217,7 +219,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
             {getMatchLabel(selectedMatch)}
           </p>
           {selectedMatchData.map((entry) => (
-            <MatchDataCard key={entry.timestamp} data={entry} />
+            <MatchDataCard key={entry.timestamp} data={entry} teamKey={teamKey} />
           ))}
         </div>
       )}
@@ -225,7 +227,8 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   );
 }
 
-function MatchDataCard({ data }: { data: EventMatchData }) {
+function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: string }) {
+  const navigate = useNavigate();
   const matchDataRaw = data.data_raw as MatchDataRaw;
 
   if (!matchDataRaw) {
@@ -244,6 +247,18 @@ function MatchDataCard({ data }: { data: EventMatchData }) {
     ? climbAction.actionId.replace("climb_L", "")
     : "None";
 
+  const handleEdit = () => {
+    navigate({
+      to: "/match_edit_stats",
+      search: {
+        teamNum: teamKey,
+        matchNum: data.match,
+        alliance: data.alliance,
+        practice: false,
+      },
+    });
+  };
+
   return (
     <div className="py-3 space-y-3 border-t border-border first:border-t-0 first:pt-0">
       <div className="flex items-center justify-between">
@@ -254,6 +269,16 @@ function MatchDataCard({ data }: { data: EventMatchData }) {
           {new Date(data.timestamp).toLocaleString()}
         </p>
       </div>
+
+      {/* Edit Button */}
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={handleEdit}
+        className="w-full"
+      >
+        Edit Match Data
+      </Button>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg bg-background p-3">

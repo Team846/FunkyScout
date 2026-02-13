@@ -18,8 +18,11 @@ import type {
 import { getActiveToggles } from "@lib/types/matchScouting";
 import { putMatchData } from "@lib/data/writes";
 import { transformMatchData } from "@lib/data/matchDataTransform";
+import { reverseTransformMatchData } from "@lib/data/matchDataTransform";
 import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 import { useEvent } from "@lib/context/EventContext";
+import { getMatchData } from "@lib/data/match-data";
 import { toast } from "sonner";
 
 type MatchEditStatsType = {
@@ -50,19 +53,58 @@ function MatchEditStats() {
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load match data from sessionStorage
+  // Load match data - check both sessionStorage (from match_play) and Supabase (for editing)
   useEffect(() => {
-    const saved = sessionStorage.getItem("currentMatchData");
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        setMatchData(data);
-        setNotes(data.notes || "");
-      } catch (error) {
-        console.error("Failed to load match data:", error);
+    async function loadMatchData() {
+      // First try sessionStorage (for new match flow from match_play)
+      const saved = sessionStorage.getItem("currentMatchData");
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          setMatchData(data);
+          setNotes(data.notes || "");
+          return;
+        } catch (error) {
+          console.error("Failed to load match data from sessionStorage:", error);
+        }
+      }
+
+      // If no sessionStorage and we have route params, try to load from Supabase
+      if (currentEvent && teamNum && matchNum) {
+        try {
+          const allMatchData = await getMatchData(currentEvent);
+          const existingData = allMatchData.find(
+            (m) => m.team === teamNum && m.match === matchNum
+          );
+
+          // Check if data_raw exists and is not empty (ignore EPA/OPR - that's in team_data)
+          if (existingData?.data_raw && Object.keys(existingData.data_raw).length > 0) {
+            // Has actual scouting data - pre-populate form for editing
+            const uiData = reverseTransformMatchData(existingData.data_raw);
+            setMatchData(uiData);
+            setNotes(uiData.notes || "");
+          } else {
+            // No existing data - initialize empty form for new entry
+            setMatchData({
+              presetActions: [],
+              locationActions: [],
+              toggleActions: [],
+              postMatch: {
+                ratings: {},
+              },
+              notes: "",
+            });
+            setNotes("");
+          }
+        } catch (error) {
+          console.error("Failed to load match data from Supabase:", error);
+          toast.error("Failed to load match data");
+        }
       }
     }
-  }, []);
+
+    loadMatchData();
+  }, [currentEvent, teamNum, matchNum]);
 
   const handleBack = () => {
     navigate({
@@ -80,9 +122,10 @@ function MatchEditStats() {
     setIsSubmitting(true);
 
     try {
-      // Get user session
+      // Get user session and local user data
       const session = await getSession();
-      const scoutName = session?.user?.email || "Unknown";
+      const localUser = getLocalUserData();
+      const scoutName = localUser.name || session?.user?.email || "Unknown";
       const scoutUid = session?.user?.id || "unknown";
 
       // Complete match data with notes

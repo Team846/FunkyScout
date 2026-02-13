@@ -1,5 +1,5 @@
 import supabase from "../supabase/supabase";
-import { fetchTBAEventTeams } from "../tba/event";
+import { fetchTBAEventTeams, fetchTBATeamStatuses } from "../tba/event";
 import { refreshSchedule } from "./schedule";
 import { bootstrapMatchData } from "./match-data";
 import { getLocalEventList, cacheEventList } from "../db";
@@ -136,4 +136,33 @@ export async function getEventByKey(eventKey: string) {
     const cached = await getLocalEventList();
     return cached.find((e) => e.event === eventKey) || null;
   }
+}
+
+/**
+ * Sync team names from TBA to Supabase.
+ * Updates team_name field without touching pit scouting data.
+ * Similar to how EPA is synced - separate from pit scouting.
+ */
+export async function syncTeamNames(eventKey: string) {
+  const teams = await fetchTBAEventTeams(eventKey);
+
+  if (!teams) {
+    console.warn(`[SyncTeamNames] Failed to fetch teams from TBA for ${eventKey}`);
+    return;
+  }
+
+  // For each team, update ONLY the team_name field, preserving all other data
+  for (const team of teams) {
+    const { error } = await supabase
+      .from("event_team_data")
+      .update({ team_name: team.name })
+      .eq("event", eventKey)
+      .eq("team", team.key);
+
+    if (error) {
+      console.error(`[SyncTeamNames] Failed to update team_name for ${team.key}:`, error);
+    }
+  }
+
+  console.log(`[SyncTeamNames] Updated ${teams.length} team names for ${eventKey}`);
 }

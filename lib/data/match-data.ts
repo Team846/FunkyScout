@@ -14,7 +14,7 @@ export async function syncShiftAssignments(eventKey: string) {
   // Get all schedule entries with their assignments
   const { data: scheduleData, error: scheduleError } = await supabase
     .from("event_schedule")
-    .select("event, match, team, name, uid")
+    .select("event, match, team, alliance, name, uid")
     .eq("event", eventKey)
     .is("deleted_at", null);
 
@@ -26,6 +26,7 @@ export async function syncShiftAssignments(eventKey: string) {
     event: entry.event,
     match: entry.match,
     team: entry.team,
+    alliance: entry.alliance as "red" | "blue",
     name: entry.name || "",
     uid: entry.uid || "",
   }));

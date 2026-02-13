@@ -93,3 +93,86 @@ export function transformMatchData(
     notes: scoutingData.notes
   };
 }
+
+/**
+ * Reverse transform match data from database format back to UI format
+ * Used when editing existing match scouting data
+ * @param dataRaw - Match data from database (data_raw field)
+ * @returns MatchScoutingData in UI format
+ */
+export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingData {
+  const presetActions: PresetAction[] = [];
+  const locationActions: LocationAction[] = [];
+  const toggleActions: ToggleAction[] = [];
+
+  // Process auto actions
+  dataRaw.autoActions?.forEach(action => {
+    if (action.actionId === 'station_intake' || action.actionId === 'stocking') {
+      // Preset action (no location)
+      presetActions.push({
+        type: action.actionId as PresetActionType,
+        timestamp: action.timestamp,
+        phase: 'auto'
+      });
+    } else if (action.location) {
+      // Location action (ground_intake, passing, shoot)
+      locationActions.push({
+        type: action.actionId as LocationActionType,
+        timestamp: action.timestamp,
+        coords: [action.location.x, action.location.y],
+        phase: 'auto'
+      });
+    } else if (action.enabled !== undefined) {
+      // Toggle action (climb, disable, defend, etc.)
+      toggleActions.push({
+        type: action.actionId as ToggleActionType,
+        timestamp: action.timestamp,
+        active: action.enabled,
+        phase: 'auto'
+      });
+    }
+  });
+
+  // Process teleop actions
+  dataRaw.teleopActions?.forEach(action => {
+    if (action.actionId === 'station_intake' || action.actionId === 'stocking') {
+      presetActions.push({
+        type: action.actionId as PresetActionType,
+        timestamp: action.timestamp,
+        phase: 'teleop'
+      });
+    } else if (action.location) {
+      locationActions.push({
+        type: action.actionId as LocationActionType,
+        timestamp: action.timestamp,
+        coords: [action.location.x, action.location.y],
+        phase: 'teleop'
+      });
+    } else if (action.enabled !== undefined) {
+      toggleActions.push({
+        type: action.actionId as ToggleActionType,
+        timestamp: action.timestamp,
+        active: action.enabled,
+        phase: action.actionId.startsWith('climb_') ? 'endgame' : 'teleop'
+      });
+    }
+  });
+
+  return {
+    presetActions,
+    locationActions,
+    toggleActions,
+    postMatch: {
+      ratings: {
+        ground: dataRaw.postMatch?.ratings?.groundIntake,
+        station: dataRaw.postMatch?.ratings?.stationIntake,
+        passing: dataRaw.postMatch?.ratings?.passing,
+        driver: dataRaw.driverRating
+      },
+      through: dataRaw.postMatch?.trough, // Field name mapping: trough → through
+      climb_orientation: dataRaw.postMatch?.climbOrientation,
+      depot: dataRaw.postMatch?.depot
+    },
+    notes: dataRaw.notes || ''
+  };
+}
