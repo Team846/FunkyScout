@@ -98,13 +98,20 @@ function HomePage() {
     try {
       const success = await useInviteCode(inviteCode.trim());
       if (success) {
-        toast.success("Invite code applied successfully!");
+        toast.success("Role updated! Please sign in again.");
         setInviteCode("");
-        // Refresh user data
+
+        // Check if user was signed out (role promotion requires re-auth)
         const profile = await fetchUserProfile();
-        if (profile) {
-          setUserData(profile);
+        if (!profile) {
+          // User was signed out, redirect to auth
+          setSettingsOpen(false);
+          navigate({ to: "/" });
+          return;
         }
+
+        // No sign out needed, just update local data
+        setUserData(profile);
       } else {
         toast.error("Failed to apply invite code");
       }

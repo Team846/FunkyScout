@@ -120,10 +120,19 @@ export async function useInviteCode(code: string): Promise<boolean> {
       throw new Error("Must be logged in to apply invite code");
     }
 
-    const { error } = await supabase.functions.invoke("useInviteCode", {
+    const { data, error } = await supabase.functions.invoke("useInviteCode", {
       body: { userID: user.id, inviteCode: code },
     });
     if (error) throw new Error(error.message);
+
+    // Check if user needs to re-authenticate (role was changed)
+    if (data?.requiresReauth) {
+      // Sign out to force fresh JWT with new role
+      await supabase.auth.signOut();
+      clearLocalUserData();
+      // Don't call fetchUserProfile - user needs to sign back in
+      return true;
+    }
 
     await fetchUserProfile();
     return true;
