@@ -1,5 +1,5 @@
 import supabase from "../supabase/supabase";
-import { getEventSchedule, cacheEventMatchData } from "../db";
+import { cacheEventMatchData } from "../db";
 
 /**
  * Bootstrap event_match_data from event_schedule.

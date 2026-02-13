@@ -32,3 +32,15 @@ pub async fn get_config(state: State<'_, Mutex<crate::AppState>>) -> Result<AppC
     let app_state = state.lock().unwrap();
     Ok(app_state.app_store.get_config())
 }
+
+/// Set user JWT token for Supabase authentication
+#[tauri::command]
+pub async fn set_user_jwt(
+    state: State<'_, Mutex<crate::AppState>>,
+    jwt: String,
+) -> Result<(), String> {
+    let mut app_state = state.lock().unwrap();
+    app_state.user_jwt = Some(jwt);
+    println!("[Auth] User JWT token updated");
+    Ok(())
+}

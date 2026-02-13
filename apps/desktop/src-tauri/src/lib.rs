@@ -104,7 +104,10 @@ pub fn run() {
                     );
 
                     println!("[App] Starting background sync service with instant trigger...");
-                    sync_service.start_background_sync(sync_rx).await;
+                    // Spawn sync service in background (don't await - it's an infinite loop!)
+                    tauri::async_runtime::spawn(async move {
+                        sync_service.start_background_sync(sync_rx).await;
+                    });
                 } else {
                     println!("[App] Sync service not started - configure API keys");
                     println!("[App] Checked: Store and .env file");
@@ -121,6 +124,7 @@ pub fn run() {
             commands::tba::fetch_tba_match_schedule,
             commands::config::save_config,
             commands::config::get_config,
+            commands::config::set_user_jwt,
             commands::db::get_teams,
             commands::db::get_schedule,
             commands::db::get_picklists,
@@ -145,6 +149,7 @@ pub struct AppState {
     pub tba_service: TbaService,
     pub supabase_service: SupabaseService,
     pub sync_trigger: Option<tokio::sync::mpsc::Sender<()>>,
+    pub user_jwt: Option<String>, // User's JWT token for Supabase auth
 }
 
 impl AppState {
@@ -170,6 +175,7 @@ impl AppState {
             tba_service,
             supabase_service,
             sync_trigger: None, // Set later when channel is created
+            user_jwt: None, // Set when user logs in
         })
     }
 

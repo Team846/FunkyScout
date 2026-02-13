@@ -33,6 +33,22 @@ import {
 import { addToImageQueue } from "@lib/storage/imageQueue";
 import { compressImage } from "@lib/utils/imageCompression";
 import { isTauri } from "@lib/utils/platform";
+import supabase from "@lib/supabase/supabase";
+
+/**
+ * Get user's JWT token for desktop sync operations
+ * Returns null if not authenticated or on mobile
+ */
+async function getUserJWT(): Promise<string | null> {
+  if (!isTauri()) return null;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Global sync trigger - set by SyncContext
@@ -287,6 +303,9 @@ export async function createPicklist(
       await invoke("cache_picklists", { picklists: [picklist] });
       await invoke("cache_picklist_entries", { entries: picklistEntries });
 
+      // Get user JWT for proper authentication
+      const user_jwt = await getUserJWT();
+
       // Queue for Rust background sync
       await invoke("add_to_sync_queue", {
         operation: "CREATE_PICKLIST",
@@ -296,6 +315,7 @@ export async function createPicklist(
           title,
           entries,
           uid,
+          user_jwt,
           uname,
           type,
           timestamp: now,
@@ -344,9 +364,13 @@ export async function createPicklist(
 
   await cacheEventPicklistEntries(picklistEntries);
 
+  // Get user JWT for proper authentication
+  const user_jwt = await getUserJWT();
+
   await addToSyncQueue("CREATE_PICKLIST", {
     id,
     event: eventKey,
+    user_jwt,
     title,
     entries,
     uid,

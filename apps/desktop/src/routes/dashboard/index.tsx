@@ -57,7 +57,7 @@ interface EventListEntry {
 
 function DashboardPage() {
   const { currentEvent, setCurrentEvent } = useDesktopEvent();
-  const { registerRefreshCallback, isConnected } = useDesktopRealtime();
+  const { isConnected } = useDesktopRealtime();
   const { teams } = useDesktopTeamData();
   const { schedule, picklists, picklistEntries } = useDesktopCompetitionData();
 

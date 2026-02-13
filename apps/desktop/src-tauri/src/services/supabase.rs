@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 pub struct SupabaseService {
     client: Postgrest,
     api_key: String,
+    base_url: String, // Store base URL for creating new clients
 }
 
 impl SupabaseService {
@@ -19,18 +20,29 @@ impl SupabaseService {
     pub fn new(url: String, api_key: String) -> Self {
         // Ensure URL has /rest/v1 suffix for Postgrest
         let rest_url = if url.ends_with("/rest/v1") {
-            url
+            url.clone()
         } else if url.ends_with('/') {
             format!("{}rest/v1", url)
         } else {
             format!("{}/rest/v1", url)
         };
 
-        let client = Postgrest::new(rest_url)
+        let client = Postgrest::new(&rest_url)
             .insert_header("apikey", &api_key)
             .insert_header("Authorization", format!("Bearer {}", api_key));
 
-        Self { client, api_key }
+        Self {
+            client,
+            api_key: api_key.clone(),
+            base_url: rest_url,
+        }
+    }
+
+    /// Create a client with user JWT for user-specific operations
+    fn client_with_jwt(&self, jwt: &str) -> Postgrest {
+        Postgrest::new(&self.base_url)
+            .insert_header("apikey", &self.api_key)
+            .insert_header("Authorization", format!("Bearer {}", jwt))
     }
 
     /// Convert SQLite timestamp (ms since epoch) to PostgreSQL timestamp string
@@ -179,6 +191,7 @@ impl SupabaseService {
         uid: &str,
         picklist_type: &str,
         timestamp_ms: i64,
+        user_jwt: Option<&str>,
     ) -> Result<()> {
         let payload = json!({
             "id": id,
@@ -192,7 +205,14 @@ impl SupabaseService {
             "last_modified": Self::now_iso(),
         });
 
-        self.client
+        // Use user JWT if provided, otherwise use service key
+        let client = if let Some(jwt) = user_jwt {
+            self.client_with_jwt(jwt)
+        } else {
+            self.client.clone()
+        };
+
+        client
             .from("event_picklist")
             .upsert(&payload.to_string())
             .execute()
@@ -426,6 +446,7 @@ impl SupabaseService {
     // ============================================================================
 
     /// Create picklist (from sync queue)
+    /// Uses user JWT if provided, otherwise falls back to service key
     pub async fn create_picklist(
         &self,
         id: &str,
@@ -435,8 +456,9 @@ impl SupabaseService {
         uname: &str,
         picklist_type: &str,
         timestamp: i64,
+        user_jwt: Option<&str>,
     ) -> Result<()> {
-        self.upsert_picklist(id, event, title, uname, uid, picklist_type, timestamp).await
+        self.upsert_picklist(id, event, title, uname, uid, picklist_type, timestamp, user_jwt).await
     }
 
     /// Update picklist (from sync queue)

@@ -35,16 +35,16 @@ impl SyncService {
         }
     }
 
-    /// Start background sync loop (30s interval + instant trigger)
-    /// Syncs every 30s OR immediately when triggered
+    /// Start background sync loop (60s interval + instant trigger)
+    /// Syncs every 60s OR immediately when triggered
     pub async fn start_background_sync(self, mut trigger_rx: tokio::sync::mpsc::Receiver<()>) {
-        let mut ticker = interval(Duration::from_secs(30));
+        let mut ticker = interval(Duration::from_secs(60));
 
         loop {
             tokio::select! {
-                // Periodic sync every 30s
+                // Periodic sync every 60s
                 _ = ticker.tick() => {
-                    println!("[Sync] Periodic sync (30s interval)");
+                    println!("[Sync] Periodic sync (60s interval)");
                     if let Err(e) = self.sync_once().await {
                         eprintln!("[Sync] Error during periodic sync: {}", e);
                     }
@@ -70,27 +70,54 @@ impl SyncService {
             // Don't return early - continue with TBA sync
         }
 
-        // 1. Fetch team statuses from TBA (rankings only, 1 API call)
-        let statuses = match self.tba.fetch_team_statuses(&self.current_event).await {
+        // 1. Fetch ALL teams from TBA (not just statuses - we need all teams for EPA/OPR sync)
+        let teams = match self.tba.fetch_event_teams(&self.current_event).await {
             Ok(data) => {
-                println!("[Sync] TBA team statuses fetched: {} teams", data.len());
+                println!("[Sync] TBA event teams fetched: {} teams", data.len());
                 data
             },
             Err(e) => {
-                eprintln!("[Sync] TBA team statuses fetch failed: {}", e);
+                eprintln!("[Sync] TBA event teams fetch failed: {}", e);
                 // Return early - can't proceed without team list
                 return Ok(());
             }
         };
 
-        // 2. Fetch EPA from Statbotics (graceful fallback on error)
-        let epa_data = match self.statbotics.fetch_event_team_years(&self.current_event).await {
-            Ok(data) => data,
-            Err(e) => {
-                eprintln!("[Sync] EPA fetch failed: {}", e);
-                vec![]
+        // 2. Fetch EPA from Statbotics for each team individually
+        // Extract year from event code (e.g., "2025flor" -> "2025")
+        let event_year = self.current_event.chars().take(4).collect::<String>();
+
+        println!("[Sync] Fetching EPA for {} teams (this will make {} API calls)...", teams.len(), teams.len());
+
+        // Fetch EPA for each team concurrently using tokio tasks
+        let mut epa_handles = Vec::new();
+        for team in &teams {
+            let statbotics = self.statbotics.clone();
+            let year = event_year.clone();
+            let team_num = team.team;
+
+            let handle = tokio::spawn(async move {
+                match statbotics.fetch_team_year(team_num, &year).await {
+                    Ok(Some(data)) => Some((team_num, data)),
+                    Ok(None) => None, // No data for this team/year
+                    Err(e) => {
+                        eprintln!("[Sync] EPA fetch failed for team {}: {}", team_num, e);
+                        None
+                    }
+                }
+            });
+            epa_handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        let mut epa_data = Vec::new();
+        for handle in epa_handles {
+            if let Ok(Some(result)) = handle.await {
+                epa_data.push(result);
             }
-        };
+        }
+
+        println!("[Sync] Successfully fetched EPA for {} teams", epa_data.len());
 
         // 3. Fetch OPR/DPR from TBA (graceful fallback on error)
         let oprs = match self.tba.fetch_oprs(&self.current_event).await {
@@ -108,61 +135,34 @@ impl SyncService {
         // 4. Build EPA lookup map (team_key -> EPA data)
         let epa_map: HashMap<String, &serde_json::Value> = epa_data
             .iter()
-            .filter_map(|team_year| {
-                let team_num = team_year.get("team")?.as_i64()?;
-                Some((format!("frc{}", team_num), team_year))
+            .map(|(team_num, data)| {
+                let team_key = format!("frc{}", team_num);
+                (team_key, data)
             })
             .collect();
 
-        println!("[Sync] EPA map built with {} teams", epa_map.len());
+        println!("[Sync] EPA map built with {} teams (out of {} total teams)", epa_map.len(), teams.len());
 
-        // 5. Transform TBA statuses + EPA + OPR to comprehensive Supabase format
-        // Include ALL teams, even those without match data yet
-        let team_data_records: Vec<serde_json::Value> = statuses
+        // Log teams missing EPA data
+        if epa_map.len() < teams.len() {
+            let missing_count = teams.len() - epa_map.len();
+            println!("[Sync] {} teams missing EPA data (no 2025 data available yet)", missing_count);
+        }
+
+        // 5. Transform TBA teams + EPA + OPR to comprehensive Supabase format
+        // Include ALL teams at the event (not just teams with status)
+        let team_data_records: Vec<serde_json::Value> = teams
             .into_iter()
-            .map(|(team_key, status)| {
-                // Extract rank and record (optional - teams without matches will have 0/null)
-                let rank = status
-                    .get("qual")
-                    .and_then(|q| q.get("ranking"))
-                    .and_then(|r| r.get("rank"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
+            .map(|team| {
+                let team_key = team.key.clone();
 
-                let wins = status
-                    .get("qual")
-                    .and_then(|q| q.get("ranking"))
-                    .and_then(|r| r.get("record"))
-                    .and_then(|rec| rec.get("wins"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-
-                let losses = status
-                    .get("qual")
-                    .and_then(|q| q.get("ranking"))
-                    .and_then(|r| r.get("record"))
-                    .and_then(|rec| rec.get("losses"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-
-                let ties = status
-                    .get("qual")
-                    .and_then(|q| q.get("ranking"))
-                    .and_then(|r| r.get("record"))
-                    .and_then(|rec| rec.get("ties"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-
-                // Extract next/last match
-                let next_match = status
-                    .get("next_match_key")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                let last_match = status
-                    .get("last_match_key")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                // Use TeamRank fields directly (already parsed from TBA)
+                let rank = team.rank as i64;
+                let wins = team.record.wins as i64;
+                let losses = team.record.losses as i64;
+                let ties = team.record.ties as i64;
+                let next_match = team.next_match;
+                let last_match = team.last_match;
 
                 // Build EPA object from Statbotics (if available)
                 let epa_json = if let Some(epa) = epa_map.get(&team_key) {
@@ -189,11 +189,10 @@ impl SyncService {
                     json!(null)
                 };
 
-                // Extract OPR/DPR (OPR uses team number without "frc" prefix)
-                let team_num = team_key.strip_prefix("frc").unwrap_or(&team_key);
-                let opr = oprs.get("oprs").and_then(|o| o.get(team_num)).and_then(|v| v.as_f64());
-                let dpr = oprs.get("dprs").and_then(|d| d.get(team_num)).and_then(|v| v.as_f64());
-                let ccwm = oprs.get("ccwms").and_then(|c| c.get(team_num)).and_then(|v| v.as_f64());
+                // Extract OPR/DPR (OPR keys are in "frc10017" format, not "10017")
+                let opr = oprs.get("oprs").and_then(|o| o.get(team_key.as_str())).and_then(|v| v.as_f64());
+                let dpr = oprs.get("dprs").and_then(|d| d.get(team_key.as_str())).and_then(|v| v.as_f64());
+                let ccwm = oprs.get("ccwms").and_then(|c| c.get(team_key.as_str())).and_then(|v| v.as_f64());
 
                 // Build comprehensive data JSON with ranking + EPA + OPR
                 let data = json!({
@@ -237,10 +236,16 @@ impl SyncService {
                 .context("Failed to cache team data to SQLite")?;
 
             // Then push to Supabase with merge logic
-            self.supabase
-                .bulk_upsert_team_data(&self.current_event, team_data_records)
+            match self.supabase
+                .bulk_upsert_team_data(&self.current_event, team_data_records.clone())
                 .await
-                .context("Failed to push team data to Supabase")?;
+            {
+                Ok(_) => println!("[Sync] ✓ Successfully pushed team data to Supabase"),
+                Err(e) => {
+                    eprintln!("[Sync] ✗ Failed to push team data to Supabase: {}", e);
+                    return Err(e).context("Failed to push team data to Supabase");
+                }
+            }
         }
 
         // 6. Fetch match schedule from TBA and push
@@ -563,11 +568,12 @@ impl SyncService {
             .ok_or_else(|| anyhow::anyhow!("Missing uname"))?;
         let type_str = payload.get("type").and_then(|v| v.as_str()).unwrap_or("public");
         let timestamp = payload.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
+        let user_jwt = payload.get("user_jwt").and_then(|v| v.as_str());
         let entries = payload.get("entries").and_then(|v| v.as_array())
             .ok_or_else(|| anyhow::anyhow!("Missing entries"))?;
 
-        // Create picklist header
-        self.supabase.create_picklist(id, event, title, uid, uname, type_str, timestamp).await?;
+        // Create picklist header (use user JWT for proper attribution)
+        self.supabase.create_picklist(id, event, title, uid, uname, type_str, timestamp, user_jwt).await?;
 
         // Create picklist entries
         let entry_records: Vec<serde_json::Value> = entries.iter().map(|e| {

@@ -81,45 +81,70 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
 
   if (matchData.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
-        <div className="rounded-full bg-muted p-6">
-          <svg
-            className="w-12 h-12 text-muted-foreground"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-        </div>
-        <div className="text-center space-y-2">
-          <h3 className="text-xl font-bold text-primary">No Match Data</h3>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            This team hasn't been match scouted yet.
-          </p>
-          {nextMatch ? (
-            <div className="mt-4 p-4 rounded-xl bg-muted">
-              <p className="text-sm font-semibold text-foreground mb-1">
-                Next Qual Match
-              </p>
-              <p className="text-lg font-bold text-primary">
-                {getMatchLabel(nextMatch.match)}
-              </p>
-              {nextMatch.time && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {new Date(nextMatch.time * 1000).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+      <div className="flex flex-1 flex-col gap-6 px-6 py-4">
+        {/* OPR/EPA Stats - Same as scouted view */}
+        {teamStats && (teamStats.opr !== null && teamStats.opr !== undefined || teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined) && (
+          <div className="grid grid-cols-2 gap-3">
+            {teamStats.opr !== null && teamStats.opr !== undefined && (
+              <div className="rounded-xl bg-muted p-4">
+                <p className="text-xs text-muted-foreground mb-1">OPR</p>
+                <p className="text-xl font-bold text-primary">
+                  {teamStats.opr.toFixed(1)}
                 </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground mt-2">
-              No upcoming qual matches
+              </div>
+            )}
+            {teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined && (
+              <div className="rounded-xl bg-muted p-4">
+                <p className="text-xs text-muted-foreground mb-1">EPA</p>
+                <p className="text-xl font-bold text-primary">
+                  {teamStats.epa.total_points.mean.toFixed(1)}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* No Match Data Message */}
+        <div className="flex flex-1 flex-col items-center justify-center gap-6">
+          <div className="rounded-full bg-muted p-6">
+            <svg
+              className="w-12 h-12 text-muted-foreground"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-bold text-primary">No Match Data</h3>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              This team hasn't been match scouted yet.
             </p>
-          )}
+            {nextMatch ? (
+              <div className="mt-4 p-4 rounded-xl bg-muted">
+                <p className="text-sm font-semibold text-foreground mb-1">
+                  Next Qual Match
+                </p>
+                <p className="text-lg font-bold text-primary">
+                  {getMatchLabel(nextMatch.match)}
+                </p>
+                {nextMatch.time && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {new Date(nextMatch.time * 1000).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground mt-2">
+                No upcoming qual matches
+              </p>
+            )}
+          </div>
         </div>
       </div>
     );

@@ -343,7 +343,7 @@ export class SyncManager {
    * Sync match data (match scouting) to Supabase
    */
   private async syncMatchData(payload: PutMatchDataPayload): Promise<void> {
-    const { event, match, team, alliance, dataRaw, data, name, uid, timestamp } =
+    const { event, match, team, alliance, dataRaw, name, uid, timestamp } =
       payload;
 
     const { error } = await this.supabaseClient
