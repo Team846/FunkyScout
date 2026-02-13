@@ -41,3 +41,5 @@ to fetch the appimagetool runtime file, and you can confirm this with the
 If this fails, download a
 [runtime file](https://github.com/AppImage/type2-runtime/releases), and pass in
 its path to the `LDAI_RUNTIME_FILE` environment variable.
+
+to filter: 2>&1 | grep -vE '(sqlx|sea_orm)'

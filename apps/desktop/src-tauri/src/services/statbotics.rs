@@ -61,48 +61,64 @@ impl StatboticsService {
         Ok(Some(data))
     }
 
-    /// Fetch EPA data for teams at an event for a specific year (DEPRECATED - use fetch_team_year for each team)
-    /// GET /team_years?event={event}&year={year}&limit=1000
+    /// Fetch EPA data for teams at an event for a specific year
+    /// GET /team_years?year={year}&limit=1000&offset={offset}
     /// Returns EPA breakdown: total_points, auto, teleop, endgame, norm
-    /// Combines event and year filters to get current season data for teams at this event
+    /// Note: Statbotics limits to 1000 results per call - uses pagination to fetch more
+    /// Note: Event parameter is unreliable (only returns teams that played AT the event)
+    /// Instead, fetch all year data and filter by event team list in caller
     pub async fn fetch_event_team_years(&self, event: &str, year: &str) -> Result<Vec<Value>> {
-        let call_num = API_CALL_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-        let url = format!("{}/team_years?event={}&year={}&limit=1000", self.base_url, event, year);
+        let mut all_data = Vec::new();
+        let mut offset = 0;
+        let limit = 1000;
+        let max_pages = 5; // Fetch up to 5000 teams (3690 teams total as of 2025, with buffer)
 
-        println!("[Statbotics] ⚡ API Call #{}: Fetching team EPAs for event {} year {}", call_num, event, year);
+        for page in 0..max_pages {
+            let call_num = API_CALL_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+            let url = format!("{}/team_years?year={}&limit={}&offset={}",
+                self.base_url, year, limit, offset);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to fetch team years from Statbotics")?;
+            println!("[Statbotics] ⚡ API Call #{}: Fetching {} team EPAs (offset={}, page {}/{})",
+                call_num, year, offset, page + 1, max_pages);
 
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "Statbotics API error: {} - {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            );
+            let response = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .context("Failed to fetch team years from Statbotics")?;
+
+            if !response.status().is_success() {
+                anyhow::bail!(
+                    "Statbotics API error: {} - {}",
+                    response.status(),
+                    response.text().await.unwrap_or_default()
+                );
+            }
+
+            let data: Vec<Value> = response
+                .json()
+                .await
+                .context("Failed to parse Statbotics team_years response")?;
+
+            let fetched_count = data.len();
+            all_data.extend(data);
+
+            println!("[Statbotics] Fetched {} teams from page {} (total: {})",
+                fetched_count, page + 1, all_data.len());
+
+            // If we got less than the limit, we've reached the end
+            if fetched_count < limit {
+                println!("[Statbotics] Reached end of results at page {}", page + 1);
+                break;
+            }
+
+            offset += limit;
         }
 
-        let data: Vec<Value> = response
-            .json()
-            .await
-            .context("Failed to parse Statbotics team_years response")?;
+        println!("[Statbotics] Total: {} team EPAs for year {}", all_data.len(), year);
 
-        println!("[Statbotics] ⚡ API Call: Fetched {} team EPAs for event {} year {}", data.len(), event, year);
-
-        // Debug: Log sample team numbers to verify we're getting the right teams
-        if !data.is_empty() {
-            let sample_teams: Vec<i64> = data.iter()
-                .take(5)
-                .filter_map(|t| t.get("team").and_then(|n| n.as_i64()))
-                .collect();
-            println!("[Statbotics] Sample team numbers from API: {:?}", sample_teams);
-        }
-
-        Ok(data)
+        Ok(all_data)
     }
 
     /// Fetch match predictions for an event

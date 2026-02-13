@@ -83,41 +83,110 @@ impl SyncService {
             }
         };
 
-        // 2. Fetch EPA from Statbotics for each team individually
+        // 2. Fetch EPA from Statbotics - Try batch endpoint first, fallback to individual calls
         // Extract year from event code (e.g., "2025flor" -> "2025")
         let event_year = self.current_event.chars().take(4).collect::<String>();
 
-        println!("[Sync] Fetching EPA for {} teams (this will make {} API calls)...", teams.len(), teams.len());
+        println!("[Sync] Fetching EPA for {} teams at event {}...", teams.len(), self.current_event);
+        println!("[Sync] Attempting batch EPA fetch (1 API call)...");
 
-        // Fetch EPA for each team concurrently using tokio tasks
-        let mut epa_handles = Vec::new();
-        for team in &teams {
-            let statbotics = self.statbotics.clone();
-            let year = event_year.clone();
-            let team_num = team.team;
+        // Build set of team numbers at this event for filtering
+        let event_team_nums: std::collections::HashSet<i32> = teams.iter()
+            .map(|t| t.team)
+            .collect();
 
-            let handle = tokio::spawn(async move {
-                match statbotics.fetch_team_year(team_num, &year).await {
-                    Ok(Some(data)) => Some((team_num, data)),
-                    Ok(None) => None, // No data for this team/year
-                    Err(e) => {
-                        eprintln!("[Sync] EPA fetch failed for team {}: {}", team_num, e);
-                        None
+        // Try batch endpoint first
+        let mut epa_data = Vec::new();
+        match self.statbotics.fetch_event_team_years(&self.current_event, &event_year).await {
+            Ok(team_years) => {
+                println!("[Sync] ✓ Fetched {} total team EPAs for year {}", team_years.len(), event_year);
+
+                // Filter to only teams at THIS event, then convert to (team_num, data) pairs
+                epa_data = team_years
+                    .into_iter()
+                    .filter_map(|data| {
+                        let team_num = data.get("team").and_then(|t| t.as_i64()).map(|t| t as i32)?;
+                        // Only include if team is at this event
+                        if event_team_nums.contains(&team_num) {
+                            Some((team_num, data))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                println!("[Sync] ✓ Matched {}/{} event teams with EPA data", epa_data.len(), teams.len());
+
+                // Check if we got all teams
+                if epa_data.len() < teams.len() {
+                    // Some teams at this event don't have year data yet - check individually
+                    let fetched_teams: std::collections::HashSet<i32> = epa_data.iter().map(|(t, _)| *t).collect();
+                    let missing_teams: Vec<i32> = teams.iter()
+                        .map(|t| t.team)
+                        .filter(|t| !fetched_teams.contains(t))
+                        .collect();
+
+                    println!("[Sync] Checking {} teams individually (not in year data)...", missing_teams.len());
+                    let mut found_count = 0;
+                    let mut not_found_count = 0;
+
+                    for team_num in missing_teams {
+                        match self.statbotics.fetch_team_year(team_num, &event_year).await {
+                            Ok(Some(data)) => {
+                                found_count += 1;
+                                println!("[Sync] ✓ Team {} has EPA data (individual fetch)", team_num);
+                                epa_data.push((team_num, data));
+                            },
+                            Ok(None) => {
+                                not_found_count += 1;
+                                println!("[Sync] ✗ Team {} has no {} EPA data", team_num, event_year);
+                            },
+                            Err(e) => {
+                                not_found_count += 1;
+                                eprintln!("[Sync] ✗ Team {} fetch failed: {}", team_num, e);
+                            }
+                        }
+                    }
+                    println!("[Sync] Individual fetch results: {} found, {} not found", found_count, not_found_count);
+                    println!("[Sync] ✓ After fallback: {} team EPAs total", epa_data.len());
+                }
+            },
+            Err(e) => {
+                eprintln!("[Sync] ✗ Batch EPA fetch failed: {}", e);
+                eprintln!("[Sync] Falling back to individual fetches for all {} teams...", teams.len());
+
+                // Fallback: Fetch all teams individually
+                let mut epa_handles = Vec::new();
+                for team in &teams {
+                    let statbotics = self.statbotics.clone();
+                    let year = event_year.clone();
+                    let team_num = team.team;
+
+                    let handle = tokio::spawn(async move {
+                        match statbotics.fetch_team_year(team_num, &year).await {
+                            Ok(Some(data)) => Some((team_num, data)),
+                            Ok(None) => None,
+                            Err(e) => {
+                                eprintln!("[Sync] EPA fetch failed for team {}: {}", team_num, e);
+                                None
+                            }
+                        }
+                    });
+                    epa_handles.push(handle);
+                }
+
+                // Wait for all tasks to complete
+                for handle in epa_handles {
+                    if let Ok(Some(result)) = handle.await {
+                        epa_data.push(result);
                     }
                 }
-            });
-            epa_handles.push(handle);
-        }
 
-        // Wait for all tasks to complete
-        let mut epa_data = Vec::new();
-        for handle in epa_handles {
-            if let Ok(Some(result)) = handle.await {
-                epa_data.push(result);
+                println!("[Sync] ✓ Individual fetches complete: {} team EPAs", epa_data.len());
             }
         }
 
-        println!("[Sync] Successfully fetched EPA for {} teams", epa_data.len());
+        println!("[Sync] Final EPA data: {}/{} teams", epa_data.len(), teams.len());
 
         // 3. Fetch OPR/DPR from TBA (graceful fallback on error)
         let oprs = match self.tba.fetch_oprs(&self.current_event).await {
