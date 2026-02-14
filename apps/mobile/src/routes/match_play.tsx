@@ -419,9 +419,9 @@ function MatchPlay() {
     setShake(true);
     await vibrateShake();
 
-    setTimeout(() => setCountdown(2), 1000);
-    setTimeout(() => setCountdown(1), 2000);
-    setTimeout(async () => {
+    window.setTimeout(() => setCountdown(2), 1000);
+    window.setTimeout(() => setCountdown(1), 2000);
+    window.setTimeout(async () => {
       setCountdown(null);
       setShake(false);
       await vibrateBuzz();
@@ -442,7 +442,7 @@ function MatchPlay() {
       setSeconds(0);
       setIsAuto(false);
       // Restart teleop timer
-      timer2Ref.current = setTimeout(() => {
+      timer2Ref.current = window.setTimeout(() => {
         // Store matchData in sessionStorage to pass to match_end
         sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
         sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
@@ -453,7 +453,7 @@ function MatchPlay() {
       }, 140 * 1000);
 
       // Set up teleop countdown
-      countdownTeleopRef.current = setTimeout(() => {
+      countdownTeleopRef.current = window.setTimeout(() => {
         console.log(
           "🔔 Triggering TELEOP countdown at 137 seconds (after fast-forward)"
         );

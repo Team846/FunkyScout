@@ -202,9 +202,14 @@ function MatchEditStats() {
     phase: "auto" | "teleop"
   ) => {
     if (!matchData) return;
-    const index = matchData.presetActions.findLastIndex(
-      (a) => a.type === fuelType && a.phase === phase
-    );
+    // Find last index manually (findLastIndex requires ES2023)
+    let index = -1;
+    for (let i = matchData.presetActions.length - 1; i >= 0; i--) {
+      if (matchData.presetActions[i].type === fuelType && matchData.presetActions[i].phase === phase) {
+        index = i;
+        break;
+      }
+    }
     if (index !== -1) {
       const newActions = [...matchData.presetActions];
       newActions.splice(index, 1);
@@ -237,9 +242,14 @@ function MatchEditStats() {
     phase: "auto" | "teleop"
   ) => {
     if (!matchData) return;
-    const index = matchData.locationActions.findLastIndex(
-      (a) => a.type === actionType && a.phase === phase
-    );
+    // Find last index manually (findLastIndex requires ES2023)
+    let index = -1;
+    for (let i = matchData.locationActions.length - 1; i >= 0; i--) {
+      if (matchData.locationActions[i].type === actionType && matchData.locationActions[i].phase === phase) {
+        index = i;
+        break;
+      }
+    }
     if (index !== -1) {
       const newActions = [...matchData.locationActions];
       newActions.splice(index, 1);
