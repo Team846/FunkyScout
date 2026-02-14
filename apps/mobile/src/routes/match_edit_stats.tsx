@@ -119,6 +119,13 @@ function MatchEditStats() {
       return;
     }
 
+    // Validate alliance is not null
+    if (!alliance || (alliance !== "red" && alliance !== "blue")) {
+      toast.error("Alliance information is missing. Please restart from the match selection screen.");
+      console.error("[MatchEditStats] Alliance is invalid:", alliance);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -139,7 +146,7 @@ function MatchEditStats() {
       // Transform to database format
       const transformedData = transformMatchData(completeMatchData, 2025);
 
-      // Upload via offline-first pattern
+      // Upload via offline-first pattern (alliance is validated above)
       await putMatchData(
         currentEvent,
         matchNum,
