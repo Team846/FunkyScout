@@ -14,6 +14,7 @@ import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import { MatchScoutingTab } from "../components/MatchScoutingTab";
 import type { DrawingData } from "../components/auto-path-drawer/types";
+import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
 
 type TeamInfoSearch = {
   teamKey?: string;
@@ -84,6 +85,10 @@ function TeamInfoPage() {
   const [autoNameValue, setAutoNameValue] = useState("");
   const [autoDescriptionValue, setAutoDescriptionValue] = useState("");
   const [autoClimbValue, setAutoClimbValue] = useState(false);
+  const [zoomImagePath, setZoomImagePath] = useState<string | null>(null);
+  const [mouseX, setMouseX] = useState<number>(50);
+  const [mouseY, setMouseY] = useState<number>(50);
+  const [isZoomed, setIsZoomed] = useState(false);
 
   useEffect(() => {
     if (!currentEvent || !teamKey) {
@@ -409,6 +414,37 @@ function TeamInfoPage() {
                   {pitData.teamName}
                 </p>
               </div>
+              {/* Image zoom */}
+              <Dialog open={zoomImagePath != null}
+              onOpenChange={() => (setZoomImagePath(null))}
+              >
+                <DialogContent
+                className="fixed w-full h-[40vh]"
+                
+                >
+                  <div className="flex w-full h-full p-2.5 overflow-hidden">
+                  {zoomImagePath &&
+                    <img
+                    src={zoomImagePath}
+                    className="w-full h-full object-cover transition-transform duration-300 ease-out hover:scale-150"
+                    crossOrigin="anonymous"
+                    style={{ transformOrigin: `${mouseX ?? 50}% ${mouseY ?? 50}%`, transform: `scale(${isZoomed ? 1.5 : 1})` }}
+                    onPointerMove={
+                      (event) => {
+                        const { left, top, width, height } = event.currentTarget.getBoundingClientRect();
+                        setMouseX(((event.clientX - left) / width) * 150);
+                        setMouseY(((event.clientY - top) / height) * 150)
+                      }
+                    }
+                    onPointerEnter={() => setIsZoomed(true)}
+                    onPointerLeave={() => setIsZoomed(false)}
+                    >
+                    </img>
+                  }
+                  </div>
+                </DialogContent>
+              </Dialog>
+
               {/* Images Section */}
               {pitData.images &&
                 pitData.images.files &&
@@ -427,6 +463,7 @@ function TeamInfoPage() {
                           >
                             <img
                               src={getImageUrl(img.path)}
+                              onClick={() => {setZoomImagePath(getImageUrl(img.path))}}
                               alt={`Team ${teamNum} - ${idx + 1}`}
                               className="w-full h-full object-cover"
                               crossOrigin="anonymous"
