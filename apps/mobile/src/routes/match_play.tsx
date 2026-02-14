@@ -685,7 +685,7 @@ function MatchPlay() {
           </div>
         </div>
 
-        <div className="w-[45vw] h-full flex items-center justify-center">
+        <div className="w-[60vw] h-full flex items-center justify-center">
           <div
             ref={fieldContainerRef}
             onClick={handleFieldClick}
@@ -742,34 +742,35 @@ function MatchPlay() {
             </div>
           </div>
         </div>
-
-        <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
-          {/* Preset action buttons (fixed location) */}
-          <div className="flex gap-2.5 w-full h-full">
+        
+        {/* Preset action buttons (fixed location), 40% */}
+        <div className="flex justify-center items-center w-[30vw] h-full gap-0 p-2.5 rounded-[15px] bg-black-950">
+          {/*side bar, 5% */}
+          <div className="flex flex-col justify-center-items-center w-[7.5vw] h-full gap-2.5 p-2.5">
             <div
               onClick={() => addPresetAction("station_intake")}
-              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
             >
-              <p className="text-xs text-outfit text-muted-foreground">Station</p>
+              <p className="rotate-270 text-xs text-outfit text-muted-foreground">Station</p>
             </div>
 
             <div
               onClick={() => addPresetAction("stocking")}
-              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
             >
-              <p className="text-xs text-outfit text-muted-foreground">Stocking</p>
+              <p className="rotate-270 text-xs text-outfit text-muted-foreground">Stocking</p>
             </div>
 
             <div
               onClick={() => toggleAction("disable")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
                 activeToggles.disable
                   ? "border-2 border-[#BF4141]"
                   : "border-2 border-[#1E1E1E]"
               }`}
             >
               <p
-                className={`text-xs text-outfit ${activeToggles.disable ? "text-[#BF4141]" : "text-muted-foreground"}`}
+                className={`rotate-270 text-xs text-outfit ${activeToggles.disable ? "text-[#BF4141]" : "text-muted-foreground"}`}
               >
                 disabled
               </p>
@@ -778,14 +779,14 @@ function MatchPlay() {
             {!isAuto && (
               <div
                 onClick={() => toggleAction("defend")}
-                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
                   activeToggles.defend
                     ? "border-2 border-[#CDA745]"
                     : "border-2 border-[#1E1E1E]"
                 }`}
               >
                 <p
-                  className={`text-xs text-outfit ${activeToggles.defend ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                  className={`rotate-270 text-xs text-outfit ${activeToggles.defend ? "text-[#CDA745]" : "text-muted-foreground"}`}
                 >
                   defend
                 </p>
@@ -793,6 +794,10 @@ function MatchPlay() {
             )}
           
           </div>
+          <div className="flex flex-col justify-center items-center w-[22.5vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
+          
+
+          
 
           {/* Location action buttons (user selects position on field) */}
           <div className="flex gap-2.5 w-full h-full">
@@ -856,6 +861,7 @@ function MatchPlay() {
                   ? "border-2 border-[#4ADE80]"
                   : "border-2 border-[#1E1E1E]"
               }`}
+              
             >
               <p
                 className={`text-xs text-outfit ${activeToggles.climb_L1 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
@@ -918,12 +924,14 @@ function MatchPlay() {
           </div>
         </div>
 
-        <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+        
+      </div>
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
           {countdown !== null ? (
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-6xl font-bold text-[#4ADE80] animate-pulse">
-                {countdown}
-              </p>
+              <p className="text-6xl font-bold text-[#4ADE80] animate-pulse font-mono w-[60px] text-center">
+        {countdown}
+      </p>
             </div>
           ) : (
             <>
@@ -961,7 +969,8 @@ function MatchPlay() {
             <p className="text-sm font-medium">{toastMessage}</p>
           </div>
         )}
-      </div>
+    </div>
+        
     </>
   );
 }
