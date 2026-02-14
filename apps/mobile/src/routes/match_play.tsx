@@ -759,6 +759,39 @@ function MatchPlay() {
             >
               <p className="text-xs text-outfit text-muted-foreground">Stocking</p>
             </div>
+
+            <div
+              onClick={() => toggleAction("disable")}
+              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+                activeToggles.disable
+                  ? "border-2 border-[#BF4141]"
+                  : "border-2 border-[#1E1E1E]"
+              }`}
+            >
+              <p
+                className={`text-xs text-outfit ${activeToggles.disable ? "text-[#BF4141]" : "text-muted-foreground"}`}
+              >
+                disabled
+              </p>
+            </div>
+
+            {!isAuto && (
+              <div
+                onClick={() => toggleAction("defend")}
+                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                  activeToggles.defend
+                    ? "border-2 border-[#CDA745]"
+                    : "border-2 border-[#1E1E1E]"
+                }`}
+              >
+                <p
+                  className={`text-xs text-outfit ${activeToggles.defend ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                >
+                  defend
+                </p>
+              </div>
+            )}
+          
           </div>
 
           {/* Location action buttons (user selects position on field) */}
@@ -793,7 +826,11 @@ function MatchPlay() {
               </p>
             </div>
 
-            <div
+            
+          </div>
+
+          <div className="flex gap-2.5 w-full h-full">
+              <div
               onClick={() => startLocationAction("shoot")}
               className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
                 pendingLocationAction === "shoot"
@@ -809,40 +846,6 @@ function MatchPlay() {
             </div>
           </div>
 
-          {/* Disable and Defend toggles - defend only in teleop */}
-          <div className="flex gap-2.5  w-full h-full">
-            <div
-              onClick={() => toggleAction("disable")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
-                activeToggles.disable
-                  ? "border-2 border-[#BF4141]"
-                  : "border-2 border-[#1E1E1E]"
-              }`}
-            >
-              <p
-                className={`text-xs text-outfit ${activeToggles.disable ? "text-[#BF4141]" : "text-muted-foreground"}`}
-              >
-                disabled
-              </p>
-            </div>
-
-            {!isAuto && (
-              <div
-                onClick={() => toggleAction("defend")}
-                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                  activeToggles.defend
-                    ? "border-2 border-[#CDA745]"
-                    : "border-2 border-[#1E1E1E]"
-                }`}
-              >
-                <p
-                  className={`text-xs text-outfit ${activeToggles.defend ? "text-[#CDA745]" : "text-muted-foreground"}`}
-                >
-                  defend
-                </p>
-              </div>
-            )}
-          </div>
 
           {/* Climb toggles - L1 always available, L2/L3 teleop only, dismount auto & first 5s teleop */}
           <div className="flex gap-2.5 w-full h-full">
@@ -924,6 +927,9 @@ function MatchPlay() {
             </div>
           ) : (
             <>
+              <div className="w-[5vw]"> 
+
+              </div>
               <p className="text-xs text-[#CDA745]">
                 {Math.round(seconds) + "/"}
                 {isAuto ? "20" : "140"}
