@@ -66,6 +66,13 @@ export interface EventScheduleEntry {
   uid?: string;
   last_modified?: number;
   deleted_at?: number;
+  // TBA data (populated from schedule sync)
+  est_time?: number;
+  red_score?: number;
+  blue_score?: number;
+  red_win_prob?: number;
+  predicted_red_score?: number;
+  predicted_blue_score?: number;
 }
 
 export interface EventMatchData {

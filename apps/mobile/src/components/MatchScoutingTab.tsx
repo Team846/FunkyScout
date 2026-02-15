@@ -202,9 +202,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           <SelectTrigger className="w-full h-12 bg-muted border-0">
             <SelectValue placeholder="Select a match" />
           </SelectTrigger>
-          <SelectContent className="bg-muted p-2.5">
+          <SelectContent className="bg-muted text-foreground p-2.5">
             {uniqueMatches.map((match) => (
-              <SelectItem key={match} className="bg-input focus:bg-input"  value={match}>
+              <SelectItem key={match} className="h-10 bg-accent focus:text-primary focus:bg-input"  value={match}>
                 {getMatchLabel(match)}
               </SelectItem>
             ))}

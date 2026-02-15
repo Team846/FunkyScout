@@ -148,6 +148,15 @@ export async function putMatchData(
     name?: string;
   },
 ): Promise<void> {
+  // Validate alliance is provided and valid
+  if (!alliance || (alliance !== "red" && alliance !== "blue")) {
+    throw new Error(
+      `Alliance is required for match data. Received: ${alliance}. ` +
+      `This likely means the team's alliance was not properly determined from the schedule. ` +
+      `Match: ${matchNumber}, Team: ${teamNumber}`
+    );
+  }
+
   const now = Date.now();
 
   // 1. Write to local SQLite

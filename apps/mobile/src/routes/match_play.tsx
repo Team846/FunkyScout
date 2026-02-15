@@ -42,7 +42,7 @@ export const Route = createFileRoute("/match_play")({
 });
 
 function MatchPlay() {
-  const { isWrongOrientation } = useOrientation('landscape');
+  const { isWrongOrientation } = useOrientation("landscape");
   const navigate = useNavigate();
   const handleBackClick = () => {
     // Clear in-progress data when leaving
@@ -95,7 +95,8 @@ function MatchPlay() {
   const [undoStack, setUndoStack] = useState<UndoableAction[]>([]);
 
   // Track which location action is being placed (user selects button, then clicks field)
-  const [pendingLocationAction, setPendingLocationAction] = useState<LocationActionType | null>(null);
+  const [pendingLocationAction, setPendingLocationAction] =
+    useState<LocationActionType | null>(null);
 
   // Field container ref for coordinate calculations
   const fieldContainerRef = useRef<HTMLDivElement>(null);
@@ -125,16 +126,16 @@ function MatchPlay() {
     if (prevIsAutoRef.current === true && isAuto === false) {
       // Check if climb_L1 is active from auto phase
       const hasAutoClimb = matchData.toggleActions.some(
-        a => a.type === 'climb_L1' && a.active && a.phase === 'auto'
+        (a) => a.type === "climb_L1" && a.active && a.phase === "auto"
       );
 
       if (hasAutoClimb) {
         // Deactivate the auto climb
         const deactivateAction: ToggleAction = {
-          type: 'climb_L1',
+          type: "climb_L1",
           timestamp: Date.now(),
           active: false,
-          phase: 'teleop',
+          phase: "teleop",
         };
 
         setMatchData((prev) => ({
@@ -179,7 +180,7 @@ function MatchPlay() {
       updates.toggleActions = [
         ...(matchDataRef.current.toggleActions || []),
         {
-          type: 'disable',
+          type: "disable",
           timestamp: Date.now(),
           active: false,
           phase,
@@ -213,9 +214,9 @@ function MatchPlay() {
     const newActions: ToggleAction[] = [];
 
     // Auto-cancel disabled if it's active and we're toggling a different action
-    if (activeToggles.disable && actionType !== 'disable') {
+    if (activeToggles.disable && actionType !== "disable") {
       newActions.push({
-        type: 'disable',
+        type: "disable",
         timestamp: Date.now(),
         active: false,
         phase,
@@ -223,10 +224,14 @@ function MatchPlay() {
     }
 
     // Handle climb exclusivity - only one climb level can be active at a time
-    if (actionType.startsWith('climb_') && !currentlyActive) {
+    if (actionType.startsWith("climb_") && !currentlyActive) {
       // Deactivate any other active climb levels
-      const climbTypes: ToggleActionType[] = ['climb_L1', 'climb_L2', 'climb_L3'];
-      climbTypes.forEach(climbType => {
+      const climbTypes: ToggleActionType[] = [
+        "climb_L1",
+        "climb_L2",
+        "climb_L3",
+      ];
+      climbTypes.forEach((climbType) => {
         if (climbType !== actionType && activeToggles[climbType]) {
           newActions.push({
             type: climbType,
@@ -258,27 +263,36 @@ function MatchPlay() {
   };
 
   // Start placing a location action (toggle on/off)
-  const startLocationAction = useCallback((actionType: LocationActionType) => {
-    // Auto-cancel disabled if it's active (batched with state update)
-    if (activeToggles.disable) {
-      const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
-      setMatchData((prev) => ({
-        ...prev,
-        toggleActions: [
-          ...prev.toggleActions,
-          {
-            type: 'disable',
-            timestamp: Date.now(),
-            active: false,
-            phase,
-          },
-        ],
-      }));
-    }
+  const startLocationAction = useCallback(
+    (actionType: LocationActionType) => {
+      // Auto-cancel disabled if it's active (batched with state update)
+      if (activeToggles.disable) {
+        const phase = isAuto
+          ? "auto"
+          : seconds > 140 - 10
+            ? "endgame"
+            : "teleop";
+        setMatchData((prev) => ({
+          ...prev,
+          toggleActions: [
+            ...prev.toggleActions,
+            {
+              type: "disable",
+              timestamp: Date.now(),
+              active: false,
+              phase,
+            },
+          ],
+        }));
+      }
 
-    setPendingLocationAction((prev) => (prev === actionType ? null : actionType));
-    vibrateTap();
-  }, [activeToggles.disable, isAuto, seconds]);
+      setPendingLocationAction((prev) =>
+        prev === actionType ? null : actionType
+      );
+      vibrateTap();
+    },
+    [activeToggles.disable, isAuto, seconds]
+  );
 
   // Handle field click for location actions
   const handleFieldClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -337,9 +351,11 @@ function MatchPlay() {
       timestamp: a.timestamp,
     }));
 
-    const allActions = [...locationActions, ...presetActions, ...toggleActions].sort(
-      (a, b) => b.timestamp - a.timestamp
-    );
+    const allActions = [
+      ...locationActions,
+      ...presetActions,
+      ...toggleActions,
+    ].sort((a, b) => b.timestamp - a.timestamp);
 
     if (allActions.length === 0) return;
 
@@ -419,9 +435,9 @@ function MatchPlay() {
     setShake(true);
     await vibrateShake();
 
-    setTimeout(() => setCountdown(2), 1000);
-    setTimeout(() => setCountdown(1), 2000);
-    setTimeout(async () => {
+    window.setTimeout(() => setCountdown(2), 1000);
+    window.setTimeout(() => setCountdown(1), 2000);
+    window.setTimeout(async () => {
       setCountdown(null);
       setShake(false);
       await vibrateBuzz();
@@ -442,9 +458,12 @@ function MatchPlay() {
       setSeconds(0);
       setIsAuto(false);
       // Restart teleop timer
-      timer2Ref.current = setTimeout(() => {
+      timer2Ref.current = window.setTimeout(() => {
         // Store matchData in sessionStorage to pass to match_end
-        sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
+        sessionStorage.setItem(
+          "currentMatchData",
+          JSON.stringify(matchDataRef.current)
+        );
         sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
         navigate({
           to: "/match_end",
@@ -453,7 +472,7 @@ function MatchPlay() {
       }, 140 * 1000);
 
       // Set up teleop countdown
-      countdownTeleopRef.current = setTimeout(() => {
+      countdownTeleopRef.current = window.setTimeout(() => {
         console.log(
           "🔔 Triggering TELEOP countdown at 137 seconds (after fast-forward)"
         );
@@ -461,7 +480,10 @@ function MatchPlay() {
       }, 137 * 1000);
     } else {
       // Skip to end
-      sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
+      sessionStorage.setItem(
+        "currentMatchData",
+        JSON.stringify(matchDataRef.current)
+      );
       sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
       navigate({
         to: "/match_end",
@@ -507,7 +529,10 @@ function MatchPlay() {
     // Match end at 160s total
     timer2Ref.current = window.setTimeout(() => {
       // Store matchData in sessionStorage to pass to match_end
-      sessionStorage.setItem("currentMatchData", JSON.stringify(matchDataRef.current));
+      sessionStorage.setItem(
+        "currentMatchData",
+        JSON.stringify(matchDataRef.current)
+      );
       sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
       navigate({
         to: "/match_end",
@@ -706,8 +731,20 @@ function MatchPlay() {
               className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-75"
               style={{ opacity: pendingLocationAction ? 1 : 0 }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M7 10L12 15L17 10" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M7 10L12 15L17 10"
+                  stroke="#CDA745"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
 
@@ -716,8 +753,20 @@ function MatchPlay() {
               className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-75"
               style={{ opacity: pendingLocationAction ? 1 : 0 }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 7L9 12L14 17" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M14 7L9 12L14 17"
+                  stroke="#CDA745"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
 
@@ -726,8 +775,20 @@ function MatchPlay() {
               className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-75"
               style={{ opacity: pendingLocationAction ? 1 : 0 }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M17 14L12 9L7 14" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M17 14L12 9L7 14"
+                  stroke="#CDA745"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
 
@@ -736,8 +797,20 @@ function MatchPlay() {
               className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-75"
               style={{ opacity: pendingLocationAction ? 1 : 0 }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 17L15 12L10 7" stroke="#CDA745" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M10 17L15 12L10 7"
+                  stroke="#CDA745"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
           </div>
@@ -752,6 +825,7 @@ function MatchPlay() {
               className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
             >
               <p className="rotate-270 text-xs text-outfit text-muted-foreground">Station</p>
+              
             </div>
 
             <div
@@ -759,6 +833,7 @@ function MatchPlay() {
               className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
             >
               <p className="rotate-270 text-xs text-outfit text-muted-foreground">Stocking</p>
+              
             </div>
 
             <div
@@ -792,7 +867,6 @@ function MatchPlay() {
                 </p>
               </div>
             )}
-          
           </div>
           <div className="flex flex-col justify-center items-center w-[22.5vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
           
@@ -830,12 +904,10 @@ function MatchPlay() {
                 Pass
               </p>
             </div>
-
-            
           </div>
 
           <div className="flex gap-2.5 w-full h-full">
-              <div
+            <div
               onClick={() => startLocationAction("shoot")}
               className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
                 pendingLocationAction === "shoot"
@@ -850,7 +922,6 @@ function MatchPlay() {
               </p>
             </div>
           </div>
-
 
           {/* Climb toggles - L1 always available, L2/L3 teleop only, dismount auto & first 5s teleop */}
           <div className="flex gap-2.5 w-full h-full">
@@ -935,9 +1006,7 @@ function MatchPlay() {
             </div>
           ) : (
             <>
-              <div className="w-[5vw]"> 
-
-              </div>
+              <div className="w-[5vw]"></div>
               <p className="text-xs text-[#CDA745]">
                 {Math.round(seconds) + "/"}
                 {isAuto ? "20" : "140"}

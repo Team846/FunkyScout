@@ -3,9 +3,9 @@
  * Used for pages that require specific orientation
  */
 export function RotateDevicePrompt({
-  message = "This page works best in landscape mode for match scouting"
+  message = "This page works best in landscape mode for match scouting",
 }: {
-  message?: string
+  message?: string;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/98 backdrop-blur-sm">
@@ -36,7 +36,7 @@ export function RotateDevicePrompt({
             stroke="currentColor"
             strokeWidth="2"
             className="absolute -top-2 -left-2 text-[#CDA745]/60 animate-spin"
-            style={{ animationDuration: '3s' }}
+            style={{ animationDuration: "3s" }}
           >
             <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
             <path d="M21 3v5h-5" />
