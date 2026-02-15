@@ -908,14 +908,14 @@ function MatchPlay() {
             {(isAuto || seconds <= 5) && (
               <div
                 onClick={() => toggleAction("climb_dismount")}
-                className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                className={`flex justify-center items-center ${isAuto ? 'w-1/2' : 'w-1/4'} h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
                   activeToggles.climb_dismount
                     ? "border-2 border-[#4ADE80]"
                     : "border-2 border-[#1E1E1E]"
                 }`}
               >
                 <p
-                  className={`text-xs text-outfit ${activeToggles.climb_dismount ? "text-[#4ADE80]" : "text-muted-foreground"}`}
+                  className={`text-xs text-outfit ${!isAuto ? 'rotate-270' : ''} ${activeToggles.climb_dismount ? "text-[#4ADE80]" : "text-muted-foreground"}`}
                 >
                   Dismount
                 </p>
