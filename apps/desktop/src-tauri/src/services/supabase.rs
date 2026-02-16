@@ -325,6 +325,33 @@ impl SupabaseService {
         Ok(())
     }
 
+    /// Fetch all user profiles from Supabase
+    pub async fn fetch_user_profiles(&self) -> Result<Vec<Value>> {
+        let response = self.client
+            .from("user_profiles")
+            .select("uid,name,role,settings,last_modified,deleted_at")
+            .is("deleted_at", "null")
+            .execute()
+            .await
+            .context("Failed to fetch user profiles")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Failed to fetch user profiles: HTTP {} - {}",
+                status,
+                body
+            ));
+        }
+
+        let body = response.text().await?;
+        let profiles: Vec<Value> = serde_json::from_str(&body).unwrap_or_default();
+
+        println!("[Supabase] Fetched {} user profiles", profiles.len());
+        Ok(profiles)
+    }
+
     /// Bulk upsert team data from TBA with merge logic
     /// Fetches existing data, merges TBA stats with pit scouting data, then upserts
     pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>) -> Result<()> {

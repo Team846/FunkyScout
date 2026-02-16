@@ -355,10 +355,11 @@ pub async fn cache_picklists(
         let picklist_type = record.get("type").and_then(|v| v.as_str()).unwrap_or("public");
         let timestamp = record.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
 
         sqlx::query(
-            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                event = excluded.event,
                title = excluded.title,
@@ -366,7 +367,8 @@ pub async fn cache_picklists(
                uid = excluded.uid,
                type = excluded.type,
                timestamp = excluded.timestamp,
-               last_modified = excluded.last_modified"
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
         )
         .bind(id)
         .bind(event)
@@ -376,6 +378,7 @@ pub async fn cache_picklists(
         .bind(picklist_type)
         .bind(timestamp)
         .bind(last_modified)
+        .bind(deleted_at)
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to cache picklist {}: {}", id, e))?;
@@ -430,22 +433,162 @@ pub async fn cache_picklist_entries(
         let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
         let rank = record.get("rank").and_then(|v| v.as_i64()).unwrap_or(0);
         let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
 
         sqlx::query(
-            "INSERT INTO event_picklist_entries (event, id, team, rank, last_modified)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO event_picklist_entries (event, id, team, rank, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(event, id, team) DO UPDATE SET
                rank = excluded.rank,
-               last_modified = excluded.last_modified"
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
         )
         .bind(event)
         .bind(id)
         .bind(team)
         .bind(rank)
         .bind(last_modified)
+        .bind(deleted_at)
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to cache picklist entry: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// User profile from SQLite cache
+#[derive(Debug, serde::Serialize)]
+pub struct UserProfile {
+    pub uid: String,
+    pub name: String,
+    pub role: String,
+    pub settings: Option<JsonValue>,
+    pub last_modified: i64,
+}
+
+#[tauri::command]
+pub async fn get_user_profiles(
+    state: State<'_, Mutex<AppState>>,
+    uids: Option<Vec<String>>,
+) -> Result<Vec<UserProfile>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let (query_str, has_filter) = if let Some(ref uid_list) = uids {
+        if uid_list.is_empty() {
+            (
+                "SELECT uid, name, role, settings, last_modified
+                 FROM user_profiles
+                 WHERE deleted_at IS NULL
+                 ORDER BY name".to_string(),
+                false,
+            )
+        } else {
+            // Build IN clause with placeholders
+            let placeholders = uid_list.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            (
+                format!(
+                    "SELECT uid, name, role, settings, last_modified
+                     FROM user_profiles
+                     WHERE uid IN ({}) AND deleted_at IS NULL
+                     ORDER BY name",
+                    placeholders
+                ),
+                true,
+            )
+        }
+    } else {
+        (
+            "SELECT uid, name, role, settings, last_modified
+             FROM user_profiles
+             WHERE deleted_at IS NULL
+             ORDER BY name".to_string(),
+            false,
+        )
+    };
+
+    let mut query = sqlx::query(&query_str);
+
+    if has_filter {
+        if let Some(uid_list) = uids {
+            for uid in &uid_list {
+                query = query.bind(uid);
+            }
+        }
+    }
+
+    let rows = query
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| format!("Failed to query user profiles: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let settings_str: Option<String> = row.try_get("settings").ok();
+            UserProfile {
+                uid: row.try_get("uid").unwrap_or_default(),
+                name: row.try_get("name").unwrap_or_default(),
+                role: row.try_get("role").unwrap_or_default(),
+                settings: settings_str.and_then(|s| serde_json::from_str(&s).ok()),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
+        })
+        .collect())
+}
+
+/// Cache user profiles to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_user_profiles(
+    state: State<'_, Mutex<AppState>>,
+    profiles: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in profiles {
+        let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+        let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let role = record.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+        let settings = record.get("settings").cloned().unwrap_or(serde_json::json!({}));
+        let settings_str = settings.to_string();
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+
+        sqlx::query(
+            "INSERT INTO user_profiles (uid, name, role, settings, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(uid) DO UPDATE SET
+               name = excluded.name,
+               role = excluded.role,
+               settings = excluded.settings,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(uid)
+        .bind(name)
+        .bind(role)
+        .bind(&settings_str)
+        .bind(last_modified)
+        .bind(deleted_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache user profile {}: {}", uid, e))?;
     }
 
     Ok(())

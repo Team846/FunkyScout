@@ -407,6 +407,67 @@ export async function updatePicklist(
 ): Promise<void> {
   const now = Date.now();
 
+  if (isTauri()) {
+    try {
+      console.log("[Writes] Desktop mode - using Tauri commands for update");
+
+      // DESKTOP: Use Tauri invoke directly
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      const picklist: Partial<EventPicklist> & { id: string; event: string } = {
+        id,
+        event: eventKey,
+        title,
+        ...(type ? { type } : {}),
+        picklist: null,
+        last_modified: now,
+      };
+
+      const picklistEntries = entries.map((e) => ({
+        event: eventKey,
+        id,
+        team: e.team,
+        rank: e.rank,
+        flags: e.flags,
+        last_modified: now,
+      }));
+
+      // Cache locally (Tauri SQLite) - invoke commands directly
+      await invoke("cache_picklists", { picklists: [picklist] });
+      await invoke("cache_picklist_entries", { entries: picklistEntries });
+
+      // Get user JWT for proper authentication
+      const user_jwt = await getUserJWT();
+
+      // Queue for Rust background sync
+      await invoke("add_to_sync_queue", {
+        operation: "UPDATE_PICKLIST",
+        payload: {
+          id,
+          event: eventKey,
+          title,
+          entries,
+          user_jwt,
+          ...(type ? { type } : {}),
+          timestamp: now,
+        },
+      });
+
+      console.log(`[Writes] Desktop: Queued picklist update: ${title}`);
+
+      // Trigger instant sync (non-blocking, fire-and-forget)
+      invoke("trigger_sync_now").catch((e) => {
+        console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+      });
+
+      return;
+    } catch (error) {
+      console.error("[Writes] Desktop path failed:", error);
+      throw error;
+    }
+  }
+
+  // MOBILE: Use WASM SQLite + IndexedDB queue
   // Update picklist header locally (just the title and last_modified)
   const picklist: Partial<EventPicklist> & { id: string; event: string } = {
     id,
@@ -442,7 +503,7 @@ export async function updatePicklist(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued picklist update: ${title}`);
+  console.log(`[Writes] Mobile: Queued picklist update: ${title}`);
 
   // Trigger instant sync if online
   await triggerInstantSync();
@@ -457,6 +518,62 @@ export async function deletePicklist(
 ): Promise<void> {
   const now = Date.now();
 
+  if (isTauri()) {
+    try {
+      console.log("[Writes] Desktop mode - using Tauri commands for delete");
+
+      // DESKTOP: Use Tauri invoke directly
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      // Soft delete picklist locally
+      const picklist: Partial<EventPicklist> & { id: string; event: string } = {
+        id,
+        event: eventKey,
+        deleted_at: now,
+        last_modified: now,
+      };
+
+      // Soft delete entries locally
+      const existingEntries = await getEventPicklistEntries(eventKey, id);
+      const deletedEntries = existingEntries.map((e: EventPicklistEntry) => ({
+        ...e,
+        deleted_at: now,
+        last_modified: now,
+      }));
+
+      // Cache locally (Tauri SQLite) - invoke commands directly
+      await invoke("cache_picklists", { picklists: [picklist] });
+      await invoke("cache_picklist_entries", { entries: deletedEntries });
+
+      // Get user JWT for proper authentication
+      const user_jwt = await getUserJWT();
+
+      // Queue for Rust background sync
+      await invoke("add_to_sync_queue", {
+        operation: "DELETE_PICKLIST",
+        payload: {
+          id,
+          event: eventKey,
+          user_jwt,
+          timestamp: now,
+        },
+      });
+
+      console.log(`[Writes] Desktop: Queued picklist deletion: ${id}`);
+
+      // Trigger instant sync (non-blocking, fire-and-forget)
+      invoke("trigger_sync_now").catch((e) => {
+        console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+      });
+
+      return;
+    } catch (error) {
+      console.error("[Writes] Desktop path failed:", error);
+      throw error;
+    }
+  }
+
+  // MOBILE: Use WASM SQLite + IndexedDB queue
   // Soft delete picklist locally
   const picklist: Partial<EventPicklist> & { id: string; event: string } = {
     id,
@@ -484,7 +601,7 @@ export async function deletePicklist(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued picklist deletion: ${id}`);
+  console.log(`[Writes] Mobile: Queued picklist deletion: ${id}`);
 
   // Trigger instant sync if online
   await triggerInstantSync();

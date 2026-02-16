@@ -414,6 +414,21 @@ impl SyncService {
                 .context("Failed to push schedule to Supabase")?;
         }
 
+        // 10. Fetch user profiles from Supabase and cache locally
+        let user_profiles = match self.supabase.fetch_user_profiles().await {
+            Ok(profiles) => profiles,
+            Err(e) => {
+                eprintln!("[Sync] User profiles fetch failed: {}", e);
+                vec![]
+            }
+        };
+
+        if !user_profiles.is_empty() {
+            self.cache_user_profiles_to_sqlite(&user_profiles)
+                .await
+                .context("Failed to cache user profiles to SQLite")?;
+        }
+
         Ok(())
     }
 
@@ -513,6 +528,52 @@ impl SyncService {
             .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
         }
 
+        Ok(())
+    }
+
+    /// Cache user profiles to local SQLite
+    /// Matches Supabase structure for offline support
+    async fn cache_user_profiles_to_sqlite(&self, profile_records: &[serde_json::Value]) -> Result<()> {
+        if profile_records.is_empty() {
+            return Ok(());
+        }
+
+        // Bulk insert/update user profiles
+        for record in profile_records {
+            let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+            let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let role = record.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+            let settings_json = record.get("settings").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+
+            // Convert PostgreSQL timestamptz to epoch milliseconds
+            let last_modified = if let Some(ts_str) = record.get("last_modified").and_then(|v| v.as_str()) {
+                chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+            } else {
+                chrono::Utc::now().timestamp_millis()
+            };
+
+            sqlx::query(
+                "INSERT INTO user_profiles (uid, name, role, settings, last_modified)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(uid) DO UPDATE SET
+                   name = excluded.name,
+                   role = excluded.role,
+                   settings = excluded.settings,
+                   last_modified = excluded.last_modified"
+            )
+            .bind(uid)
+            .bind(name)
+            .bind(role)
+            .bind(&settings_json)
+            .bind(last_modified)
+            .execute(&self.sqlx_pool)
+            .await
+            .context(format!("Failed to cache user profile {} to SQLite", uid))?;
+        }
+
+        println!("[Sync] Cached {} user profiles to SQLite", profile_records.len());
         Ok(())
     }
 
