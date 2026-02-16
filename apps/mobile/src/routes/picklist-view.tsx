@@ -5,6 +5,7 @@ import { Badge } from "@shadcn/ui/components/badge.tsx";
 import { Switch } from "@shadcn/ui/components/switch.tsx";
 import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
+import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { getPicklistById } from "@lib/db";
 import { updatePicklist, deletePicklist } from "@lib/data/writes";
 import { canEditPicklist, canViewPicklist } from "@lib/utils/permissions";
@@ -48,12 +49,14 @@ function PicklistViewPage() {
   const { currentEvent } = useEvent();
   const userData = getLocalUserData();
   const { teams } = useTeamData();
+  const { refresh: refreshCompetition } = useCompetition();
   const [picklist, setPicklist] = useState<EventPicklist | null>(null);
   const [entries, setEntries] = useState<EventPicklistEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [excludedToBottom, setExcludedToBottom] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const [realtimeRefreshTrigger, setRealtimeRefreshTrigger] = useState(0);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -62,7 +65,8 @@ function PicklistViewPage() {
     })
   );
 
-  useEffect(() => {
+  // Load picklist data (triggers context refresh, then reads from cache)
+  const loadPicklistData = async () => {
     if (!currentEvent || !id) return;
 
     // Only show full-screen loader on initial load, not on refreshes
@@ -71,28 +75,47 @@ function PicklistViewPage() {
       setLoading(true);
     }
 
-    getPicklistById(currentEvent, id)
-      .then(({ picklist, entries }) => {
-        console.log("[picklist-view] Loaded picklist:", picklist);
-        console.log(
-          "[picklist-view] Type:",
-          picklist?.type,
-          "Uname:",
-          picklist?.uname
-        );
-        setPicklist(picklist);
-        setEntries(entries);
-      })
-      .catch((error) => {
-        console.error("Failed to load picklist:", error);
-        if (isInitialLoad) {
-          toast.error("Failed to load picklist");
-        }
-      })
-      .finally(() => {
-        setLoading(false);
-        setInitialLoading(false);
-      });
+    try {
+      console.log("[picklist-view] Triggering competition data refresh");
+
+      // Step 1: Trigger CompetitionDataContext to refresh cache from Supabase
+      await refreshCompetition();
+
+      // Step 2: Read from freshly updated cache
+      const { picklist, entries } = await getPicklistById(currentEvent, id);
+      console.log("[picklist-view] Loaded picklist from cache:", picklist);
+      setPicklist(picklist);
+      setEntries(entries);
+    } catch (error) {
+      console.error("Failed to load picklist:", error);
+      if (isInitialLoad) {
+        toast.error("Failed to load picklist");
+      }
+    } finally {
+      setLoading(false);
+      setInitialLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPicklistData();
+  }, [currentEvent, id, realtimeRefreshTrigger]);
+
+  // Polling updates (15 second interval for picklists and assignments)
+  useEffect(() => {
+    if (!currentEvent || !id) return;
+
+    console.log(`[picklist-view] 🔄 Setting up 15s polling for picklist ${id}`);
+
+    const interval = setInterval(() => {
+      console.log("[picklist-view] 🔄 Polling refresh triggered");
+      setRealtimeRefreshTrigger(prev => prev + 1);
+    }, 15000); // 15 seconds
+
+    return () => {
+      console.log("[picklist-view] Cleaning up polling interval");
+      clearInterval(interval);
+    };
   }, [currentEvent, id]);
 
   // Permission checks
@@ -164,8 +187,8 @@ function PicklistViewPage() {
 
     setEntries(reordered);
 
+    // Save immediately for real-time sync (no toast to avoid spam)
     try {
-      // Ensure all entries have required fields
       const validEntries = reordered.map((e) => ({
         team: e.team,
         rank: e.rank ?? 0,
@@ -178,11 +201,12 @@ function PicklistViewPage() {
         validEntries,
         picklist.type as any
       );
+      console.log("[picklist-view] Saved reorder, will sync to desktop");
     } catch (error) {
       console.error("Failed to update picklist:", error);
       toast.error("Failed to save changes");
-      // Revert on error
-      setEntries(entries);
+      // Revert on error by reloading from database
+      loadPicklistData();
     }
   };
 
@@ -197,8 +221,8 @@ function PicklistViewPage() {
 
     setEntries(updated);
 
+    // Save immediately for real-time sync
     try {
-      // Ensure all entries have rank defined
       const validEntries = updated.map((e) => ({
         team: e.team,
         rank: e.rank ?? 0,
@@ -211,11 +235,12 @@ function PicklistViewPage() {
         validEntries,
         picklist.type as any
       );
+      console.log("[picklist-view] Saved exclude/include, will sync to desktop");
     } catch (error) {
       console.error("Failed to update picklist:", error);
       toast.error("Failed to save changes");
-      // Revert on error
-      setEntries(entries);
+      // Revert on error by reloading from database
+      loadPicklistData();
     }
   };
 

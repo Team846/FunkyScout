@@ -87,6 +87,7 @@ export async function getSchedule(eventKey: string) {
 
     if (data) {
       await cacheEventSchedule(
+        eventKey,
         data.map((d) => ({
           event: d.event,
           match: d.match,

@@ -29,6 +29,7 @@ export async function getTeams(eventKey: string) {
 
     if (data) {
       await cacheEventTeamData(
+        eventKey,
         data.map((d) => ({
           event: d.event,
           team: d.team,

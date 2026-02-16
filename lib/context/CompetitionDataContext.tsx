@@ -84,11 +84,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const schedulePolling = useRef<PollingController | null>(null);
   const nexusPolling = useRef<PollingController | null>(null);
   const picklistPolling = useRef<PollingController | null>(null);
+  const matchDataPolling = useRef<PollingController | null>(null);
 
   // Refs for stable access in refresh callback
   const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
   const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
   const fetchPicklistsRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchMatchDataRef = useRef<(() => Promise<void>) | null>(null);
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
 
@@ -283,13 +285,11 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             deleted_at: e.deleted_at ? new Date(e.deleted_at).getTime() : undefined,
           }));
 
-          // Cache picklists to local SQLite
-          await cacheEventPicklists(localPicklists);
+          // Cache picklists to local SQLite (always cache, even if empty - handles deletions)
+          await cacheEventPicklists(currentEvent, localPicklists);
 
-          // Cache picklist entries to local SQLite
-          if (localEntries.length > 0) {
-            await cacheEventPicklistEntries(localEntries);
-          }
+          // Cache picklist entries to local SQLite (always cache, even if empty - handles deletions)
+          await cacheEventPicklistEntries(currentEvent, localEntries);
 
           console.log(
             `[CompetitionData] Synced ${data.picklists.length} picklists with ${data.entries.length} entries from Supabase`,
@@ -306,7 +306,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchScheduleRef.current = fetchSchedule;
     fetchNexusRef.current = fetchNexus;
     fetchPicklistsRef.current = fetchPicklists;
-  }, [fetchSchedule, fetchNexus, fetchPicklists]);
+    fetchMatchDataRef.current = fetchMatchData;
+  }, [fetchSchedule, fetchNexus, fetchPicklists, fetchMatchData]);
 
   // Initial fetch of match data when event loads
   useEffect(() => {
@@ -334,6 +335,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
   }, []); // Never changes!
 
+  const fetchMatchDataStable = useCallback(async () => {
+    if (fetchMatchDataRef.current) {
+      await fetchMatchDataRef.current();
+    }
+  }, []); // Never changes!
+
   // Start controllers once when dbInitialized (never stop/start on event changes)
   useEffect(() => {
     if (!dbInitialized) return;
@@ -342,7 +349,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       schedulePolling.current = new PollingController(
         "Schedule",
         fetchScheduleStable,
-        DEFAULT_POLLING_CONFIG
+        LIVE_POLLING_CONFIG // 15s polling for shift assignments
       );
       schedulePolling.current.start();
     }
@@ -350,7 +357,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       nexusPolling.current = new PollingController(
         "Nexus",
         fetchNexusStable,
-        LIVE_POLLING_CONFIG
+        LIVE_POLLING_CONFIG // 15s polling for live match data
       );
       nexusPolling.current.start();
     }
@@ -358,17 +365,26 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       picklistPolling.current = new PollingController(
         "Picklists",
         fetchPicklistsStable,
-        DEFAULT_POLLING_CONFIG
+        LIVE_POLLING_CONFIG // 15s polling for picklists
       );
       picklistPolling.current.start();
+    }
+    if (!matchDataPolling.current) {
+      matchDataPolling.current = new PollingController(
+        "Match Data",
+        fetchMatchDataStable,
+        LIVE_POLLING_CONFIG // 15s polling for match scouting data
+      );
+      matchDataPolling.current.start();
     }
 
     return () => {
       schedulePolling.current?.stop();
       nexusPolling.current?.stop();
       picklistPolling.current?.stop();
+      matchDataPolling.current?.stop();
     };
-  }, [dbInitialized, fetchScheduleStable, fetchNexusStable, fetchPicklistsStable]);
+  }, [dbInitialized, fetchScheduleStable, fetchNexusStable, fetchPicklistsStable, fetchMatchDataStable]);
 
   // Handle event changes - fetch data immediately
   useEffect(() => {

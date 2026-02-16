@@ -21,7 +21,8 @@ import {
 } from "@lib/db";
 import {
   PollingController,
-  DEFAULT_POLLING_CONFIG,
+  LIVE_POLLING_CONFIG,
+  BACKUP_API_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
 import supabase from "@lib/supabase/supabase";
 
@@ -81,6 +82,10 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   const currentEventRef = useRef(currentEvent);
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
+
+  // Cache for TBA API calls (2-minute TTL for backup API calls)
+  const tbaCache = useRef<{ data: any; timestamp: number } | null>(null);
+  const TBA_CACHE_TTL = 120_000; // 2 minutes
 
   const fetchTeams = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -147,8 +152,18 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           return false;
         });
 
-        // Fetch TBA statuses for rankings (mobile always does this for fresh rankings)
-        const tbaStatuses = await fetchTBATeamStatuses(currentEvent);
+        // Fetch TBA statuses for rankings (with 2-minute caching for backup API calls)
+        let tbaStatuses;
+        const isTbaCacheValid = tbaCache.current && (now - tbaCache.current.timestamp) < TBA_CACHE_TTL;
+
+        if (isTbaCacheValid) {
+          // Use cached TBA data (within 2-minute window)
+          tbaStatuses = tbaCache.current!.data;
+        } else {
+          // Cache expired or doesn't exist - fetch fresh data from TBA
+          tbaStatuses = await fetchTBATeamStatuses(currentEvent);
+          tbaCache.current = { data: tbaStatuses, timestamp: now };
+        }
 
         if (hasRecentDesktopSync || (supabaseTeams ?? []).length === 0) {
           // Normal flow: Desktop is running, use Supabase + TBA
@@ -294,9 +309,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
     if (!pollingController.current) {
       pollingController.current = new PollingController(
-        "Teams",
+        "Teams (Supabase 15s + TBA 2min cached)",
         fetchTeamsStable,
-        DEFAULT_POLLING_CONFIG
+        LIVE_POLLING_CONFIG // 15s polling for Supabase, TBA cached at 2min
       );
       pollingController.current.start();
     }

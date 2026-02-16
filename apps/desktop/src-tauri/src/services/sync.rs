@@ -718,6 +718,7 @@ impl SyncService {
 
         self.supabase.bulk_upsert_picklist_entries(event, entry_records).await?;
 
+        println!("[Sync] ✅ Created picklist '{}' in Supabase ({} teams)", title, entries.len());
         Ok(())
     }
 
@@ -750,6 +751,7 @@ impl SyncService {
 
         self.supabase.bulk_upsert_picklist_entries(event, entry_records).await?;
 
+        println!("[Sync] ✅ Updated picklist '{}' in Supabase ({} teams)", title, entries.len());
         Ok(())
     }
 

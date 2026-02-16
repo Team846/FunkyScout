@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
+import { Route as TestPicklistsRouteImport } from './routes/test-picklists'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
@@ -18,6 +19,11 @@ import { Route as AuthIndexRouteRouteImport } from './routes/auth/index.route'
 const VerifyRoute = VerifyRouteImport.update({
   id: '/verify',
   path: '/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestPicklistsRoute = TestPicklistsRouteImport.update({
+  id: '/test-picklists',
+  path: '/test-picklists',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetRoute = ResetRouteImport.update({
@@ -44,6 +50,7 @@ const AuthIndexRouteRoute = AuthIndexRouteRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/reset': typeof ResetRoute
+  '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/reset': typeof ResetRoute
+  '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -59,21 +67,36 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/reset': typeof ResetRoute
+  '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth/': typeof AuthIndexRouteRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/reset' | '/verify' | '/auth' | '/dashboard'
+  fullPaths:
+    | '/'
+    | '/reset'
+    | '/test-picklists'
+    | '/verify'
+    | '/auth'
+    | '/dashboard'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/reset' | '/verify' | '/auth' | '/dashboard'
-  id: '__root__' | '/' | '/reset' | '/verify' | '/auth/' | '/dashboard/'
+  to: '/' | '/reset' | '/test-picklists' | '/verify' | '/auth' | '/dashboard'
+  id:
+    | '__root__'
+    | '/'
+    | '/reset'
+    | '/test-picklists'
+    | '/verify'
+    | '/auth/'
+    | '/dashboard/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ResetRoute: typeof ResetRoute
+  TestPicklistsRoute: typeof TestPicklistsRoute
   VerifyRoute: typeof VerifyRoute
   AuthIndexRouteRoute: typeof AuthIndexRouteRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -86,6 +109,13 @@ declare module '@tanstack/react-router' {
       path: '/verify'
       fullPath: '/verify'
       preLoaderRoute: typeof VerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test-picklists': {
+      id: '/test-picklists'
+      path: '/test-picklists'
+      fullPath: '/test-picklists'
+      preLoaderRoute: typeof TestPicklistsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset': {
@@ -122,6 +152,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ResetRoute: ResetRoute,
+  TestPicklistsRoute: TestPicklistsRoute,
   VerifyRoute: VerifyRoute,
   AuthIndexRouteRoute: AuthIndexRouteRoute,
   DashboardIndexRoute: DashboardIndexRoute,

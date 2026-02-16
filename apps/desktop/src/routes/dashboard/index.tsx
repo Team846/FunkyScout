@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import supabase from "@lib/supabase/supabase";
 import { useEffect, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
@@ -29,7 +29,7 @@ import { Label } from "@shadcn/ui/components/label.tsx";
 import { bootstrapEvent } from "@lib/data";
 import { createPicklist } from "@lib/data/writes";
 import { getLocalUserData } from "@lib/supabase/user";
-import { Activity, Users, Calendar, RefreshCw, Plus } from "lucide-react";
+import { Activity, Users, Calendar, RefreshCw, Plus, FlaskConical } from "lucide-react";
 import { useDesktopEvent } from "../../contexts/DesktopEventContext";
 import { useDesktopRealtime } from "../../contexts/DesktopRealtimeContext";
 import { useDesktopTeamData } from "../../contexts/DesktopTeamDataContext";
@@ -56,6 +56,7 @@ interface EventListEntry {
 }
 
 function DashboardPage() {
+  const navigate = useNavigate();
   const { currentEvent, setCurrentEvent } = useDesktopEvent();
   const { isConnected } = useDesktopRealtime();
   const { teams } = useDesktopTeamData();
@@ -359,6 +360,14 @@ function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="border-purple-600 text-purple-600 hover:bg-purple-600/10"
+              onClick={() => navigate({ to: "/test-picklists" })}
+            >
+              <FlaskConical className="h-4 w-4 mr-2" />
+              Test Functions
+            </Button>
             <Button
               variant="outline"
               className="border-green-600 text-green-600 hover:bg-green-600/10"

@@ -22,6 +22,7 @@ export async function syncShiftAssignments(eventKey: string) {
   if (!scheduleData || scheduleData.length === 0) return;
 
   // Update match data with shift assignments
+  // Include data_raw to satisfy NOT NULL constraint (in case row doesn't exist yet)
   const updates = scheduleData.map((entry) => ({
     event: entry.event,
     match: entry.match,
@@ -29,6 +30,8 @@ export async function syncShiftAssignments(eventKey: string) {
     alliance: entry.alliance as "red" | "blue",
     name: entry.name || "",
     uid: entry.uid || "",
+    data_raw: {},  // Empty placeholder (required for upsert)
+    data: {},      // Empty placeholder (required for upsert)
   }));
 
   const { error: updateError } = await supabase
@@ -117,6 +120,7 @@ export async function getMatchData(eventKey: string) {
 
     if (data) {
       await cacheEventMatchData(
+        eventKey,
         data.map((d) => ({
           event: d.event,
           match: d.match,

@@ -235,16 +235,16 @@ export async function getEventTeamData(
   }));
 }
 
-export async function cacheEventTeamData(data: EventTeamData[]): Promise<void> {
+export async function cacheEventTeamData(
+  eventKey: string,
+  data: EventTeamData[],
+): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
-      // Clear old team data for this event before inserting fresh data
-      if (data.length > 0) {
-        const event = data[0].event;
-        await execWorker("DELETE FROM event_team_data WHERE event = ?", [event]);
-      }
+      // Always clear old team data (even if new data is empty - handles deletions)
+      await execWorker("DELETE FROM event_team_data WHERE event = ?", [eventKey]);
 
       for (const item of data) {
         await execWorker(
@@ -302,17 +302,15 @@ export async function getUserEventScheduleAssignments(
 }
 
 export async function cacheEventSchedule(
+  eventKey: string,
   entries: EventScheduleEntry[],
 ): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
-      // Clear old schedule for this event before inserting fresh data
-      if (entries.length > 0) {
-        const event = entries[0].event;
-        await execWorker("DELETE FROM event_schedule WHERE event = ?", [event]);
-      }
+      // Always clear old schedule (even if new data is empty - handles deletions)
+      await execWorker("DELETE FROM event_schedule WHERE event = ?", [eventKey]);
 
       for (const entry of entries) {
         await execWorker(
@@ -378,19 +376,15 @@ export async function getEventMatchData(
 }
 
 export async function cacheEventMatchData(
+  eventKey: string,
   data: EventMatchData[],
 ): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
-      // Clear old match data for this event before inserting fresh data
-      if (data.length > 0) {
-        const event = data[0].event;
-        await execWorker("DELETE FROM event_match_data WHERE event = ?", [
-          event,
-        ]);
-      }
+      // Always clear old match data (even if new data is empty - handles deletions)
+      await execWorker("DELETE FROM event_match_data WHERE event = ?", [eventKey]);
 
       for (const item of data) {
         await execWorker(
@@ -438,17 +432,15 @@ export async function getEventPicklists(
 }
 
 export async function cacheEventPicklists(
+  eventKey: string,
   picklists: EventPicklist[],
 ): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
-      // Clear old picklists for this event before inserting fresh data
-      if (picklists.length > 0) {
-        const event = picklists[0].event;
-        await execWorker("DELETE FROM event_picklist WHERE event = ?", [event]);
-      }
+      // Always clear old picklists (even if new data is empty - handles deletions)
+      await execWorker("DELETE FROM event_picklist WHERE event = ?", [eventKey]);
 
       for (const list of picklists) {
         await execWorker(
@@ -528,21 +520,18 @@ export async function getPicklistById(
 }
 
 export async function cacheEventPicklistEntries(
+  eventKey: string,
   entries: EventPicklistEntry[],
 ): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
-      // Clear ALL old entries for this event before inserting fresh data
-      // This ensures deleted entries are removed from cache across all picklists
-      if (entries.length > 0) {
-        const event = entries[0].event;
-        await execWorker(
-          "DELETE FROM event_picklist_entries WHERE event = ?",
-          [event],
-        );
-      }
+      // Always clear old entries (even if new data is empty - handles deletions)
+      await execWorker(
+        "DELETE FROM event_picklist_entries WHERE event = ?",
+        [eventKey],
+      );
 
       // Insert fresh data (with UPSERT to handle duplicates)
       for (const entry of entries) {

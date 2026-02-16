@@ -17,9 +17,15 @@ export const DEFAULT_POLLING_CONFIG: PollingConfig = {
 };
 
 export const LIVE_POLLING_CONFIG: PollingConfig = {
-  baseInterval: 15_000,
+  baseInterval: 15_000, // 15s for Supabase data (event_team_data, event_schedule, event_match_data, etc.)
   maxInterval: 60_000,
   backoffFactor: 2,
+};
+
+export const BACKUP_API_POLLING_CONFIG: PollingConfig = {
+  baseInterval: 120_000, // 2min for backup external APIs (TBA rankings, etc.)
+  maxInterval: 300_000,
+  backoffFactor: 1.5,
 };
 
 /**

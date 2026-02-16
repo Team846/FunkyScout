@@ -4,7 +4,7 @@
  * Used by both mobile and desktop picklist editors
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import type { DragEndEvent } from "@dnd-kit/core";
 import type { EventPicklistEntry } from "@lib/db";
@@ -59,16 +59,23 @@ export function usePicklistEditor(
   } = options;
 
   const [entries, setEntries] = useState<EventPicklistEntry[]>(initialEntries);
-  const [originalEntries] = useState<EventPicklistEntry[]>(initialEntries);
+  const [originalEntries, setOriginalEntries] = useState<EventPicklistEntry[]>(initialEntries);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Update entries when picklistId or data changes (for real-time updates)
+  useEffect(() => {
+    setEntries(initialEntries);
+    setOriginalEntries(initialEntries);
+  }, [picklistId, JSON.stringify(initialEntries)]); // Update on picklistId OR when actual data changes
 
   // Check if there are unsaved changes
   const hasChanges = JSON.stringify(entries) !== JSON.stringify(originalEntries);
 
   /**
    * Handle drag-and-drop reordering
+   * Saves immediately for real-time sync across devices
    */
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -90,12 +97,29 @@ export function usePicklistEditor(
     }
 
     setEntries(reordered);
+    setOriginalEntries(reordered); // Update original to prevent "unsaved changes" state
+
+    // Save immediately for real-time sync
+    try {
+      const validEntries = reordered.map((e) => ({
+        team: e.team,
+        rank: e.rank ?? 0,
+        flags: e.flags ?? {},
+      }));
+
+      await updatePicklist(picklistId, eventKey, title, validEntries, type);
+    } catch (error) {
+      console.error("Failed to save picklist reorder:", error);
+      // Revert on error
+      setEntries(originalEntries);
+    }
   };
 
   /**
    * Toggle exclude flag for a team
+   * Saves immediately for real-time sync across devices
    */
-  const toggleExclude = (teamKey: string) => {
+  const toggleExclude = async (teamKey: string) => {
     const updated = entries.map((e) =>
       e.team === teamKey
         ? { ...e, flags: { ...e.flags, excluded: !e.flags?.excluded } }
@@ -103,6 +127,22 @@ export function usePicklistEditor(
     );
 
     setEntries(updated);
+    setOriginalEntries(updated); // Update original to prevent "unsaved changes" state
+
+    // Save immediately for real-time sync
+    try {
+      const validEntries = updated.map((e) => ({
+        team: e.team,
+        rank: e.rank ?? 0,
+        flags: e.flags ?? {},
+      }));
+
+      await updatePicklist(picklistId, eventKey, title, validEntries, type);
+    } catch (error) {
+      console.error("Failed to save picklist exclude:", error);
+      // Revert on error
+      setEntries(originalEntries);
+    }
   };
 
   /**

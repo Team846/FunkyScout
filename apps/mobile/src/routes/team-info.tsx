@@ -154,7 +154,7 @@ function TeamInfoPage() {
       };
 
       // Save to local DB
-      await cacheEventTeamData([
+      await cacheEventTeamData(currentEvent, [
         {
           event: currentEvent,
           team: teamKey,
@@ -238,7 +238,7 @@ function TeamInfoPage() {
       };
 
       // Save to local DB
-      await cacheEventTeamData([
+      await cacheEventTeamData(currentEvent, [
         {
           event: currentEvent,
           team: teamKey,

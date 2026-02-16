@@ -71,6 +71,7 @@ export interface EventPicklistEntry {
   id: string;
   team: string;
   rank: number;
+  flags?: any; // JSON flags like { excluded: boolean }
   last_modified: number;
 }
 

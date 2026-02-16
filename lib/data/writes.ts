@@ -114,7 +114,7 @@ export async function putTeamData(
     last_modified: now,
   };
 
-  await cacheEventTeamData([teamData]);
+  await cacheEventTeamData(eventKey, [teamData]);
 
   // 2. Queue for background sync
   await addToSyncQueue("PUT_TEAM_DATA", {
@@ -173,7 +173,7 @@ export async function putMatchData(
     last_modified: now,
   };
 
-  await cacheEventMatchData([matchData]);
+  await cacheEventMatchData(eventKey, [matchData]);
 
   // 2. Queue for sync
   await addToSyncQueue("PUT_MATCH_DATA", {
@@ -249,7 +249,7 @@ export async function assignShift(
   const updated = schedule.map((s: EventScheduleEntry) =>
     s.team === teamNumber ? { ...s, uid, name, last_modified: now } : s,
   );
-  await cacheEventSchedule(updated);
+  await cacheEventSchedule(eventKey, updated);
 
   // Queue for sync
   await addToSyncQueue("ASSIGN_SHIFT", {
@@ -359,7 +359,7 @@ export async function createPicklist(
     deleted_at: undefined,
   };
 
-  await cacheEventPicklists([picklist]);
+  await cacheEventPicklists(eventKey, [picklist]);
 
   const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
     event: eventKey,
@@ -371,7 +371,7 @@ export async function createPicklist(
     deleted_at: undefined,
   }));
 
-  await cacheEventPicklistEntries(picklistEntries);
+  await cacheEventPicklistEntries(eventKey, picklistEntries);
 
   // Get user JWT for proper authentication
   const user_jwt = await getUserJWT();
@@ -491,7 +491,7 @@ export async function updatePicklist(
     deleted_at: undefined,
   }));
 
-  await cacheEventPicklistEntries(picklistEntries);
+  await cacheEventPicklistEntries(eventKey, picklistEntries);
 
   // Queue for sync
   await addToSyncQueue("UPDATE_PICKLIST", {
@@ -533,8 +533,9 @@ export async function deletePicklist(
         last_modified: now,
       };
 
-      // Soft delete entries locally
-      const existingEntries = await getEventPicklistEntries(eventKey, id);
+      // Soft delete entries locally - get entries using Tauri invoke
+      const allEntries = await invoke<EventPicklistEntry[]>("get_picklist_entries", { event: eventKey });
+      const existingEntries = allEntries.filter(e => e.id === id);
       const deletedEntries = existingEntries.map((e: EventPicklistEntry) => ({
         ...e,
         deleted_at: now,
@@ -682,7 +683,7 @@ export async function putTeamDataWithImages(
     last_modified: now,
   };
 
-  await cacheEventTeamData([teamData]);
+  await cacheEventTeamData(eventKey, [teamData]);
 
   // 4. Queue for background sync with image upload
   await addToSyncQueue("PUT_TEAM_DATA_WITH_IMAGES", {

@@ -44,6 +44,8 @@ pub struct Picklist {
     pub title: String,
     pub uname: String,
     pub uid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
     pub timestamp: i64,
     pub last_modified: i64,
 }
@@ -55,6 +57,8 @@ pub struct PicklistEntry {
     pub id: String,
     pub team: String,
     pub rank: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags: Option<serde_json::Value>,
     pub last_modified: i64,
 }
 
@@ -163,7 +167,7 @@ pub async fn get_picklists(
     }; // MutexGuard dropped here
 
     let rows = sqlx::query(
-        "SELECT event, id, title, uname, uid, timestamp, last_modified
+        "SELECT event, id, title, uname, uid, type, timestamp, last_modified
          FROM event_picklist
          WHERE event = ? AND deleted_at IS NULL
          ORDER BY timestamp DESC"
@@ -179,6 +183,7 @@ pub async fn get_picklists(
             event: row.try_get("event").unwrap_or_default(),
             id: row.try_get("id").unwrap_or_default(),
             title: row.try_get("title").unwrap_or_default(),
+            r#type: row.try_get("type").ok(),
             uname: row.try_get("uname").unwrap_or_default(),
             uid: row.try_get("uid").unwrap_or_default(),
             timestamp: row.try_get("timestamp").unwrap_or(0),
@@ -203,7 +208,7 @@ pub async fn get_picklist_entries(
     }; // MutexGuard dropped here
 
     let rows = sqlx::query(
-        "SELECT event, id, team, rank, last_modified
+        "SELECT event, id, team, rank, flags, last_modified
          FROM event_picklist_entries
          WHERE event = ? AND deleted_at IS NULL
          ORDER BY rank"
@@ -215,12 +220,22 @@ pub async fn get_picklist_entries(
 
     Ok(rows
         .into_iter()
-        .map(|row| PicklistEntry {
-            event: row.try_get("event").unwrap_or_default(),
-            id: row.try_get("id").unwrap_or_default(),
-            team: row.try_get("team").unwrap_or_default(),
-            rank: row.try_get("rank").unwrap_or(0),
-            last_modified: row.try_get("last_modified").unwrap_or(0),
+        .map(|row| {
+            // Parse flags from JSON TEXT to serde_json::Value
+            let flags: Option<serde_json::Value> = row
+                .try_get::<Option<String>, _>("flags")
+                .ok()
+                .flatten()
+                .and_then(|s| serde_json::from_str(&s).ok());
+
+            PicklistEntry {
+                event: row.try_get("event").unwrap_or_default(),
+                id: row.try_get("id").unwrap_or_default(),
+                team: row.try_get("team").unwrap_or_default(),
+                rank: row.try_get("rank").unwrap_or(0),
+                flags,
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
         })
         .collect())
 }
@@ -427,6 +442,40 @@ pub async fn cache_picklist_entries(
         .map_err(|e| format!("Failed to ensure event {} exists: {}", event, e))?;
     }
 
+    // CRITICAL: Ensure all parent picklists exist (for foreign key constraint)
+    // Extract unique picklist IDs from entries
+    let mut picklist_ids: Vec<(String, String)> = entries
+        .iter()
+        .filter_map(|e| {
+            let id = e.get("id").and_then(|v| v.as_str())?;
+            let event = e.get("event").and_then(|v| v.as_str())?;
+            Some((id.to_string(), event.to_string()))
+        })
+        .collect();
+    picklist_ids.sort();
+    picklist_ids.dedup();
+
+    for (id, event) in picklist_ids {
+        // Create stub picklist if it doesn't exist
+        // This will be updated when cache_picklists is called with full data
+        sqlx::query(
+            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO NOTHING"
+        )
+        .bind(&id)
+        .bind(&event)
+        .bind("Loading...") // Placeholder title
+        .bind("") // Placeholder uname
+        .bind("") // Placeholder uid
+        .bind("public") // Default type
+        .bind(chrono::Utc::now().timestamp_millis())
+        .bind(chrono::Utc::now().timestamp_millis())
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to ensure picklist {} exists: {}", id, e))?;
+    }
+
     for record in entries {
         let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
         let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -482,53 +531,52 @@ pub async fn get_user_profiles(
             .clone()
     };
 
-    let (query_str, has_filter) = if let Some(ref uid_list) = uids {
+    // Handle filtering based on uids parameter
+    let rows = if let Some(uid_list) = uids {
         if uid_list.is_empty() {
-            (
+            // Empty list - fetch all profiles
+            sqlx::query(
                 "SELECT uid, name, role, settings, last_modified
                  FROM user_profiles
                  WHERE deleted_at IS NULL
-                 ORDER BY name".to_string(),
-                false,
+                 ORDER BY name"
             )
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("Failed to query user profiles: {}", e))?
         } else {
             // Build IN clause with placeholders
             let placeholders = uid_list.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            (
-                format!(
-                    "SELECT uid, name, role, settings, last_modified
-                     FROM user_profiles
-                     WHERE uid IN ({}) AND deleted_at IS NULL
-                     ORDER BY name",
-                    placeholders
-                ),
-                true,
-            )
-        }
-    } else {
-        (
-            "SELECT uid, name, role, settings, last_modified
-             FROM user_profiles
-             WHERE deleted_at IS NULL
-             ORDER BY name".to_string(),
-            false,
-        )
-    };
+            let query_str = format!(
+                "SELECT uid, name, role, settings, last_modified
+                 FROM user_profiles
+                 WHERE uid IN ({}) AND deleted_at IS NULL
+                 ORDER BY name",
+                placeholders
+            );
 
-    let mut query = sqlx::query(&query_str);
-
-    if has_filter {
-        if let Some(uid_list) = uids {
+            let mut query = sqlx::query(&query_str);
             for uid in &uid_list {
                 query = query.bind(uid);
             }
-        }
-    }
 
-    let rows = query
+            query
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| format!("Failed to query user profiles: {}", e))?
+        }
+    } else {
+        // No filter - fetch all profiles
+        sqlx::query(
+            "SELECT uid, name, role, settings, last_modified
+             FROM user_profiles
+             WHERE deleted_at IS NULL
+             ORDER BY name"
+        )
         .fetch_all(&pool)
         .await
-        .map_err(|e| format!("Failed to query user profiles: {}", e))?;
+        .map_err(|e| format!("Failed to query user profiles: {}", e))?
+    };
 
     Ok(rows
         .into_iter()

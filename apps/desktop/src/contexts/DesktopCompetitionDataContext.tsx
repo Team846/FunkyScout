@@ -54,6 +54,7 @@ export interface Picklist {
   title: string;
   uname: string;
   uid: string;
+  type?: string; // "public" | "private" | "default"
   timestamp: number;
   last_modified: number;
 }
@@ -63,6 +64,7 @@ export interface PicklistEntry {
   id: string;
   team: string;
   rank: number;
+  flags?: any; // JSON flags like { excluded: boolean }
   last_modified: number;
 }
 
@@ -121,6 +123,8 @@ export function DesktopCompetitionDataProvider({
             getSQLitePicklistEntries(currentEvent),
           ]);
 
+        console.log(`[DesktopCompetitionData] Cache read: ${cachedPicklists.length} picklists, ${cachedEntries.length} entries`);
+
         if (cachedSchedule.length > 0) {
           processScheduleData(cachedSchedule);
           hasLoadedDataRef.current = true;
@@ -174,6 +178,8 @@ export function DesktopCompetitionDataProvider({
         }
 
         // Always cache and update picklists from Supabase (even if empty)
+        console.log(`[DesktopCompetitionData] Supabase fetch: ${supabasePicklists?.length || 0} picklists, ${supabaseEntries?.length || 0} entries`);
+
         if (supabasePicklists && supabasePicklists.length > 0) {
           await cachePicklists(
             supabasePicklists.map((p: any) => ({
@@ -184,6 +190,7 @@ export function DesktopCompetitionDataProvider({
         }
 
         if (supabaseEntries && supabaseEntries.length > 0) {
+          console.log(`[DesktopCompetitionData] Caching ${supabaseEntries.length} entries:`, supabaseEntries.slice(0, 3).map(e => ({ id: e.id, team: e.team, flags: e.flags })));
           await cachePicklistEntries(
             supabaseEntries.map((e: any) => ({
               ...e,
@@ -192,8 +199,14 @@ export function DesktopCompetitionDataProvider({
           );
         }
 
-        setPicklists(supabasePicklists || []);
-        setPicklistEntries(supabaseEntries || []);
+        // Batch state updates to prevent UI flashing during refresh
+        // Use React 18's automatic batching or manual batch for consistency
+        const newPicklists = supabasePicklists || [];
+        const newEntries = supabaseEntries || [];
+
+        // Update both states together to prevent intermediate renders
+        setPicklists(newPicklists);
+        setPicklistEntries(newEntries);
       }
     } catch (error) {
       console.error("[DesktopCompetitionData] Fetch failed:", error);
@@ -259,14 +272,18 @@ export function DesktopCompetitionDataProvider({
   const fetchPicklistEntriesFromSupabase = async (eventKey: string) => {
     const { data, error } = await supabase
       .from("event_picklist_entries")
-      .select("*")
+      .select("event, id, team, rank, flags, last_modified")
       .eq("event", eventKey)
       .is("deleted_at", null)
       .order("rank", { ascending: true });
 
     if (error) throw error;
     return (data as any[]).map((e) => ({
-      ...e,
+      event: e.event,
+      id: e.id,
+      team: e.team,
+      rank: e.rank,
+      flags: e.flags || {},
       last_modified: e.last_modified
         ? new Date(e.last_modified).getTime()
         : 0,
