@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as TestPicklistsRouteImport } from './routes/test-picklists'
+import { Route as ScouterRatingsRouteImport } from './routes/scouter-ratings'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
@@ -24,6 +25,11 @@ const VerifyRoute = VerifyRouteImport.update({
 const TestPicklistsRoute = TestPicklistsRouteImport.update({
   id: '/test-picklists',
   path: '/test-picklists',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScouterRatingsRoute = ScouterRatingsRouteImport.update({
+  id: '/scouter-ratings',
+  path: '/scouter-ratings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetRoute = ResetRouteImport.update({
@@ -50,6 +56,7 @@ const AuthIndexRouteRoute = AuthIndexRouteRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/reset': typeof ResetRoute
+  '/scouter-ratings': typeof ScouterRatingsRoute
   '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/reset': typeof ResetRoute
+  '/scouter-ratings': typeof ScouterRatingsRoute
   '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/reset': typeof ResetRoute
+  '/scouter-ratings': typeof ScouterRatingsRoute
   '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth/': typeof AuthIndexRouteRoute
@@ -77,16 +86,25 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/reset'
+    | '/scouter-ratings'
     | '/test-picklists'
     | '/verify'
     | '/auth'
     | '/dashboard'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/reset' | '/test-picklists' | '/verify' | '/auth' | '/dashboard'
+  to:
+    | '/'
+    | '/reset'
+    | '/scouter-ratings'
+    | '/test-picklists'
+    | '/verify'
+    | '/auth'
+    | '/dashboard'
   id:
     | '__root__'
     | '/'
     | '/reset'
+    | '/scouter-ratings'
     | '/test-picklists'
     | '/verify'
     | '/auth/'
@@ -96,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ResetRoute: typeof ResetRoute
+  ScouterRatingsRoute: typeof ScouterRatingsRoute
   TestPicklistsRoute: typeof TestPicklistsRoute
   VerifyRoute: typeof VerifyRoute
   AuthIndexRouteRoute: typeof AuthIndexRouteRoute
@@ -116,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/test-picklists'
       fullPath: '/test-picklists'
       preLoaderRoute: typeof TestPicklistsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scouter-ratings': {
+      id: '/scouter-ratings'
+      path: '/scouter-ratings'
+      fullPath: '/scouter-ratings'
+      preLoaderRoute: typeof ScouterRatingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset': {
@@ -152,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ResetRoute: ResetRoute,
+  ScouterRatingsRoute: ScouterRatingsRoute,
   TestPicklistsRoute: TestPicklistsRoute,
   VerifyRoute: VerifyRoute,
   AuthIndexRouteRoute: AuthIndexRouteRoute,

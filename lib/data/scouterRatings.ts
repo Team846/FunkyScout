@@ -11,7 +11,7 @@
  */
 
 import type { UserProfile } from "@lib/data/schema";
-import type { EventMatchData } from "@lib/db";
+import type { EventMatchData, EventScheduleEntry } from "@lib/db";
 import supabase from "@lib/supabase/supabase";
 import { isTauri } from "@lib/utils/platform";
 
@@ -30,7 +30,8 @@ export interface ScouterRating {
   uid: string;
   name: string;
   rating: number | null; // 1-5, null if not rated
-  matchCount: number; // Matches scouted at this event
+  matchesAssigned: number; // Matches assigned from event_schedule
+  matchesScouted: number; // Matches actually scouted (submitted data)
   consistency?: number; // Optional: calculated consistency score
 }
 
@@ -127,12 +128,18 @@ export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
 export async function getScouterRatings(
   eventKey: string,
   profiles: UserProfile[],
-  matchData: EventMatchData[]
+  matchData: EventMatchData[],
+  scheduleData: EventScheduleEntry[]
 ): Promise<ScouterRating[]> {
   return profiles.map((profile) => {
-    // Count matches scouted by this user at this event
+    // Count matches ASSIGNED to this user (from event_schedule where uid matches)
+    const assignedMatches = scheduleData.filter(
+      (s) => s.uid === profile.uid && s.name && !s.deleted_at
+    );
+
+    // Count matches SCOUTED by this user (from event_match_data where name is populated)
     const scoutedMatches = matchData.filter(
-      (m) => m.uid === profile.uid && !m.deleted_at
+      (m) => m.uid === profile.uid && m.name && !m.deleted_at
     );
 
     // Extract rating from settings JSONB
@@ -143,15 +150,19 @@ export async function getScouterRatings(
       uid: profile.uid,
       name: profile.name,
       rating,
-      matchCount: scoutedMatches.length,
+      matchesAssigned: assignedMatches.length,
+      matchesScouted: scoutedMatches.length,
     };
   });
 }
 
 /**
- * Set manual rating for a scouter (updates user_profiles.settings)
+ * Set manual rating for a scouter
  *
- * IMPORTANT: This updates PostgreSQL JSONB field with timestamptz last_modified
+ * Desktop: Writes to local cache → queue → instant sync if online
+ * Mobile: Direct Supabase write (for now)
+ *
+ * IMPORTANT: PostgreSQL uses timestamptz, not epoch milliseconds
  */
 export async function setScouterRating(
   uid: string,
@@ -170,50 +181,63 @@ export async function setScouterRating(
     }
 
     const currentSettings = (profiles[0].settings as UserProfileSettings) || {};
-
-    // Update settings with new rating
     const newSettings: UserProfileSettings = {
       ...currentSettings,
       scouterRating: rating ?? undefined, // Remove field if null
     };
 
-    // Update in Supabase
-    // CRITICAL: Use now() for last_modified (PostgreSQL timestamptz)
-    const now = new Date();
+    const now = Date.now();
+
+    // Desktop: Write to cache → queue → sync
+    if (isTauri()) {
+      const { invoke } = await import("@tauri-apps/api/core");
+
+      console.log(`[ScouterRatings] Desktop: Updating profile ${uid} rating to ${rating}`);
+
+      // 1. Update local cache
+      await invoke("cache_user_profiles", {
+        profiles: [
+          {
+            uid: profiles[0].uid,
+            name: profiles[0].name,
+            role: profiles[0].role,
+            settings: newSettings,
+            last_modified: now,
+            deleted_at: null,
+          },
+        ],
+      });
+
+      // 2. Add to sync queue
+      await invoke("add_to_sync_queue", {
+        operation: "UPDATE_USER_PROFILE",
+        payload: {
+          uid,
+          settings: newSettings,
+        },
+      });
+
+      // 3. Trigger instant sync (unless offline, then waits for 60s cycle)
+      await invoke("trigger_sync_now").catch((e) => {
+        console.warn("[ScouterRatings] Instant sync trigger failed:", e);
+      });
+
+      console.log(`[ScouterRatings] Desktop: Queued profile update for ${uid}`);
+      return;
+    }
+
+    // Mobile: Direct Supabase write (no sync queue for mobile yet)
+    console.log(`[ScouterRatings] Mobile: Direct Supabase update for ${uid}`);
     const { error } = await supabase
       .from("user_profiles")
       .update({
         settings: newSettings,
-        last_modified: now.toISOString(), // PostgreSQL timestamptz format
+        last_modified: new Date(now).toISOString(), // PostgreSQL timestamptz format
       })
       .eq("uid", uid);
 
     if (error) {
       throw new Error(`Failed to update user profile: ${error.message}`);
-    }
-
-    // Desktop: Also update local cache
-    if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("cache_user_profiles", {
-          profiles: [
-            {
-              uid: profiles[0].uid,
-              name: profiles[0].name,
-              role: profiles[0].role,
-              settings: newSettings,
-              last_modified: now.getTime(), // Convert to epoch milliseconds
-              deleted_at: null,
-            },
-          ],
-        });
-      } catch (err) {
-        console.warn(
-          "[ScouterRatings] Failed to update local cache:",
-          err
-        );
-      }
     }
 
     console.log(

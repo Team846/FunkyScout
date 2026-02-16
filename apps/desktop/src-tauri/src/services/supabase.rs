@@ -590,4 +590,27 @@ impl SupabaseService {
     ) -> Result<()> {
         self.update_schedule_assignment(event, team, Some(uid), name).await
     }
+
+    /// Update user profile settings (from sync queue)
+    /// Used for scouter ratings and other profile settings
+    pub async fn update_user_profile_settings(
+        &self,
+        uid: &str,
+        settings: &Value,
+    ) -> Result<()> {
+        let payload = json!({
+            "settings": settings,
+            "last_modified": Self::now_iso(),
+        });
+
+        self.client
+            .from("user_profiles")
+            .update(&payload.to_string())
+            .eq("uid", uid)
+            .execute()
+            .await
+            .context("Failed to update user profile settings")?;
+
+        Ok(())
+    }
 }

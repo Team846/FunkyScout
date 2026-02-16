@@ -630,6 +630,7 @@ impl SyncService {
                 "PUT_MATCH_DATA" => self.sync_put_match_data(payload).await,
                 "DELETE_MATCH_DATA" => self.sync_delete_match_data(payload).await,
                 "ASSIGN_SHIFT" => self.sync_assign_shift(payload).await,
+                "UPDATE_USER_PROFILE" => self.sync_update_user_profile(payload).await,
                 _ => {
                     eprintln!("[SyncQueue] Unknown operation: {}", operation);
                     Err(anyhow::anyhow!("Unknown operation type"))
@@ -831,6 +832,18 @@ impl SyncService {
         let name = payload.get("name").and_then(|v| v.as_str());
 
         self.supabase.assign_shift(event, team, uid, name).await?;
+
+        Ok(())
+    }
+
+    /// Sync: Update user profile settings (scouter ratings)
+    async fn sync_update_user_profile(&self, payload: serde_json::Value) -> Result<()> {
+        let uid = payload.get("uid").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing uid"))?;
+        let settings = payload.get("settings")
+            .ok_or_else(|| anyhow::anyhow!("Missing settings"))?;
+
+        self.supabase.update_user_profile_settings(uid, settings).await?;
 
         Ok(())
     }

@@ -102,7 +102,50 @@ export async function putTeamData(
 
   const now = Date.now();
 
-  // 1. Write to local SQLite immediately (optimistic)
+  if (isTauri()) {
+    // DESKTOP: Use Tauri commands
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    const teamData = {
+      event: eventKey,
+      team: teamNumber,
+      data: data,
+      team_name: options?.teamName,
+      name: options?.name,
+      uid: options?.uid,
+      timestamp: now,
+      last_modified: now,
+      deleted_at: null,
+    };
+
+    // 1. Cache locally (Tauri SQLite)
+    await invoke("cache_team_data", { data: [teamData] });
+
+    // 2. Add to sync queue
+    await invoke("add_to_sync_queue", {
+      operation: "PUT_TEAM_DATA",
+      payload: {
+        event: eventKey,
+        team: teamNumber,
+        data: data,
+        teamName: options?.teamName,
+        name: options?.name,
+        uid: options?.uid,
+        timestamp: now,
+      },
+    });
+
+    console.log(`[Writes] Desktop: Queued team data for ${teamNumber} in ${eventKey}`);
+
+    // 3. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Use WASM SQLite
   const teamData: EventTeamData = {
     event: eventKey,
     team: teamNumber,
@@ -114,6 +157,7 @@ export async function putTeamData(
     last_modified: now,
   };
 
+  // 1. Write to local SQLite immediately (optimistic)
   await cacheEventTeamData(eventKey, [teamData]);
 
   // 2. Queue for background sync
@@ -127,7 +171,7 @@ export async function putTeamData(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued team data for ${teamNumber} in ${eventKey}`);
+  console.log(`[Writes] Mobile: Queued team data for ${teamNumber} in ${eventKey}`);
 
   // 3. Trigger instant sync if online
   await triggerInstantSync();
@@ -159,7 +203,53 @@ export async function putMatchData(
 
   const now = Date.now();
 
-  // 1. Write to local SQLite
+  if (isTauri()) {
+    // DESKTOP: Use Tauri commands
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    const matchData = {
+      event: eventKey,
+      match: matchNumber,
+      team: teamNumber,
+      alliance: alliance,
+      data_raw: dataRaw,
+      data: null, // unused field
+      name: options?.name,
+      uid: uid,
+      timestamp: now,
+      last_modified: now,
+      deleted_at: null,
+    };
+
+    // 1. Cache locally (Tauri SQLite)
+    await invoke("cache_match_data", { data: [matchData] });
+
+    // 2. Add to sync queue
+    await invoke("add_to_sync_queue", {
+      operation: "PUT_MATCH_DATA",
+      payload: {
+        event: eventKey,
+        match: matchNumber,
+        team: teamNumber,
+        alliance: alliance,
+        dataRaw: dataRaw,
+        name: options?.name,
+        uid: uid,
+        timestamp: now,
+      },
+    });
+
+    console.log(`[Writes] Desktop: Queued match data for ${teamNumber} in match ${matchNumber}`);
+
+    // 3. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Use WASM SQLite
   const matchData: EventMatchData = {
     event: eventKey,
     match: matchNumber,
@@ -173,6 +263,7 @@ export async function putMatchData(
     last_modified: now,
   };
 
+  // 1. Write to local SQLite
   await cacheEventMatchData(eventKey, [matchData]);
 
   // 2. Queue for sync
@@ -188,7 +279,7 @@ export async function putMatchData(
   });
 
   console.log(
-    `[Writes] Queued match data for ${teamNumber} in match ${matchNumber}`,
+    `[Writes] Mobile: Queued match data for ${teamNumber} in match ${matchNumber}`,
   );
 
   // 3. Trigger instant sync if online
@@ -244,6 +335,42 @@ export async function assignShift(
 ): Promise<void> {
   const now = Date.now();
 
+  if (isTauri()) {
+    // DESKTOP: Use Tauri commands
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    // Get schedule and update assignment
+    const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
+    const updated = schedule.map((s: EventScheduleEntry) =>
+      s.team === teamNumber ? { ...s, uid, name, last_modified: now } : s,
+    );
+
+    // 1. Cache locally (Tauri SQLite)
+    await invoke("cache_schedule", { schedule: updated });
+
+    // 2. Add to sync queue
+    await invoke("add_to_sync_queue", {
+      operation: "ASSIGN_SHIFT",
+      payload: {
+        event: eventKey,
+        team: teamNumber,
+        uid: uid,
+        name: name,
+        timestamp: now,
+      },
+    });
+
+    console.log(`[Writes] Desktop: Queued shift assignment for ${teamNumber}`);
+
+    // 3. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Use WASM SQLite
   // Update local schedule cache
   const schedule = await getEventSchedule(eventKey);
   const updated = schedule.map((s: EventScheduleEntry) =>
@@ -260,7 +387,7 @@ export async function assignShift(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued shift assignment for ${teamNumber}`);
+  console.log(`[Writes] Mobile: Queued shift assignment for ${teamNumber}`);
 
   // Trigger instant sync if online
   await triggerInstantSync();
