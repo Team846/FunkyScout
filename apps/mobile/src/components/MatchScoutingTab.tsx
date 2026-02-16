@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
 import { getMatchLabel } from "@lib/utils/match";
+import { calculateSingleMatchStats } from "@lib/data/matchStats";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
@@ -231,21 +232,27 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
   const navigate = useNavigate();
   const matchDataRaw = data.data_raw as MatchDataRaw;
 
-  if (!matchDataRaw) {
+  // Use centralized stats calculation
+  const matchStats = calculateSingleMatchStats(data);
+
+  if (!matchStats) {
     return null;
   }
 
-  const autoScore = matchDataRaw.autoActions?.length || 0;
-  const teleopScore = matchDataRaw.teleopActions?.length || 0;
+  const autoScore =
+    matchStats.auto.groundIntakes +
+    matchStats.auto.stationIntakes +
+    matchStats.auto.passes +
+    matchStats.auto.shoots +
+    matchStats.auto.stocking;
+  const teleopScore =
+    matchStats.teleop.groundIntakes +
+    matchStats.teleop.stationIntakes +
+    matchStats.teleop.passes +
+    matchStats.teleop.shoots +
+    matchStats.teleop.stocking;
   const totalActions = autoScore + teleopScore;
-
-  // Find the last active climb action
-  const climbAction = matchDataRaw.teleopActions?.find(
-    (a) => a.actionId.startsWith("climb_L") && a.enabled
-  );
-  const climbLevel = climbAction
-    ? climbAction.actionId.replace("climb_L", "")
-    : "None";
+  const climbLevel = matchStats.climb.level || "None";
 
   const handleEdit = () => {
     navigate({

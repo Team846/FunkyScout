@@ -19,6 +19,7 @@ import { getLocalUserData } from "@lib/supabase/user";
 import { getMatchLabel } from "@lib/utils/match";
 import { getMatchData } from "@lib/data/match-data";
 import { getTeams } from "@lib/data/teams";
+import { calculateAllTeamStats } from "@lib/data/matchStats";
 import type { NexusMatch } from "@lib/nexus";
 
 interface NextMatchData {
@@ -120,107 +121,32 @@ export function DataPage() {
       });
   }, [currentEvent]);
 
-  // Calculate team statistics
+  // Calculate team statistics using centralized utility
   const teamStats = useMemo<TeamStats[]>(() => {
     if (!teams.length) return [];
 
-    const statsMap = new Map<string, TeamStats>();
+    // Use centralized stats calculation
+    const statsMap = calculateAllTeamStats(matchScoutingData);
 
-    // Initialize stats for all teams
-    teams.forEach((team) => {
-      // Get EPA from event_team_data
+    // Combine with TBA data (EPA/OPR) and ranking
+    return teams.map((team) => {
+      const stats = statsMap[team.key];
       const teamDataEntry = teamData.find((t) => t.team === team.key);
       const epaValue = teamDataEntry?.data?.epa?.total_points?.mean ?? null;
 
-      statsMap.set(team.key, {
+      return {
         teamKey: team.key,
         teamNumber: team.num,
         teamName: team.name,
         rank: team.rank || 0,
-        epa: epaValue,
-        averageRating: null,
-        climbPercentage: null,
-        matchCount: 0,
-      });
+        epa: epaValue, // Keep EPA from TBA data
+        averageRating: stats?.ratings.overall || null,
+        climbPercentage: stats
+          ? stats.climb.L2Percentage + stats.climb.L3Percentage
+          : null,
+        matchCount: stats?.matchCount || 0,
+      };
     });
-
-    // Debug: Log first match data to understand structure
-    if (matchScoutingData.length > 0) {
-      console.log('[DataPage] First match data sample:', matchScoutingData[0]);
-      console.log('[DataPage] data_raw field:', matchScoutingData[0]?.data_raw);
-      console.log('[DataPage] postMatch:', matchScoutingData[0]?.data_raw?.postMatch);
-      console.log('[DataPage] teleopActions:', matchScoutingData[0]?.data_raw?.teleopActions);
-    }
-
-    // Process match scouting data
-    matchScoutingData.forEach((matchData) => {
-      const teamKey = matchData.team;
-      const stats = statsMap.get(teamKey);
-      if (!stats) return;
-
-      stats.matchCount++;
-
-      // Calculate ratings - use data_raw which contains the actual match scouting data
-      const data = matchData.data_raw;
-
-      if (data?.postMatch?.ratings) {
-        const ratings = data.postMatch.ratings;
-        const ratingValues = [
-          ratings.groundIntake,
-          ratings.stationIntake,
-          ratings.passing,
-        ].filter((r) => r != null);
-
-        // Include driver rating separately (from top level)
-        if (data.driverRating != null) {
-          ratingValues.push(data.driverRating);
-        }
-
-        console.log(`[DataPage] Team ${teamKey} match - ratings:`, ratingValues);
-
-        if (ratingValues.length > 0) {
-          const matchAvg =
-            ratingValues.reduce((sum, r) => sum + r, 0) / ratingValues.length;
-          stats.averageRating =
-            stats.averageRating === null
-              ? matchAvg
-              : (stats.averageRating * (stats.matchCount - 1) + matchAvg) /
-                stats.matchCount;
-        }
-      } else {
-        console.log(`[DataPage] Team ${teamKey} - no postMatch.ratings found, data:`, data);
-      }
-
-      // Check for climb - any action that starts with "climb" or contains "climb"
-      const teleopActions = data?.teleopActions || [];
-      const hasClimb = teleopActions.some((action: any) => {
-        if (!action.actionId) return false;
-        const actionId = action.actionId.toLowerCase();
-        // Check for any climb-related action (climb_L1, climb_L2, climb_L3, climb_shallow, climb_deep, etc.)
-        return actionId.includes('climb');
-      });
-
-      console.log(`[DataPage] Team ${teamKey} match - teleopActions:`, teleopActions.map((a: any) => a.actionId), `hasClimb: ${hasClimb}`);
-
-      if (hasClimb) {
-        stats.climbPercentage =
-          stats.climbPercentage === null
-            ? 100
-            : ((stats.climbPercentage * (stats.matchCount - 1)) / 100 +
-                (hasClimb ? 1 : 0)) *
-              (100 / stats.matchCount);
-      } else {
-        stats.climbPercentage =
-          stats.climbPercentage === null
-            ? 0
-            : (stats.climbPercentage * (stats.matchCount - 1)) /
-              stats.matchCount;
-      }
-    });
-
-    console.log('[DataPage] Final stats map:', Array.from(statsMap.values()).slice(0, 3));
-
-    return Array.from(statsMap.values());
   }, [teams, teamData, matchScoutingData]);
 
   // Sort teams
