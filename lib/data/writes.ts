@@ -233,7 +233,7 @@ export async function putMatchData(
         team: teamNumber,
         alliance: alliance,
         dataRaw: dataRaw,
-        name: options?.name,
+        ...(options?.name ? { name: options.name } : {}), // Only include if defined
         uid: uid,
         timestamp: now,
       },
@@ -303,6 +303,7 @@ export async function deleteMatchData(
   if (existing.length > 0) {
     const toDelete = existing.filter((e: EventMatchData) => e.uid === uid);
     await cacheEventMatchData(
+      eventKey,
       toDelete.map((e: EventMatchData) => ({ ...e, deleted_at: now })),
     );
   }
@@ -605,7 +606,7 @@ export async function updatePicklist(
     last_modified: now,
   };
 
-  await cacheEventPicklists([picklist as EventPicklist]);
+  await cacheEventPicklists(eventKey, [picklist as EventPicklist]);
 
   // Delete old entries and cache new ones
   const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
@@ -710,7 +711,7 @@ export async function deletePicklist(
     last_modified: now,
   };
 
-  await cacheEventPicklists([picklist as EventPicklist]);
+  await cacheEventPicklists(eventKey, [picklist as EventPicklist]);
 
   // Soft delete entries locally
   const existingEntries = await getEventPicklistEntries(eventKey, id);
@@ -720,7 +721,7 @@ export async function deletePicklist(
     last_modified: now,
   }));
 
-  await cacheEventPicklistEntries(deletedEntries);
+  await cacheEventPicklistEntries(eventKey, deletedEntries);
 
   // Queue for sync
   await addToSyncQueue("DELETE_PICKLIST", {

@@ -101,22 +101,30 @@ impl SupabaseService {
         uid: Option<&str>,
         timestamp_ms: i64,
     ) -> Result<()> {
-        let payload = json!({
+        // Build payload dynamically - only include fields that are Some()
+        // This prevents overwriting existing fields with null values
+        let mut payload = json!({
             "event": event,
             "match": match_key,
             "team": team,
             "alliance": alliance,
             "data_raw": data_raw,
-            "name": name,
-            "uid": uid,
             "timestamp": Self::timestamp_to_iso(timestamp_ms),
             "last_modified": Self::now_iso(),
         });
 
+        // Only include name/uid if they're provided (not None)
+        if let Some(name_val) = name {
+            payload["name"] = json!(name_val);
+        }
+        if let Some(uid_val) = uid {
+            payload["uid"] = json!(uid_val);
+        }
+
         self.client
             .from("event_match_data")
             .upsert(&payload.to_string())
-            .on_conflict("event,match,team,uid,timestamp")
+            .on_conflict("event,match,team")
             .execute()
             .await
             .context("Failed to upsert match data")?;
