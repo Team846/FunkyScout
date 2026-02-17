@@ -12,6 +12,7 @@ import { useEvent } from "@lib/context/EventContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { getLocalUserData } from "@lib/supabase/user";
 import { getMatchLabel } from "@lib/utils/match";
+import { useTeamData } from "@lib/context/TeamDataContext";
 import {
   getUserEventScheduleAssignments,
   type EventScheduleEntry,
@@ -60,6 +61,14 @@ export function ShiftsPage() {
   const userData = getLocalUserData();
   const [shifts, setShifts] = useState<ShiftDisplay[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const { teams, loading: teamsLoading } = useTeamData();
+  const { schedule, nexusMatches, loading: scheduleLoading } = useCompetition();
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
+  const loading = teamsLoading || scheduleLoading;
+
+
+
 
   useEffect(() => {
     if (!currentEvent || !userData.name) {
@@ -115,6 +124,12 @@ export function ShiftsPage() {
         setShifts([]);
       })
       .finally(() => setInitialLoading(false));
+      const teamsInMatch = selectedMatch
+      ? schedule.filter((s) => s.match === selectedMatch)
+      : [];
+      const spectatedTeam = teamsInMatch.filter((t) => t.alliance === selectedTeam);
+      
+
   }, [currentEvent, userData.name, tbaSchedule]);
 
   if (!currentEvent) {
@@ -144,7 +159,7 @@ export function ShiftsPage() {
               className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
               onSelect={() =>
                 navigate({
-                  to: "/match_start",
+                  to: "/match_edit_stats",
                   search: {
                     teamNum: shift.team,
                     matchNum: shift.match,

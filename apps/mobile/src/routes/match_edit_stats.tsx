@@ -114,7 +114,7 @@ function MatchEditStats() {
 
   const handleBack = () => {
     navigate({
-      to: "/match_end",
+      to: "/home",
       search: { teamNum, matchNum, alliance, practice },
     });
   };
