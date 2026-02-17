@@ -6,6 +6,8 @@ import { calculateSingleMatchStats } from "@lib/data/matchStats";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
+import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 
 interface MatchScoutingTabProps {
   eventKey: string;
@@ -231,6 +233,25 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
 function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: string }) {
   const navigate = useNavigate();
   const matchDataRaw = data.data_raw as MatchDataRaw;
+  const [canEdit, setCanEdit] = useState(false);
+
+  // Check if user can edit this submission (is owner or admin)
+  useEffect(() => {
+    async function checkPermissions() {
+      const session = await getSession();
+      const localUser = getLocalUserData();
+      const currentUid = session?.user?.id;
+      const userRole = localUser.role || "user";
+
+      // Can edit if: (1) you scouted it, OR (2) you're an admin
+      const isOwner = data.uid === currentUid;
+      const isAdmin = userRole === "admin";
+
+      setCanEdit(isOwner || isAdmin);
+    }
+
+    checkPermissions();
+  }, [data.uid]);
 
   // Use centralized stats calculation
   const matchStats = calculateSingleMatchStats(data);
@@ -274,19 +295,21 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
           Scouted by: {data.name || "Unknown"}
         </p>
         <p className="text-xs text-muted-foreground">
-          {new Date(data.timestamp).toLocaleString()}
+          {data.timestamp ? new Date(data.timestamp).toLocaleString() : "No timestamp"}
         </p>
       </div>
 
-      {/* Edit Button */}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={handleEdit}
-        className="w-full"
-      >
-        Edit Match Data
-      </Button>
+      {/* Edit Button - Only show if user scouted this OR is admin */}
+      {canEdit && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleEdit}
+          className="w-full"
+        >
+          Edit Match Data
+        </Button>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg bg-background p-3">
