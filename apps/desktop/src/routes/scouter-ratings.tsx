@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Button } from "@shadcn/ui/components/button.tsx";
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -17,14 +16,15 @@ import {
 } from "@shadcn/ui/components/select.tsx";
 import { Star, Loader2 } from "lucide-react";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
+import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import {
   getUserProfiles,
   getScouterRatings,
   setScouterRating,
   type ScouterRating,
-  type UserProfile,
 } from "@lib/data/scouterRatings";
-import type { EventMatchData, EventScheduleEntry } from "@lib/db";
+import type { EventMatchData } from "@lib/db";
+import { getMatchScoutingData, cacheMatchScoutingData, type MatchScoutingData } from "../lib/db";
 import supabase from "@lib/supabase/supabase";
 import { toast } from "sonner";
 
@@ -34,71 +34,134 @@ export const Route = createFileRoute("/scouter-ratings")({
 
 function ScouterRatingsPage() {
   const { currentEvent } = useDesktopEvent();
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [matchData, setMatchData] = useState<EventMatchData[]>([]);
-  const [scheduleData, setScheduleData] = useState<EventScheduleEntry[]>([]);
+  const { schedule } = useDesktopCompetitionData(); // Use context for schedule
   const [scouterRatings, setScouterRatings] = useState<ScouterRating[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
 
-  // Polling refs
-  const pollingInterval = useRef<NodeJS.Timeout | null>(null);
-  const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
-
   /**
-   * Fetch user profiles, match data, and schedule to calculate ratings
-   * Runs every 30 seconds for desktop
+   * Fetch user profiles and match data to calculate ratings
+   * Schedule comes from DesktopCompetitionDataContext
    */
   const fetchData = useCallback(async () => {
     if (!currentEvent) return;
 
     try {
-      console.log("[ScouterRatings] Fetching user profiles, match data, and schedule");
+      console.log("[ScouterRatings] Fetching user profiles and match data");
 
-      // Fetch user profiles from Supabase
+      // Fetch user profiles from local cache (falls back to Supabase)
       const userProfiles = await getUserProfiles();
-      setProfiles(userProfiles);
 
-      // Fetch match data from Supabase (for desktop)
-      const { data: matchDataResult, error: matchError } = await supabase
-        .from("event_match_data")
-        .select("*")
-        .eq("event", currentEvent)
-        .is("deleted_at", null);
+      // Try local cache first, fallback to Supabase if empty
+      let fetchedMatchData: EventMatchData[] = [];
 
-      if (matchError) {
-        console.error("[ScouterRatings] Error fetching match data:", matchError);
-        throw matchError;
+      try {
+        const cachedData = await getMatchScoutingData(currentEvent);
+        if (cachedData && cachedData.length > 0) {
+          console.log(`[ScouterRatings] Using ${cachedData.length} match records from local cache`);
+          fetchedMatchData = cachedData.map((m) => ({
+            event: m.event,
+            match: m.match,
+            team: m.team,
+            alliance: m.alliance as "red" | "blue",
+            data_raw: m.data_raw || {},
+            data: m.data || {},
+            name: m.name ?? undefined,
+            uid: m.uid ?? undefined,
+            timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
+            last_modified: m.last_modified,
+            deleted_at: undefined,
+          }));
+        } else {
+          // Cache empty - fetch from Supabase and cache
+          console.log("[ScouterRatings] Cache empty, fetching from Supabase");
+          const { data: matchDataResult, error: matchError } = await supabase
+            .from("event_match_data")
+            .select("*")
+            .eq("event", currentEvent)
+            .is("deleted_at", null);
+
+          if (matchError) {
+            console.error("[ScouterRatings] Error fetching match data:", matchError);
+            throw matchError;
+          }
+
+          fetchedMatchData = (matchDataResult || []).map((m: any) => ({
+            event: m.event,
+            match: m.match,
+            team: m.team,
+            alliance: m.alliance,
+            data_raw: m.data_raw || {},
+            data: m.data || {},
+            name: m.name ?? undefined,
+            uid: m.uid ?? undefined,
+            timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
+            last_modified: m.last_modified ? new Date(m.last_modified).getTime() : undefined,
+            deleted_at: m.deleted_at ? new Date(m.deleted_at).getTime() : undefined,
+          }));
+
+          // Cache to local DB
+          if (fetchedMatchData.length > 0) {
+            const cacheData: MatchScoutingData[] = fetchedMatchData.map((m) => ({
+              event: m.event,
+              match: m.match,
+              team: m.team,
+              alliance: m.alliance as "red" | "blue",
+              data_raw: m.data_raw,
+              data: m.data,
+              name: m.name ?? null,
+              uid: m.uid ?? null,
+              timestamp: m.timestamp ? new Date(m.timestamp).toISOString() : null,
+              last_modified: m.last_modified ?? Date.now(),
+            }));
+            await cacheMatchScoutingData(cacheData);
+            console.log(`[ScouterRatings] Cached ${fetchedMatchData.length} match records to local DB`);
+          }
+        }
+      } catch (error) {
+        console.error("[ScouterRatings] Error with local cache, falling back to Supabase:", error);
+        // Fallback to direct Supabase query
+        const { data: matchDataResult, error: matchError } = await supabase
+          .from("event_match_data")
+          .select("*")
+          .eq("event", currentEvent)
+          .is("deleted_at", null);
+
+        if (!matchError && matchDataResult) {
+          fetchedMatchData = (matchDataResult || []).map((m: any) => ({
+            event: m.event,
+            match: m.match,
+            team: m.team,
+            alliance: m.alliance,
+            data_raw: m.data_raw || {},
+            data: m.data || {},
+            name: m.name ?? undefined,
+            uid: m.uid ?? undefined,
+            timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
+            last_modified: m.last_modified ? new Date(m.last_modified).getTime() : undefined,
+            deleted_at: m.deleted_at ? new Date(m.deleted_at).getTime() : undefined,
+          }));
+        }
       }
-
-      const fetchedMatchData = (matchDataResult || []).map((m: any) => ({
-        ...m,
-        data_raw: m.data_raw || {},
-        data: m.data || {},
-      }));
-      setMatchData(fetchedMatchData);
-
-      // Fetch schedule data from Supabase
-      const { data: scheduleResult, error: scheduleError } = await supabase
-        .from("event_schedule")
-        .select("*")
-        .eq("event", currentEvent)
-        .is("deleted_at", null);
-
-      if (scheduleError) {
-        console.error("[ScouterRatings] Error fetching schedule:", scheduleError);
-        throw scheduleError;
-      }
-
-      const fetchedSchedule = (scheduleResult || []) as EventScheduleEntry[];
-      setScheduleData(fetchedSchedule);
 
       // Calculate ratings for each scouter
+      // Schedule comes from context, convert to expected format
+      const scheduleEntries = schedule.map((s) => ({
+        event: currentEvent,
+        match: s.match,
+        team: s.team,
+        alliance: s.alliance as "red" | "blue",
+        name: s.name ?? undefined,
+        uid: s.uid ?? undefined,
+        last_modified: Date.now(), // Not used in ratings calculation
+        deleted_at: undefined,
+      }));
+
       const ratings = await getScouterRatings(
         currentEvent,
         userProfiles,
         fetchedMatchData,
-        fetchedSchedule
+        scheduleEntries
       );
       setScouterRatings(ratings);
 
@@ -109,19 +172,7 @@ function ScouterRatingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentEvent]);
-
-  // Keep ref in sync
-  useEffect(() => {
-    fetchDataRef.current = fetchData;
-  }, [fetchData]);
-
-  // Stable wrapper for polling
-  const fetchDataStable = useCallback(async () => {
-    if (fetchDataRef.current) {
-      await fetchDataRef.current();
-    }
-  }, []);
+  }, [currentEvent, schedule]);
 
   // Initial fetch on mount and event change
   useEffect(() => {
@@ -130,53 +181,6 @@ function ScouterRatingsPage() {
       fetchData();
     }
   }, [currentEvent, fetchData]);
-
-  // Set up 30-second polling
-  useEffect(() => {
-    if (!currentEvent) return;
-
-    console.log("[ScouterRatings] Starting 30s polling");
-    pollingInterval.current = setInterval(() => {
-      console.log("[ScouterRatings] 30s poll triggered");
-      fetchDataStable();
-    }, 30_000); // 30 seconds
-
-    return () => {
-      if (pollingInterval.current) {
-        clearInterval(pollingInterval.current);
-        pollingInterval.current = null;
-      }
-    };
-  }, [currentEvent, fetchDataStable]);
-
-  // Real-time subscription for instant updates when other admins change ratings
-  useEffect(() => {
-    if (!currentEvent) return;
-
-    console.log("[ScouterRatings] Setting up real-time subscription");
-
-    const channel = supabase
-      .channel("user_profiles_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*", // INSERT, UPDATE, DELETE
-          schema: "public",
-          table: "user_profiles",
-        },
-        (payload) => {
-          console.log("[ScouterRatings] Real-time update:", payload);
-          // Refresh data immediately
-          fetchDataStable();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log("[ScouterRatings] Cleaning up real-time subscription");
-      supabase.removeChannel(channel);
-    };
-  }, [currentEvent, fetchDataStable]);
 
   /**
    * Handle rating change for a scouter

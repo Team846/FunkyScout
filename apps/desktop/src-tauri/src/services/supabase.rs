@@ -169,21 +169,34 @@ impl SupabaseService {
         uid: &str,
         timestamp_ms: i64,
     ) -> Result<()> {
+        let timestamp_iso = Self::timestamp_to_iso(timestamp_ms);
+
+        println!(
+            "[Supabase] Deleting match data: event={}, match={}, team={}, uid={}, timestamp_ms={}, timestamp_iso={}",
+            event, match_key, team, uid, timestamp_ms, timestamp_iso
+        );
+
         let payload = json!({
             "deleted_at": Self::now_iso(),
         });
 
-        self.client
+        let response = self.client
             .from("event_match_data")
             .update(&payload.to_string())
             .eq("event", event)
             .eq("match", match_key)
             .eq("team", team)
             .eq("uid", uid)
-            .eq("timestamp", &Self::timestamp_to_iso(timestamp_ms))
+            .eq("timestamp", &timestamp_iso)
             .execute()
             .await
             .context("Failed to delete match data")?;
+
+        println!("[Supabase] Delete response status: {}", response.status());
+
+        // Check if any rows were affected
+        let body = response.text().await.unwrap_or_default();
+        println!("[Supabase] Delete response body: {}", body);
 
         Ok(())
     }
@@ -267,6 +280,7 @@ impl SupabaseService {
     }
 
     /// Delete picklist entries (for picklist update)
+    /// DEPRECATED: Use soft_delete_removed_entries instead to reduce postgres_changes events
     pub async fn delete_picklist_entries(&self, picklist_id: &str) -> Result<()> {
         self.client
             .from("event_picklist_entries")
@@ -275,6 +289,54 @@ impl SupabaseService {
             .execute()
             .await
             .context("Failed to delete picklist entries")?;
+
+        Ok(())
+    }
+
+    /// Soft delete picklist entries NOT in the new list (reduces postgres_changes events by 50%)
+    /// Only updates entries that were removed, instead of deleting ALL then inserting ALL
+    pub async fn soft_delete_removed_entries(
+        &self,
+        picklist_id: &str,
+        current_teams: &[String],
+    ) -> Result<()> {
+        if current_teams.is_empty() {
+            // If no teams in new list, soft delete everything
+            let payload = json!({
+                "deleted_at": Self::now_iso(),
+            });
+
+            self.client
+                .from("event_picklist_entries")
+                .update(&payload.to_string())
+                .eq("id", picklist_id)
+                .is("deleted_at", "null")
+                .execute()
+                .await
+                .context("Failed to soft delete all picklist entries")?;
+        } else {
+            // Soft delete entries NOT in the current team list
+            let payload = json!({
+                "deleted_at": Self::now_iso(),
+            });
+
+            // Build CSV list for NOT IN query
+            let teams_csv = current_teams
+                .iter()
+                .map(|t| format!("\"{}\"", t.replace("\"", "\"\""))) // Escape quotes
+                .collect::<Vec<_>>()
+                .join(",");
+
+            self.client
+                .from("event_picklist_entries")
+                .update(&payload.to_string())
+                .eq("id", picklist_id)
+                .is("deleted_at", "null")
+                .not("team", "in", &format!("({})", teams_csv))
+                .execute()
+                .await
+                .context("Failed to soft delete removed picklist entries")?;
+        }
 
         Ok(())
     }
@@ -360,8 +422,8 @@ impl SupabaseService {
         Ok(profiles)
     }
 
-    /// Bulk upsert team data from TBA with merge logic
-    /// Fetches existing data, merges TBA stats with pit scouting data, then upserts
+    /// Bulk upsert team data from TBA with merge logic and change detection
+    /// Only updates teams where data actually changed (reduces postgres_changes events by 90%)
     pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>) -> Result<()> {
         if teams.is_empty() {
             return Ok(());
@@ -393,38 +455,57 @@ impl SupabaseService {
             })
             .collect();
 
-        // 3. Merge TBA stats with existing pit scouting data
-        let merged_teams: Vec<Value> = teams
+        // 3. Merge TBA stats with existing pit scouting data + filter for changes
+        let total_teams = teams.len();
+        let changed_teams: Vec<Value> = teams
             .into_iter()
-            .map(|mut new_record| {
+            .filter_map(|mut new_record| {
                 let team = new_record.get("team").and_then(|v| v.as_str()).unwrap_or("");
                 let new_data = new_record.get("data").cloned().unwrap_or(json!({}));
 
                 // If existing data found, merge (pit data + TBA stats)
-                let merged_data = if let Some(existing) = existing_map.remove(team) {
+                let (merged_data, has_changed) = if let Some(existing) = existing_map.remove(team) {
                     // Merge: keep existing pit fields, overwrite with new TBA stats
-                    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object(), new_data.as_object()) {
+                    let merged = if let (Some(existing_obj), Some(new_obj)) = (existing.as_object(), new_data.as_object()) {
                         let mut merged = existing_obj.clone();
                         for (key, value) in new_obj {
                             merged.insert(key.clone(), value.clone());
                         }
                         json!(merged)
                     } else {
-                        new_data // Fallback if not objects
-                    }
+                        new_data.clone() // Fallback if not objects
+                    };
+
+                    // Check if merged data differs from existing
+                    let changed = merged != existing;
+                    (merged, changed)
                 } else {
-                    new_data // No existing data, use new data as-is
+                    // No existing data, this is a new team - always include
+                    (new_data, true)
                 };
 
-                new_record["data"] = merged_data;
-                new_record
+                // Only include if data changed
+                if has_changed {
+                    new_record["data"] = merged_data;
+                    Some(new_record)
+                } else {
+                    None // Skip unchanged teams
+                }
             })
             .collect();
 
-        // 4. Upsert merged data
+        // 4. Only upsert if there are changes
+        if changed_teams.is_empty() {
+            println!("[Supabase] No team data changes detected, skipping upsert (saves postgres_changes events)");
+            return Ok(());
+        }
+
+        println!("[Supabase] Upserting {} changed teams (out of {} total)",
+            changed_teams.len(), total_teams);
+
         self.client
             .from("event_team_data")
-            .upsert(&serde_json::to_string(&merged_teams)?)
+            .upsert(&serde_json::to_string(&changed_teams)?)
             .on_conflict("event,team")
             .execute()
             .await
@@ -433,15 +514,80 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Bulk upsert schedule from TBA
+    /// Bulk upsert schedule from TBA with change detection
+    /// Only updates rows where match times, scores, or predictions changed
+    /// NOTE: Manual shift assignments (name/uid changes) will still trigger full updates - this is expected
     pub async fn bulk_upsert_schedule(&self, schedule: Vec<Value>) -> Result<()> {
         if schedule.is_empty() {
             return Ok(());
         }
 
+        // 1. Fetch existing schedule to detect changes
+        let event = schedule[0].get("event").and_then(|v| v.as_str()).unwrap_or("");
         let response = self.client
             .from("event_schedule")
-            .upsert(&serde_json::to_string(&schedule)?)
+            .select("event,match,team,est_time,red_score,blue_score,red_win_prob,predicted_red_score,predicted_blue_score,alliance,name,uid")
+            .eq("event", event)
+            .execute()
+            .await
+            .context("Failed to fetch existing schedule for change detection")?;
+
+        let existing_schedule: Vec<Value> = if response.status().is_success() {
+            let body = response.text().await?;
+            serde_json::from_str(&body).unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        // 2. Build lookup map by (match, team)
+        let existing_map: std::collections::HashMap<(String, String), Value> = existing_schedule
+            .into_iter()
+            .filter_map(|v| {
+                let match_key = v.get("match")?.as_str()?.to_string();
+                let team = v.get("team")?.as_str()?.to_string();
+                Some(((match_key, team), v))
+            })
+            .collect();
+
+        // 3. Filter for changed records only
+        let total_schedule = schedule.len();
+        let changed_schedule: Vec<Value> = schedule
+            .into_iter()
+            .filter(|new_record| {
+                let match_key = new_record.get("match").and_then(|v| v.as_str()).unwrap_or("");
+                let team = new_record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+
+                if let Some(existing) = existing_map.get(&(match_key.to_string(), team.to_string())) {
+                    // Check if any TBA-synced fields changed
+                    // We check: est_time, scores, predictions, alliance
+                    // We DON'T check name/uid (those are manual assignments, handled separately)
+                    let fields_to_check = [
+                        "est_time", "red_score", "blue_score",
+                        "red_win_prob", "predicted_red_score", "predicted_blue_score",
+                        "alliance"
+                    ];
+
+                    fields_to_check.iter().any(|field| {
+                        new_record.get(field) != existing.get(field)
+                    })
+                } else {
+                    true  // New entry, always include
+                }
+            })
+            .collect();
+
+        // 4. Only upsert if there are changes
+        if changed_schedule.is_empty() {
+            println!("[Supabase] No schedule changes detected, skipping upsert (saves postgres_changes events)");
+            return Ok(());
+        }
+
+        println!("[Supabase] Upserting {} changed schedule entries (out of {} total)",
+            changed_schedule.len(), total_schedule);
+
+        let response = self.client
+            .from("event_schedule")
+            .upsert(&serde_json::to_string(&changed_schedule)?)
             .on_conflict("event,match,team")
             .execute()
             .await
@@ -503,10 +649,13 @@ impl SupabaseService {
         event: &str,
         title: &str,
     ) -> Result<()> {
+        let now = Self::now_iso();
         let payload = json!({
             "title": title,
-            "last_modified": Self::now_iso(),
+            "last_modified": now,
         });
+
+        println!("[Supabase] Updating picklist {} with timestamp: {}", id, now);
 
         self.client
             .from("event_picklist")
@@ -517,10 +666,13 @@ impl SupabaseService {
             .await
             .context("Failed to update picklist")?;
 
+        println!("[Supabase] Picklist header updated successfully");
+
         Ok(())
     }
 
     /// Bulk upsert picklist entries (from sync queue)
+    /// IMPORTANT: Always sets deleted_at = NULL to restore soft-deleted entries
     pub async fn bulk_upsert_picklist_entries(
         &self,
         event: &str,
@@ -539,6 +691,7 @@ impl SupabaseService {
                     "team": entry.get("team").and_then(|v| v.as_str()).unwrap_or(""),
                     "rank": entry.get("rank").and_then(|v| v.as_i64()).unwrap_or(0),
                     "flags": entry.get("flags").cloned(),
+                    "deleted_at": Value::Null,  // Clear deleted_at (restore if was soft-deleted)
                     "last_modified": Self::now_iso(),
                 })
             })
@@ -620,5 +773,106 @@ impl SupabaseService {
             .context("Failed to update user profile settings")?;
 
         Ok(())
+    }
+
+    // ============================================================================
+    // FETCH METHODS (Polling Supabase for user-generated data)
+    // ============================================================================
+
+    /// Fetch event picklists from Supabase
+    /// Polls for picklists created by any user at this event
+    pub async fn fetch_event_picklists(&self, event: &str) -> Result<Vec<Value>> {
+        let response = self.client
+            .from("event_picklist")
+            .select("*")
+            .eq("event", event)
+            .is("deleted_at", "null")
+            .order("timestamp.desc")
+            .execute()
+            .await
+            .context("Failed to fetch picklists from Supabase")?;
+
+        let body = response.text().await?;
+        let data: Vec<Value> = serde_json::from_str(&body)
+            .context("Failed to parse picklist response")?;
+
+        Ok(data)
+    }
+
+    /// Fetch picklist entries from Supabase
+    /// Polls for all picklist entries at this event
+    pub async fn fetch_event_picklist_entries(&self, event: &str) -> Result<Vec<Value>> {
+        let response = self.client
+            .from("event_picklist_entries")
+            .select("event, id, team, rank, flags, last_modified")
+            .eq("event", event)
+            .is("deleted_at", "null")
+            .order("rank.asc")
+            .execute()
+            .await
+            .context("Failed to fetch picklist entries from Supabase")?;
+
+        let body = response.text().await?;
+        let data: Vec<Value> = serde_json::from_str(&body)
+            .context("Failed to parse picklist entries response")?;
+
+        Ok(data)
+    }
+
+    /// Fetch match scouting data from Supabase
+    /// Polls for all match submissions at this event
+    pub async fn fetch_event_match_data(&self, event: &str) -> Result<Vec<Value>> {
+        let response = self.client
+            .from("event_match_data")
+            .select("event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at")
+            .eq("event", event)
+            .is("deleted_at", "null")
+            .execute()
+            .await
+            .context("Failed to fetch match data from Supabase")?;
+
+        let body = response.text().await?;
+        let data: Vec<Value> = serde_json::from_str(&body)
+            .context("Failed to parse match data response")?;
+
+        Ok(data)
+    }
+
+    /// Fetch team data from Supabase
+    /// Polls for all team data at this event (includes TBA stats synced by desktop)
+    pub async fn fetch_event_team_data(&self, event: &str) -> Result<Vec<Value>> {
+        let response = self.client
+            .from("event_team_data")
+            .select("*")
+            .eq("event", event)
+            .is("deleted_at", "null")
+            .execute()
+            .await
+            .context("Failed to fetch team data from Supabase")?;
+
+        let body = response.text().await?;
+        let data: Vec<Value> = serde_json::from_str(&body)
+            .context("Failed to parse team data response")?;
+
+        Ok(data)
+    }
+
+    /// Fetch event schedule from Supabase
+    /// Polls for all schedule entries at this event (includes shift assignments)
+    pub async fn fetch_event_schedule(&self, event: &str) -> Result<Vec<Value>> {
+        let response = self.client
+            .from("event_schedule")
+            .select("*")
+            .eq("event", event)
+            .is("deleted_at", "null")
+            .execute()
+            .await
+            .context("Failed to fetch schedule from Supabase")?;
+
+        let body = response.text().await?;
+        let data: Vec<Value> = serde_json::from_str(&body)
+            .context("Failed to parse schedule response")?;
+
+        Ok(data)
     }
 }

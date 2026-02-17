@@ -15,6 +15,9 @@ import type { EventMatchData, EventScheduleEntry } from "@lib/db";
 import supabase from "@lib/supabase/supabase";
 import { isTauri } from "@lib/utils/platform";
 
+// Re-export UserProfile for convenience
+export type { UserProfile } from "@lib/data/schema";
+
 /**
  * Settings schema stored in user_profiles.settings (JSONB)
  */

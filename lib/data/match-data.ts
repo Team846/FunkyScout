@@ -125,12 +125,12 @@ export async function getMatchData(eventKey: string) {
           event: d.event,
           match: d.match,
           team: d.team,
-          alliance: d.alliance as "red" | "blue",
+          alliance: (d.alliance as "red" | "blue") || undefined,
           data_raw: d.data_raw,
           data: d.data,
-          name: d.name,
-          uid: d.uid,
-          timestamp: d.timestamp,
+          name: d.name || undefined,
+          uid: d.uid || undefined,  // Allow undefined for unscout matches
+          timestamp: d.timestamp || undefined,  // Allow undefined for unscout matches
           // Convert PostgreSQL timestamps to epoch milliseconds for SQLite
           last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
           deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,

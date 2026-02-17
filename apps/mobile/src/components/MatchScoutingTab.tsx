@@ -262,6 +262,7 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
         matchNum: data.match,
         alliance: data.alliance,
         practice: false,
+        fromView: "teamView", // Indicates we're coming from team view, not scouting flow
       },
     });
   };

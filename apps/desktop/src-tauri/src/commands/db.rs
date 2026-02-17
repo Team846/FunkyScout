@@ -641,3 +641,252 @@ pub async fn cache_user_profiles(
 
     Ok(())
 }
+
+/// Pit scouting data from SQLite cache
+#[derive(Debug, serde::Serialize)]
+pub struct PitScoutingData {
+    pub event: String,
+    pub team: String,
+    pub data: Option<JsonValue>,
+    pub team_name: Option<String>,
+    pub name: Option<String>,
+    pub uid: Option<String>,
+    pub assigned: Option<String>,
+    pub timestamp: Option<i64>,
+    pub last_modified: i64,
+}
+
+/// Fetch pit scouting data for an event from SQLite cache
+#[tauri::command]
+pub async fn get_pit_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+) -> Result<Vec<PitScoutingData>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let rows = sqlx::query(
+        "SELECT event, team, data, team_name, name, uid, assigned, timestamp, last_modified
+         FROM event_team_data
+         WHERE event = ? AND deleted_at IS NULL
+         ORDER BY team"
+    )
+    .bind(&event)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query pit scouting data: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let data_str: Option<String> = row.try_get("data").ok();
+            PitScoutingData {
+                event: row.try_get("event").unwrap_or_default(),
+                team: row.try_get("team").unwrap_or_default(),
+                data: data_str.and_then(|d| serde_json::from_str(&d).ok()),
+                team_name: row.try_get("team_name").ok(),
+                name: row.try_get("name").ok(),
+                uid: row.try_get("uid").ok(),
+                assigned: row.try_get("assigned").ok(),
+                timestamp: row.try_get("timestamp").ok(),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
+        })
+        .collect())
+}
+
+/// Cache pit scouting data to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_pit_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    data: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in data {
+        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let data_json = record.get("data").cloned();
+        let data_str = data_json.map(|d| d.to_string());
+        let team_name = record.get("team_name").and_then(|v| v.as_str());
+        let name = record.get("name").and_then(|v| v.as_str());
+        let uid = record.get("uid").and_then(|v| v.as_str());
+        let assigned = record.get("assigned").and_then(|v| v.as_str());
+        let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+
+        sqlx::query(
+            "INSERT INTO event_team_data (event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(event, team) DO UPDATE SET
+               data = excluded.data,
+               team_name = excluded.team_name,
+               name = excluded.name,
+               uid = excluded.uid,
+               assigned = excluded.assigned,
+               timestamp = excluded.timestamp,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(event)
+        .bind(team)
+        .bind(data_str)
+        .bind(team_name)
+        .bind(name)
+        .bind(uid)
+        .bind(assigned)
+        .bind(timestamp)
+        .bind(last_modified)
+        .bind(deleted_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache pit scouting data for {}/{}: {}", event, team, e))?;
+    }
+
+    Ok(())
+}
+
+/// Match scouting data from SQLite cache
+#[derive(Debug, serde::Serialize)]
+pub struct MatchScoutingData {
+    pub event: String,
+    #[serde(rename = "match")]
+    pub match_key: String,
+    pub team: String,
+    pub alliance: String,
+    pub data_raw: Option<JsonValue>,
+    pub data: Option<JsonValue>,
+    pub name: Option<String>,
+    pub uid: Option<String>,
+    pub timestamp: Option<i64>,
+    pub last_modified: i64,
+}
+
+/// Fetch match scouting data for an event from SQLite cache
+#[tauri::command]
+pub async fn get_match_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+) -> Result<Vec<MatchScoutingData>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let rows = sqlx::query(
+        "SELECT event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified
+         FROM event_match_data
+         WHERE event = ? AND deleted_at IS NULL
+         ORDER BY match, team"
+    )
+    .bind(&event)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query match scouting data: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let data_raw_str: Option<String> = row.try_get("data_raw").ok();
+            let data_str: Option<String> = row.try_get("data").ok();
+            MatchScoutingData {
+                event: row.try_get("event").unwrap_or_default(),
+                match_key: row.try_get("match").unwrap_or_default(),
+                team: row.try_get("team").unwrap_or_default(),
+                alliance: row.try_get("alliance").unwrap_or_default(),
+                data_raw: data_raw_str.and_then(|d| serde_json::from_str(&d).ok()),
+                data: data_str.and_then(|d| serde_json::from_str(&d).ok()),
+                name: row.try_get("name").ok(),
+                uid: row.try_get("uid").ok(),
+                timestamp: row.try_get("timestamp").ok(),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
+        })
+        .collect())
+}
+
+/// Cache match scouting data to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_match_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    data: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in data {
+        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let alliance = record.get("alliance").and_then(|v| v.as_str()).unwrap_or("");
+        let data_raw_json = record.get("data_raw").cloned();
+        let data_raw_str = data_raw_json.map(|d| d.to_string());
+        let data_json = record.get("data").cloned();
+        let data_str = data_json.map(|d| d.to_string());
+        let name = record.get("name").and_then(|v| v.as_str());
+        let uid = record.get("uid").and_then(|v| v.as_str());
+        let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+
+        sqlx::query(
+            "INSERT INTO event_match_data (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(event, match, team) DO UPDATE SET
+               alliance = excluded.alliance,
+               data_raw = excluded.data_raw,
+               data = excluded.data,
+               name = excluded.name,
+               uid = excluded.uid,
+               timestamp = excluded.timestamp,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(event)
+        .bind(match_key)
+        .bind(team)
+        .bind(alliance)
+        .bind(data_raw_str)
+        .bind(data_str)
+        .bind(name)
+        .bind(uid)
+        .bind(timestamp)
+        .bind(last_modified)
+        .bind(deleted_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache match scouting data for {}/{}/{}: {}", event, match_key, team, e))?;
+    }
+
+    Ok(())
+}

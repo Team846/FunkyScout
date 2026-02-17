@@ -176,10 +176,24 @@ export function SyncProvider({
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event: string) => {
       if (event === "SIGNED_IN") {
-        console.log("[SyncContext] User signed in, triggering sync");
-        forceSyncNow().catch((error) => {
-          console.error("[SyncContext] Sign-in sync failed:", error);
-        });
+        console.log("[SyncContext] User signed in, triggering sync and data refresh");
+        forceSyncNow()
+          .then(() => {
+            // Refresh all data contexts after successful login
+            refreshCallbacks.current.forEach((callback) => {
+              try {
+                callback();
+              } catch (error) {
+                console.error("[SyncContext] Refresh callback failed:", error);
+              }
+            });
+            console.log(
+              `[SyncContext] Login: Triggered ${refreshCallbacks.current.size} refresh callbacks`
+            );
+          })
+          .catch((error) => {
+            console.error("[SyncContext] Sign-in sync failed:", error);
+          });
       } else if (event === "SIGNED_OUT") {
         console.log("[SyncContext] User signed out, triggering final sync");
         // Trigger sync before logout to push any pending data

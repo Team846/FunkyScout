@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Badge } from "@shadcn/ui/components/badge.tsx";
 import { Switch } from "@shadcn/ui/components/switch.tsx";
@@ -56,7 +56,9 @@ function PicklistViewPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [excludedToBottom, setExcludedToBottom] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
-  const [realtimeRefreshTrigger, setRealtimeRefreshTrigger] = useState(0);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [lastLoadedTimestamp, setLastLoadedTimestamp] = useState<number>(0);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -86,6 +88,8 @@ function PicklistViewPage() {
       console.log("[picklist-view] Loaded picklist from cache:", picklist);
       setPicklist(picklist);
       setEntries(entries);
+      setHasUnsavedChanges(false);  // Clear unsaved changes on fresh load
+      setLastLoadedTimestamp(picklist?.last_modified || Date.now()); // Track when we loaded this
     } catch (error) {
       console.error("Failed to load picklist:", error);
       if (isInitialLoad) {
@@ -99,24 +103,87 @@ function PicklistViewPage() {
 
   useEffect(() => {
     loadPicklistData();
-  }, [currentEvent, id, realtimeRefreshTrigger]);
+  }, [currentEvent, id]);
 
-  // Polling updates (15 second interval for picklists and assignments)
+  // Check for remote updates every 15 seconds
   useEffect(() => {
     if (!currentEvent || !id) return;
 
-    console.log(`[picklist-view] 🔄 Setting up 15s polling for picklist ${id}`);
+    const checkForUpdates = async () => {
+      try {
+        // Skip check if we haven't loaded the picklist yet (lastLoadedTimestamp === 0)
+        if (lastLoadedTimestamp === 0) {
+          console.log("[picklist-view] 15s check skipped - not loaded yet");
+          return;
+        }
 
-    const interval = setInterval(() => {
-      console.log("[picklist-view] 🔄 Polling refresh triggered");
-      setRealtimeRefreshTrigger(prev => prev + 1);
-    }, 15000); // 15 seconds
+        // Check cache (CompetitionDataContext polls Supabase every 2-4 min and updates cache)
+        const { picklist: cachedPicklist, entries: cachedEntries } = await getPicklistById(currentEvent, id);
 
-    return () => {
-      console.log("[picklist-view] Cleaning up polling interval");
-      clearInterval(interval);
+        const cachedTimestamp = cachedPicklist?.last_modified || 0;
+        const timeDiff = cachedTimestamp - lastLoadedTimestamp;
+        const isNewer = cachedTimestamp > lastLoadedTimestamp;
+
+        console.log("[picklist-view] 15s conflict check:", {
+          cachedLastModified: cachedTimestamp,
+          cachedTitle: cachedPicklist?.title,
+          cachedEntryCount: cachedEntries?.length || 0,
+          localLastLoadedTimestamp: lastLoadedTimestamp,
+          localTitle: picklist.title,
+          localEntryCount: entries.length,
+          timeDifference: `${timeDiff}ms`,
+          isNewer,
+        });
+
+        if (isNewer) {
+          console.log("[picklist-view] ⚠️ Remote changes detected - cache is newer!");
+
+
+          // Always show notification with options (even if no unsaved changes)
+          toast.warning("Picklist updated by someone else", {
+            position: "top-center",
+            action: {
+              label: "Accept",
+              onClick: () => {
+                loadPicklistData();
+                toast.success("Updated");
+              },
+            },
+            cancel: {
+              label: "Keep mine",
+              onClick: () => {
+                // Update timestamp to prevent repeated notifications
+                setLastLoadedTimestamp(cachedPicklist.last_modified || Date.now());
+                // Mark as having unsaved changes (your version != Supabase)
+                setHasUnsavedChanges(true);
+              },
+            },
+            duration: 8000,
+            className: "bg-yellow-50 text-yellow-900 border-yellow-200",
+            actionButtonStyle: {
+              backgroundColor: "hsl(var(--primary))",
+              color: "white",
+            },
+            cancelButtonStyle: {
+              backgroundColor: "hsl(142 76% 36%)",
+              color: "white",
+            },
+          });
+        }
+      } catch (error) {
+        console.error("[picklist-view] Failed to check for updates:", error);
+      }
     };
-  }, [currentEvent, id]);
+
+    // Run check immediately on mount (after initial load), then every 15s
+    if (lastLoadedTimestamp > 0) {
+      checkForUpdates();
+    }
+
+    const interval = setInterval(checkForUpdates, 15000); // Check every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [currentEvent, id, lastLoadedTimestamp, hasUnsavedChanges]);
 
   // Permission checks
   const canView = picklist
@@ -186,28 +253,8 @@ function PicklistViewPage() {
     }
 
     setEntries(reordered);
-
-    // Save immediately for real-time sync (no toast to avoid spam)
-    try {
-      const validEntries = reordered.map((e) => ({
-        team: e.team,
-        rank: e.rank ?? 0,
-        flags: e.flags ?? {},
-      }));
-      await updatePicklist(
-        id,
-        currentEvent,
-        picklist.title || "",
-        validEntries,
-        picklist.type as any
-      );
-      console.log("[picklist-view] Saved reorder, will sync to desktop");
-    } catch (error) {
-      console.error("Failed to update picklist:", error);
-      toast.error("Failed to save changes");
-      // Revert on error by reloading from database
-      loadPicklistData();
-    }
+    setHasUnsavedChanges(true);  // Mark as dirty, don't sync yet
+    console.log("[picklist-view] Reordered (unsaved)");
   };
 
   const toggleExclude = async (team: string) => {
@@ -220,14 +267,21 @@ function PicklistViewPage() {
     );
 
     setEntries(updated);
+    setHasUnsavedChanges(true);  // Mark as dirty, don't sync yet
+    console.log("[picklist-view] Toggled exclude (unsaved)");
+  };
 
-    // Save immediately for real-time sync
+  const handleSave = async () => {
+    if (!hasUnsavedChanges || !picklist || !currentEvent || saving) return;
+
+    setSaving(true);
     try {
-      const validEntries = updated.map((e) => ({
+      const validEntries = entries.map((e) => ({
         team: e.team,
         rank: e.rank ?? 0,
         flags: e.flags ?? {},
       }));
+
       await updatePicklist(
         id,
         currentEvent,
@@ -235,14 +289,90 @@ function PicklistViewPage() {
         validEntries,
         picklist.type as any
       );
-      console.log("[picklist-view] Saved exclude/include, will sync to desktop");
+
+      setHasUnsavedChanges(false);
+      console.log("[picklist-view] ✅ Saved changes, refreshing from Supabase to get authoritative timestamp");
+
+      // Temporarily set timestamp to prevent false conflict during refresh
+      // (prevents the 15s check from thinking our own save is someone else's change)
+      const tempTimestamp = Date.now();
+      setLastLoadedTimestamp(tempTimestamp);
+      console.log("[picklist-view] Temporary timestamp set to:", tempTimestamp);
+
+      // Immediately refresh from Supabase to:
+      // 1. Get the authoritative timestamp (not local Date.now())
+      // 2. Detect if someone else saved while we were editing
+      console.log("[picklist-view] Calling refreshCompetition()...");
+      await refreshCompetition();
+      console.log("[picklist-view] refreshCompetition() completed, reading cache...");
+
+      const { picklist: updatedPicklist } = await getPicklistById(currentEvent, id);
+
+      if (updatedPicklist) {
+        console.log("[picklist-view] Post-save picklist from cache:", {
+          last_modified: updatedPicklist.last_modified,
+          title: updatedPicklist.title,
+          entry_count: entries.length,
+        });
+        setPicklist(updatedPicklist);
+        // Update with the actual Supabase timestamp for future conflict checks
+        setLastLoadedTimestamp(updatedPicklist.last_modified || Date.now());
+        console.log("[picklist-view] ✅ lastLoadedTimestamp updated to:", updatedPicklist.last_modified);
+      } else {
+        console.warn("[picklist-view] ⚠️ updatedPicklist is null after refresh!");
+      }
+
+      toast.success("Saved!");
     } catch (error) {
       console.error("Failed to update picklist:", error);
       toast.error("Failed to save changes");
       // Revert on error by reloading from database
       loadPicklistData();
+    } finally {
+      setSaving(false);
     }
   };
+
+  // Auto-save on unmount if there are unsaved changes
+  // Use refs to avoid re-running cleanup on every state change
+  const entriesRef = useRef(entries);
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  const picklistRef = useRef(picklist);
+
+  useEffect(() => {
+    entriesRef.current = entries;
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+    picklistRef.current = picklist;
+  });
+
+  useEffect(() => {
+    // Cleanup only runs on actual unmount (no dependencies)
+    return () => {
+      if (hasUnsavedChangesRef.current && picklistRef.current && currentEvent) {
+        console.log("[picklist-view] Component unmounting with unsaved changes, auto-saving...");
+
+        // Fire-and-forget save on unmount
+        const validEntries = entriesRef.current.map((e) => ({
+          team: e.team,
+          rank: e.rank ?? 0,
+          flags: e.flags ?? {},
+        }));
+
+        updatePicklist(
+          id,
+          currentEvent,
+          picklistRef.current.title || "",
+          validEntries,
+          picklistRef.current.type as any
+        ).then(() => {
+          console.log("[picklist-view] ✅ Auto-saved on unmount");
+        }).catch((error) => {
+          console.error("[picklist-view] Auto-save failed:", error);
+        });
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps = cleanup only on unmount
 
   const doDelete = async () => {
     if (!isAdmin || !currentEvent) return;
@@ -347,12 +477,37 @@ function PicklistViewPage() {
               Close
             </Button>
           </div>
-          <div className="flex justify-center">
+          <div className="flex justify-center items-center gap-2">
             <p className="text-primary text-xl font-medium truncate">
               {picklist.title}
             </p>
+            {hasUnsavedChanges}
           </div>
           <div className="flex items-center justify-end gap-2">
+            {canEdit && hasUnsavedChanges && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    loadPicklistData(); // Reload from database
+                    toast.info("Changes discarded");
+                  }}
+                  disabled={saving}
+                >
+                  Reset
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {saving ? "Saving..." : "Save"}
+                </Button>
+              </>
+            )}
             {isAdmin && (
               <Button variant="destructive" size="sm" onClick={handleDelete}>
                 Delete

@@ -44,6 +44,13 @@ export const Route = createFileRoute("/match_play")({
 function MatchPlay() {
   const { isWrongOrientation } = useOrientation("landscape");
   const navigate = useNavigate();
+  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
+
+  // Use match-specific sessionStorage key to prevent interference between matches
+  const sessionKey = matchNum && teamNum
+    ? `matchData_${matchNum}_${teamNum}`
+    : "currentMatchData";
+
   const handleBackClick = () => {
     // Clear in-progress data when leaving
     sessionStorage.removeItem("inProgressMatchData");
@@ -53,7 +60,6 @@ function MatchPlay() {
       navigate({ to: "/home" });
     }
   };
-  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [seconds, setSeconds] = useState(0);
 
   const [isAuto, setIsAuto] = useState(true);
@@ -461,7 +467,7 @@ function MatchPlay() {
       timer2Ref.current = window.setTimeout(() => {
         // Store matchData in sessionStorage to pass to match_end
         sessionStorage.setItem(
-          "currentMatchData",
+          sessionKey,
           JSON.stringify(matchDataRef.current)
         );
         sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
@@ -481,7 +487,7 @@ function MatchPlay() {
     } else {
       // Skip to end
       sessionStorage.setItem(
-        "currentMatchData",
+        sessionKey,
         JSON.stringify(matchDataRef.current)
       );
       sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
@@ -530,7 +536,7 @@ function MatchPlay() {
     timer2Ref.current = window.setTimeout(() => {
       // Store matchData in sessionStorage to pass to match_end
       sessionStorage.setItem(
-        "currentMatchData",
+        sessionKey,
         JSON.stringify(matchDataRef.current)
       );
       sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data

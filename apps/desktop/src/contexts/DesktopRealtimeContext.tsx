@@ -60,9 +60,16 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
       });
     }, 500); // 500ms debounce (shorter than mobile's 2s, for snappier desktop UX)
   }, []);
-
+  
   // Subscribe to Supabase realtime
   useEffect(() => {
+    // TEMPORARILY DISABLED: Realtime disabled to conserve Supabase limits
+    // Re-enable after monthly reset or upgrade to paid plan
+    console.log("[DesktopRealtime] Realtime subscriptions DISABLED (conserving limits)");
+    setIsConnected(false);
+    return;
+
+    // eslint-disable-next-line no-unreachable
     if (!currentEvent) {
       setIsConnected(false);
       return;
@@ -148,8 +155,12 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         clearTimeout(debounceTimerRef.current);
       }
 
+      // Best practice: unsubscribe before removing
+      channel.unsubscribe();
       supabase.removeChannel(channel);
       setIsConnected(false);
+
+      console.log("[DesktopRealtime] ✅ Channel removed");
     };
   }, [currentEvent, triggerRefresh]);
 

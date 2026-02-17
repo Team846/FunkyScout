@@ -356,25 +356,30 @@ export class SyncManager {
       throw new Error('Alliance is required for match data');
     }
 
+    // CRITICAL FIX: Build upsert payload dynamically - only include name if defined
+    // This prevents null overwrites when editing match data without name/uid
+    const upsertPayload: Record<string, unknown> = {
+      event,
+      match,
+      team,
+      alliance,
+      data_raw: dataRaw,
+      data: "{}",
+      uid,
+      timestamp: new Date(timestamp).toISOString(), // Convert milliseconds to ISO string
+      last_modified: new Date().toISOString(), // Convert to ISO string for PostgreSQL
+    };
+
+    // Only include name if it's defined in the payload (prevents null overwrite)
+    if (name !== undefined) {
+      upsertPayload.name = name;
+    }
+
     const { error } = await this.supabaseClient
       .from("event_match_data")
-      .upsert(
-        {
-          event,
-          match,
-          team,
-          alliance,
-          data_raw: dataRaw,
-          data: "{}",
-          name,
-          uid,
-          timestamp: new Date(timestamp).toISOString(), // Convert milliseconds to ISO string
-          last_modified: new Date().toISOString(), // Convert to ISO string for PostgreSQL
-        },
-        {
-          onConflict: "event,match,team",
-        },
-      );
+      .upsert(upsertPayload, {
+        onConflict: "event,match,team",
+      });
 
     if (error) {
       throw error;
@@ -484,19 +489,26 @@ export class SyncManager {
   ): Promise<void> {
     const { id, event, title, entries, type } = payload;
 
+    const now = new Date().toISOString();
+
+    console.log(`[SyncManager] Updating picklist ${id} in Supabase with timestamp:`, now);
+
     // Update picklist header
-    const { error: picklistError } = await this.supabaseClient
+    const { error: picklistError, data: headerData } = await this.supabaseClient
       .from("event_picklist")
       .update({
         title,
         ...(type ? { type } : {}),
-        last_modified: new Date().toISOString(),
+        last_modified: now,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (picklistError) {
       throw picklistError;
     }
+
+    console.log(`[SyncManager] Picklist header updated:`, headerData);
 
     // Delete existing entries
     const { error: deleteError } = await this.supabaseClient
@@ -519,13 +531,15 @@ export class SyncManager {
             team: entry.team,
             rank: entry.rank,
             flags: entry.flags,
-            last_modified: new Date().toISOString(),
+            last_modified: now,
           }))
         );
 
       if (entriesError) {
         throw entriesError;
       }
+
+      console.log(`[SyncManager] Upserted ${entries.length} picklist entries`);
     }
   }
 

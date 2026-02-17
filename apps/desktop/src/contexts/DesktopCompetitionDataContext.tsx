@@ -75,6 +75,7 @@ interface DesktopCompetitionDataContextType {
   picklistEntries: PicklistEntry[];
   loading: boolean;
   refresh: () => Promise<void>;
+  refreshFromCache: () => Promise<void>;
 }
 
 const DesktopCompetitionDataContext = createContext<
@@ -135,85 +136,82 @@ export function DesktopCompetitionDataProvider({
         setPicklistEntries(cachedEntries);
       }
 
-      // Step 2: Refresh from Supabase if online
-      if (true) {
-
-        // Only show loading on initial load or event change (prevents flickering on background refreshes)
-        const isInitialLoad = !hasLoadedDataRef.current;
-        if (isInitialLoad || shouldSkipCache) {
-          setLoading(true);
-        }
-
-        const [supabaseSchedule, supabasePicklists, supabaseEntries] =
-          await Promise.all([
-            fetchScheduleFromSupabase(currentEvent),
-            fetchPicklistsFromSupabase(currentEvent),
-            fetchPicklistEntriesFromSupabase(currentEvent),
-          ]);
-
-        if (supabaseSchedule && supabaseSchedule.length > 0) {
-          // Cache to SQLite for offline access (like mobile does)
-          await cacheSchedule(
-            currentEvent,
-            supabaseSchedule.map((d: any) => ({
-              match: d.match,
-              team: d.team,
-              alliance: d.alliance,
-              name: d.name,
-              uid: d.uid,
-              est_time: d.est_time,
-              red_score: d.red_score,
-              blue_score: d.blue_score,
-              red_win_prob: d.red_win_prob,
-              predicted_red_score: d.predicted_red_score,
-              predicted_blue_score: d.predicted_blue_score,
-              last_modified: d.last_modified
-                ? new Date(d.last_modified).getTime()
-                : Date.now(),
-            }))
-          );
-
-          processScheduleData(supabaseSchedule);
-          hasLoadedDataRef.current = true;
-        }
-
-        // Always cache and update picklists from Supabase (even if empty)
-        console.log(`[DesktopCompetitionData] Supabase fetch: ${supabasePicklists?.length || 0} picklists, ${supabaseEntries?.length || 0} entries`);
-
-        if (supabasePicklists && supabasePicklists.length > 0) {
-          await cachePicklists(
-            supabasePicklists.map((p: any) => ({
-              ...p,
-              event: currentEvent,
-            }))
-          );
-        }
-
-        if (supabaseEntries && supabaseEntries.length > 0) {
-          console.log(`[DesktopCompetitionData] Caching ${supabaseEntries.length} entries:`, supabaseEntries.slice(0, 3).map(e => ({ id: e.id, team: e.team, flags: e.flags })));
-          await cachePicklistEntries(
-            supabaseEntries.map((e: any) => ({
-              ...e,
-              event: currentEvent,
-            }))
-          );
-        }
-
-        // Batch state updates to prevent UI flashing during refresh
-        // Use React 18's automatic batching or manual batch for consistency
-        const newPicklists = supabasePicklists || [];
-        const newEntries = supabaseEntries || [];
-
-        // Update both states together to prevent intermediate renders
-        setPicklists(newPicklists);
-        setPicklistEntries(newEntries);
+      // Step 2: Refresh from Supabase
+      // Only show loading on initial load or event change (prevents flickering on background refreshes)
+      const isInitialLoad = !hasLoadedDataRef.current;
+      if (isInitialLoad || shouldSkipCache) {
+        setLoading(true);
       }
+
+      const [supabaseSchedule, supabasePicklists, supabaseEntries] =
+        await Promise.all([
+          fetchScheduleFromSupabase(currentEvent),
+          fetchPicklistsFromSupabase(currentEvent),
+          fetchPicklistEntriesFromSupabase(currentEvent),
+        ]);
+
+      if (supabaseSchedule && supabaseSchedule.length > 0) {
+        // Cache to SQLite for offline access (like mobile does)
+        await cacheSchedule(
+          currentEvent,
+          supabaseSchedule.map((d: any) => ({
+            match: d.match,
+            team: d.team,
+            alliance: d.alliance,
+            name: d.name,
+            uid: d.uid,
+            est_time: d.est_time,
+            red_score: d.red_score,
+            blue_score: d.blue_score,
+            red_win_prob: d.red_win_prob,
+            predicted_red_score: d.predicted_red_score,
+            predicted_blue_score: d.predicted_blue_score,
+            last_modified: d.last_modified
+              ? new Date(d.last_modified).getTime()
+              : Date.now(),
+          }))
+        );
+
+        processScheduleData(supabaseSchedule);
+        hasLoadedDataRef.current = true;
+      }
+
+      // Always cache and update picklists from Supabase (even if empty)
+      console.log(`[DesktopCompetitionData] Supabase fetch: ${supabasePicklists?.length || 0} picklists, ${supabaseEntries?.length || 0} entries`);
+
+      if (supabasePicklists && supabasePicklists.length > 0) {
+        await cachePicklists(
+          supabasePicklists.map((p: any) => ({
+            ...p,
+            event: currentEvent,
+          }))
+        );
+      }
+
+      if (supabaseEntries && supabaseEntries.length > 0) {
+        console.log(`[DesktopCompetitionData] Caching ${supabaseEntries.length} entries:`, supabaseEntries.slice(0, 3).map(e => ({ id: e.id, team: e.team, flags: e.flags })));
+        await cachePicklistEntries(
+          supabaseEntries.map((e: any) => ({
+            ...e,
+            event: currentEvent,
+          }))
+        );
+      }
+
+      // Batch state updates to prevent UI flashing during refresh
+      // Use React 18's automatic batching or manual batch for consistency
+      const newPicklists = supabasePicklists || [];
+      const newEntries = supabaseEntries || [];
+
+      // Update both states together to prevent intermediate renders
+      setPicklists(newPicklists);
+      setPicklistEntries(newEntries);
     } catch (error) {
       console.error("[DesktopCompetitionData] Fetch failed:", error);
     } finally {
       setLoading(false);
     }
-  }, [currentEvent, true]);
+  }, [currentEvent]);
 
   /**
    * Fetch schedule from Supabase
@@ -378,6 +376,34 @@ export function DesktopCompetitionDataProvider({
     }
   }, []);
 
+  /**
+   * Refresh data from local cache only (no Supabase fetch)
+   * Used after write operations to immediately reflect local changes in UI
+   */
+  const refreshFromCache = useCallback(async () => {
+    if (!currentEvent) return;
+
+    try {
+      const [cachedSchedule, cachedPicklists, cachedEntries] =
+        await Promise.all([
+          getSQLiteSchedule(currentEvent),
+          getSQLitePicklists(currentEvent),
+          getSQLitePicklistEntries(currentEvent),
+        ]);
+
+      console.log(`[DesktopCompetitionData] Refreshed from cache: ${cachedPicklists.length} picklists, ${cachedEntries.length} entries`);
+
+      if (cachedSchedule.length > 0) {
+        processScheduleData(cachedSchedule);
+      }
+
+      setPicklists(cachedPicklists);
+      setPicklistEntries(cachedEntries);
+    } catch (error) {
+      console.error("[DesktopCompetitionData] Failed to refresh from cache:", error);
+    }
+  }, [currentEvent]);
+
   // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
     () => ({
@@ -387,8 +413,9 @@ export function DesktopCompetitionDataProvider({
       picklistEntries,
       loading,
       refresh,
+      refreshFromCache,
     }),
-    [schedule, tbaSchedule, picklists, picklistEntries, loading, refresh]
+    [schedule, tbaSchedule, picklists, picklistEntries, loading, refresh, refreshFromCache]
   );
 
   return (

@@ -61,8 +61,10 @@ impl SyncService {
         }
     }
 
-    /// Perform one sync cycle: TBA + Statbotics → Supabase + Process sync queue
-    /// Fetches comprehensive data: rankings, EPA, OPR, match predictions
+    /// Perform one sync cycle: External APIs → Supabase + Poll Supabase → Local cache
+    /// 1. Processes sync queue (push local changes to Supabase)
+    /// 2. Fetches TBA/Statbotics: rankings, EPA, OPR, match predictions → pushes to Supabase
+    /// 3. Polls Supabase: picklists, match data, user profiles → caches locally
     pub async fn sync_once(&self) -> Result<()> {
         // 0. Process sync queue (desktop offline writes)
         if let Err(e) = self.process_sync_queue().await {
@@ -429,6 +431,96 @@ impl SyncService {
                 .context("Failed to cache user profiles to SQLite")?;
         }
 
+        // 13. Poll Supabase for picklists (user-generated data)
+        let picklists = match self.supabase.fetch_event_picklists(&self.current_event).await {
+            Ok(data) => {
+                println!("[Sync] Supabase picklists fetched: {} picklists", data.len());
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Supabase picklists fetch failed: {}", e);
+                vec![]
+            }
+        };
+
+        if !picklists.is_empty() {
+            self.cache_picklists_to_sqlite(&picklists)
+                .await
+                .context("Failed to cache picklists to SQLite")?;
+        }
+
+        // 14. Poll Supabase for picklist entries
+        let picklist_entries = match self.supabase.fetch_event_picklist_entries(&self.current_event).await {
+            Ok(data) => {
+                println!("[Sync] Supabase picklist entries fetched: {} entries", data.len());
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Supabase picklist entries fetch failed: {}", e);
+                vec![]
+            }
+        };
+
+        if !picklist_entries.is_empty() {
+            self.cache_picklist_entries_to_sqlite(&picklist_entries)
+                .await
+                .context("Failed to cache picklist entries to SQLite")?;
+        }
+
+        // 15. Poll Supabase for match scouting data
+        let match_data = match self.supabase.fetch_event_match_data(&self.current_event).await {
+            Ok(data) => {
+                println!("[Sync] Supabase match data fetched: {} submissions", data.len());
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Supabase match data fetch failed: {}", e);
+                vec![]
+            }
+        };
+
+        if !match_data.is_empty() {
+            self.cache_match_data_to_sqlite(&match_data)
+                .await
+                .context("Failed to cache match data to SQLite")?;
+        }
+
+        // 16. Poll Supabase for team data (includes TBA stats pushed by desktop + pit scouting)
+        let team_data = match self.supabase.fetch_event_team_data(&self.current_event).await {
+            Ok(data) => {
+                println!("[Sync] Supabase team data fetched: {} teams", data.len());
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Supabase team data fetch failed: {}", e);
+                vec![]
+            }
+        };
+
+        if !team_data.is_empty() {
+            self.cache_teams_to_sqlite(&team_data)
+                .await
+                .context("Failed to cache team data to SQLite")?;
+        }
+
+        // 17. Poll Supabase for schedule (includes shift assignments)
+        let schedule_data = match self.supabase.fetch_event_schedule(&self.current_event).await {
+            Ok(data) => {
+                println!("[Sync] Supabase schedule fetched: {} entries", data.len());
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Supabase schedule fetch failed: {}", e);
+                vec![]
+            }
+        };
+
+        if !schedule_data.is_empty() {
+            self.cache_schedule_to_sqlite(&schedule_data)
+                .await
+                .context("Failed to cache schedule to SQLite")?;
+        }
+
         Ok(())
     }
 
@@ -574,6 +666,184 @@ impl SyncService {
         }
 
         println!("[Sync] Cached {} user profiles to SQLite", profile_records.len());
+        Ok(())
+    }
+
+    /// Cache picklists to local SQLite
+    /// Converts PostgreSQL timestamps to epoch milliseconds for mobile compatibility
+    async fn cache_picklists_to_sqlite(&self, picklist_records: &[serde_json::Value]) -> Result<()> {
+        if picklist_records.is_empty() {
+            return Ok(());
+        }
+
+        for record in picklist_records {
+            let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+            let title = record.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+            let uname = record.get("uname").and_then(|v| v.as_str()).unwrap_or("");
+            let type_str = record.get("type").and_then(|v| v.as_str()).unwrap_or("public");
+
+            // Convert PostgreSQL timestamptz to epoch milliseconds
+            let timestamp = if let Some(ts_str) = record.get("timestamp").and_then(|v| v.as_str()) {
+                chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let last_modified = if let Some(ts_str) = record.get("last_modified").and_then(|v| v.as_str()) {
+                chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+            } else {
+                chrono::Utc::now().timestamp_millis()
+            };
+
+            sqlx::query(
+                "INSERT INTO event_picklist (id, event, title, uid, uname, type, timestamp, last_modified)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(id, event) DO UPDATE SET
+                   title = excluded.title,
+                   uid = excluded.uid,
+                   uname = excluded.uname,
+                   type = excluded.type,
+                   timestamp = excluded.timestamp,
+                   last_modified = excluded.last_modified"
+            )
+            .bind(id)
+            .bind(event)
+            .bind(title)
+            .bind(uid)
+            .bind(uname)
+            .bind(type_str)
+            .bind(timestamp)
+            .bind(last_modified)
+            .execute(&self.sqlx_pool)
+            .await
+            .context(format!("Failed to cache picklist {} to SQLite", id))?;
+        }
+
+        println!("[Sync] Cached {} picklists to SQLite", picklist_records.len());
+        Ok(())
+    }
+
+    /// Cache picklist entries to local SQLite
+    /// Converts PostgreSQL timestamps to epoch milliseconds for mobile compatibility
+    async fn cache_picklist_entries_to_sqlite(&self, entry_records: &[serde_json::Value]) -> Result<()> {
+        if entry_records.is_empty() {
+            return Ok(());
+        }
+
+        for record in entry_records {
+            let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+            let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let rank = record.get("rank").and_then(|v| v.as_i64()).unwrap_or(0);
+            let flags_json = record.get("flags").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+
+            let last_modified = if let Some(ts_str) = record.get("last_modified").and_then(|v| v.as_str()) {
+                chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+            } else {
+                chrono::Utc::now().timestamp_millis()
+            };
+
+            sqlx::query(
+                "INSERT INTO event_picklist_entries (event, id, team, rank, flags, last_modified)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(event, id, team) DO UPDATE SET
+                   rank = excluded.rank,
+                   flags = excluded.flags,
+                   last_modified = excluded.last_modified"
+            )
+            .bind(event)
+            .bind(id)
+            .bind(team)
+            .bind(rank)
+            .bind(&flags_json)
+            .bind(last_modified)
+            .execute(&self.sqlx_pool)
+            .await
+            .context(format!("Failed to cache picklist entry {}/{} to SQLite", id, team))?;
+        }
+
+        println!("[Sync] Cached {} picklist entries to SQLite", entry_records.len());
+        Ok(())
+    }
+
+    /// Cache match scouting data to local SQLite
+    /// Converts PostgreSQL timestamps to epoch milliseconds for mobile compatibility
+    async fn cache_match_data_to_sqlite(&self, match_records: &[serde_json::Value]) -> Result<()> {
+        if match_records.is_empty() {
+            return Ok(());
+        }
+
+        for record in match_records {
+            let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+            let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
+            let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let alliance = record.get("alliance").and_then(|v| v.as_str());
+            let data_raw_json = record.get("data_raw").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+            let data_json = record.get("data").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+            let name = record.get("name").and_then(|v| v.as_str());
+            let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+
+            // Convert PostgreSQL timestamptz to epoch milliseconds
+            let timestamp = if let Some(ts_str) = record.get("timestamp").and_then(|v| v.as_str()) {
+                chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let last_modified = if let Some(ts_str) = record.get("last_modified").and_then(|v| v.as_str()) {
+                chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+            } else {
+                chrono::Utc::now().timestamp_millis()
+            };
+
+            let deleted_at = if let Some(ts_str) = record.get("deleted_at").and_then(|v| v.as_str()) {
+                Some(chrono::DateTime::parse_from_rfc3339(ts_str)
+                    .map(|dt| dt.timestamp_millis())
+                    .unwrap_or(0))
+            } else {
+                None
+            };
+
+            sqlx::query(
+                "INSERT INTO event_match_data (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(event, match, team, uid, timestamp) DO UPDATE SET
+                   alliance = excluded.alliance,
+                   data_raw = excluded.data_raw,
+                   data = excluded.data,
+                   name = excluded.name,
+                   last_modified = excluded.last_modified,
+                   deleted_at = excluded.deleted_at"
+            )
+            .bind(event)
+            .bind(match_key)
+            .bind(team)
+            .bind(alliance)
+            .bind(&data_raw_json)
+            .bind(&data_json)
+            .bind(name)
+            .bind(uid)
+            .bind(timestamp)
+            .bind(last_modified)
+            .bind(deleted_at)
+            .execute(&self.sqlx_pool)
+            .await
+            .context(format!("Failed to cache match data {}/{}/{} to SQLite", match_key, team, uid))?;
+        }
+
+        println!("[Sync] Cached {} match data submissions to SQLite", match_records.len());
         Ok(())
     }
 
@@ -737,8 +1007,12 @@ impl SyncService {
         // Update picklist header
         self.supabase.update_picklist(id, event, title).await?;
 
-        // Delete old entries and insert new ones
-        self.supabase.delete_picklist_entries(id).await?;
+        // Soft delete entries NOT in the new list (reduces postgres_changes events by 50%)
+        let current_teams: Vec<String> = entries.iter()
+            .filter_map(|e| e.get("team").and_then(|v| v.as_str()).map(String::from))
+            .collect();
+
+        self.supabase.soft_delete_removed_entries(id, &current_teams).await?;
 
         let entry_records: Vec<serde_json::Value> = entries.iter().map(|e| {
             json!({
@@ -752,7 +1026,7 @@ impl SyncService {
 
         self.supabase.bulk_upsert_picklist_entries(event, entry_records).await?;
 
-        println!("[Sync] ✅ Updated picklist '{}' in Supabase ({} teams)", title, entries.len());
+        println!("[Sync] ✅ Updated picklist '{}' in Supabase ({} teams, soft-delete optimized)", title, entries.len());
         Ok(())
     }
 
@@ -816,7 +1090,26 @@ impl SyncService {
         let timestamp = payload.get("timestamp").and_then(|v| v.as_i64())
             .ok_or_else(|| anyhow::anyhow!("Missing timestamp"))?;
 
+        // Update Supabase (soft-delete)
         self.supabase.delete_match_data(event, match_key, team, uid, timestamp).await?;
+
+        // Update local cache with deleted_at timestamp
+        sqlx::query(
+            "UPDATE event_match_data
+             SET deleted_at = ?, last_modified = ?
+             WHERE event = ? AND match = ? AND team = ? AND uid = ?"
+        )
+        .bind(timestamp)
+        .bind(timestamp)
+        .bind(event)
+        .bind(match_key)
+        .bind(team)
+        .bind(uid)
+        .execute(&self.sqlx_pool)
+        .await
+        .context("Failed to update local cache with deleted_at")?;
+
+        println!("[Sync] Soft-deleted match data for {} in {} (local + Supabase)", team, match_key);
 
         Ok(())
     }

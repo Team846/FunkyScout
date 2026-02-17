@@ -257,7 +257,7 @@ export async function putMatchData(
     alliance: alliance,
     data_raw: dataRaw,
     data: null, // unused field
-    name: options?.name,
+    name: options?.name, // Local cache can have undefined
     uid: uid,
     timestamp: now,
     last_modified: now,
@@ -266,14 +266,14 @@ export async function putMatchData(
   // 1. Write to local SQLite
   await cacheEventMatchData(eventKey, [matchData]);
 
-  // 2. Queue for sync
+  // 2. Queue for sync - CRITICAL: Only include name if defined to prevent null overwrites
   await addToSyncQueue("PUT_MATCH_DATA", {
     event: eventKey,
     match: matchNumber,
     team: teamNumber,
     alliance: alliance,
     dataRaw: dataRaw,
-    name: options?.name,
+    ...(options?.name ? { name: options.name } : {}), // Only include if defined
     uid: uid,
     timestamp: now,
   });
@@ -298,7 +298,57 @@ export async function deleteMatchData(
 ): Promise<void> {
   const now = Date.now();
 
-  // Soft delete in local cache
+  if (isTauri()) {
+    // DESKTOP: Update local cache immediately (optimistic), then queue for sync
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    // 1. Get existing match data from local cache
+    const allMatchData = await invoke<any[]>("get_match_scouting_data", { event: eventKey });
+    const matchData = allMatchData.find(
+      (m) => m.match === matchNumber && m.team === teamNumber && m.uid === uid
+    );
+
+    if (!matchData) {
+      console.warn(`[Writes] Match data not found for deletion: ${teamNumber} in ${matchNumber}`);
+      return;
+    }
+
+    // Store original timestamp for Supabase query
+    const originalTimestamp = matchData.timestamp;
+
+    console.log(
+      `[Writes] Deleting match data: match=${matchNumber}, team=${teamNumber}, uid=${uid}, originalTimestamp=${originalTimestamp}, type=${typeof originalTimestamp}`
+    );
+
+    // 2. Update local cache with deleted_at (optimistic update)
+    matchData.deleted_at = now;
+    matchData.last_modified = now;
+    await invoke("cache_match_scouting_data", { data: [matchData] });
+
+    // 3. Queue for sync (will push to Supabase when online)
+    // CRITICAL: Use original timestamp for Supabase query to match the record
+    await invoke("add_to_sync_queue", {
+      operation: "DELETE_MATCH_DATA",
+      payload: {
+        event: eventKey,
+        match: matchNumber,
+        team: teamNumber,
+        uid: uid,
+        timestamp: originalTimestamp, // Use original timestamp, not now
+      },
+    });
+
+    console.log(`[Writes] Desktop: Deleted match data for ${teamNumber} in ${matchNumber} (local + queued for Supabase, timestamp=${originalTimestamp})`);
+
+    // 4. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Update local cache then queue for sync
   const existing = await getEventMatchData(eventKey, matchNumber, teamNumber);
   if (existing.length > 0) {
     const toDelete = existing.filter((e: EventMatchData) => e.uid === uid);
@@ -318,7 +368,7 @@ export async function deleteMatchData(
   });
 
   console.log(
-    `[Writes] Queued delete match data for ${teamNumber} in match ${matchNumber}`,
+    `[Writes] Mobile: Queued delete match data for ${teamNumber} in match ${matchNumber}`,
   );
 
   // Trigger instant sync if online

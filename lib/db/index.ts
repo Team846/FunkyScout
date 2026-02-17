@@ -79,12 +79,12 @@ export interface EventMatchData {
   event: string;
   match: string;
   team: string;
-  alliance?: string;
+  alliance?: "red" | "blue" | null;  // Nullable for unscout matches
   data_raw?: any; // JSON
   data?: any; // JSON
   name?: string;
-  uid: string;
-  timestamp: number;
+  uid?: string | null;  // Nullable for unscout matches
+  timestamp?: number | null;  // Nullable for unscout matches
   last_modified?: number;
   deleted_at?: number;
 }
@@ -391,9 +391,10 @@ export async function cacheEventMatchData(
           `INSERT INTO event_match_data
            (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(event, match, team, uid, timestamp) DO UPDATE SET
+           ON CONFLICT(event, match, team) DO UPDATE SET
            alliance=excluded.alliance, data_raw=excluded.data_raw, data=excluded.data,
-           name=excluded.name, last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
+           name=excluded.name, uid=excluded.uid, timestamp=excluded.timestamp,
+           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [
             item.event,
             item.match,

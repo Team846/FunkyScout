@@ -1,6 +1,33 @@
 /**
  * TypeScript wrappers for Tauri SQLite database commands
  * Provides offline-first data access from local SQLite cache
+ *
+ * Available Functions:
+ * -------------------
+ * Teams (TBA Stats):
+ *   - getTeams(event) - Fetch teams with TBA stats (rank, EPA, OPR, etc)
+ *
+ * Schedule & Assignments:
+ *   - getSchedule(event) - Fetch match schedule with assignments
+ *   - cacheSchedule(event, schedule) - Cache schedule from Supabase
+ *
+ * Picklists:
+ *   - getPicklists(event) - Fetch all picklists
+ *   - getPicklistEntries(event) - Fetch all picklist entries
+ *   - cachePicklists(picklists) - Cache picklists from Supabase
+ *   - cachePicklistEntries(entries) - Cache picklist entries from Supabase
+ *
+ * User Profiles:
+ *   - getUserProfiles(uids?) - Fetch user profiles (filter by UIDs optional)
+ *   - cacheUserProfiles(profiles) - Cache user profiles from Supabase
+ *
+ * Pit Scouting:
+ *   - getPitScoutingData(event) - Fetch pit scouting submissions
+ *   - cachePitScoutingData(data) - Cache pit scouting from Supabase
+ *
+ * Match Scouting:
+ *   - getMatchScoutingData(event) - Fetch match scouting submissions
+ *   - cacheMatchScoutingData(data) - Cache match scouting from Supabase
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -134,4 +161,104 @@ export async function cachePicklists(picklists: any[]): Promise<void> {
  */
 export async function cachePicklistEntries(entries: any[]): Promise<void> {
   return invoke<void>("cache_picklist_entries", { entries });
+}
+
+/**
+ * User profile from SQLite cache
+ */
+export interface UserProfile {
+  uid: string;
+  name: string;
+  role: "user" | "scouter" | "lead";
+  settings: Record<string, unknown>;
+  last_modified: number; // Epoch milliseconds in SQLite
+}
+
+/**
+ * Fetch user profiles from SQLite cache
+ * Pass uids array to filter, or omit to get all profiles
+ */
+export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
+  return invoke<UserProfile[]>("get_user_profiles", {
+    uids: uids && uids.length > 0 ? uids : null,
+  });
+}
+
+/**
+ * Cache user profiles to SQLite after fetching from Supabase
+ * Allows offline access to user data for scouter ratings
+ */
+export async function cacheUserProfiles(profiles: UserProfile[]): Promise<void> {
+  return invoke<void>("cache_user_profiles", { profiles });
+}
+
+/**
+ * Pit scouting data from SQLite cache
+ * Contains pit scouting JSONB data and scouter information
+ */
+export interface PitScoutingData {
+  event: string;
+  team: string;
+  data: Record<string, unknown> | null; // JSONB pit scouting data
+  team_name: string | null;
+  name: string | null; // Scouter name who submitted
+  uid: string | null; // Scouter UUID
+  assigned: string | null; // UUID of assigned scouter
+  timestamp: string | null;
+  last_modified: number; // Epoch milliseconds in SQLite
+}
+
+/**
+ * Match scouting data from SQLite cache
+ * Contains match scouting JSONB data and scouter information
+ */
+export interface MatchScoutingData {
+  event: string;
+  match: string;
+  team: string;
+  alliance: "red" | "blue";
+  data_raw: Record<string, unknown> | null; // JSONB raw scouting input
+  data: Record<string, unknown> | null; // JSONB processed data (UNUSED)
+  name: string | null; // Scouter name
+  uid: string | null; // Scouter UUID
+  timestamp: string | null;
+  last_modified: number; // Epoch milliseconds in SQLite
+}
+
+/**
+ * Fetch pit scouting data for an event from SQLite cache
+ */
+export async function getPitScoutingData(
+  event: string
+): Promise<PitScoutingData[]> {
+  return invoke<PitScoutingData[]>("get_pit_scouting_data", { event });
+}
+
+/**
+ * Fetch match scouting data for an event from SQLite cache
+ */
+export async function getMatchScoutingData(
+  event: string
+): Promise<MatchScoutingData[]> {
+  return invoke<MatchScoutingData[]>("get_match_scouting_data", { event });
+}
+
+/**
+ * Cache pit scouting data to SQLite after fetching from Supabase
+ * Allows offline access to pit scouting submissions
+ */
+export async function cachePitScoutingData(
+  data: PitScoutingData[]
+): Promise<void> {
+  return invoke<void>("cache_pit_scouting_data", { data });
+}
+
+/**
+ * Cache match scouting data to SQLite after fetching from Supabase
+ * Allows offline access to match scouting submissions
+ */
+export async function cacheMatchScoutingData(
+  data: MatchScoutingData[]
+): Promise<void> {
+  return invoke<void>("cache_match_scouting_data", { data });
 }

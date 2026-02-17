@@ -4,7 +4,7 @@
  * Used by both mobile and desktop picklist editors
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import type { DragEndEvent } from "@dnd-kit/core";
 import type { EventPicklistEntry } from "@lib/db";
@@ -33,6 +33,7 @@ export interface UsePicklistEditorOptions {
   excludedToBottom?: boolean; // Whether to partition excluded items to bottom
   onSaveSuccess?: () => void;
   onSaveError?: (error: Error) => void;
+  onRemoteChangesDetected?: (hasUnsavedChanges: boolean, acceptChanges: () => void, rejectChanges: () => void) => void;
 }
 
 /**
@@ -56,24 +57,106 @@ export function usePicklistEditor(
     excludedToBottom = false,
     onSaveSuccess,
     onSaveError,
+    onRemoteChangesDetected,
   } = options;
 
   const [entries, setEntries] = useState<EventPicklistEntry[]>(initialEntries);
   const [originalEntries, setOriginalEntries] = useState<EventPicklistEntry[]>(initialEntries);
   const [isSaving, setIsSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false); // Skip next remote update notification after save
 
   // Update entries when picklistId or data changes (for real-time updates)
+  // BUT: Don't overwrite local changes if user has unsaved edits
   useEffect(() => {
-    setEntries(initialEntries);
-    setOriginalEntries(initialEntries);
-  }, [picklistId, JSON.stringify(initialEntries)]); // Update on picklistId OR when actual data changes
+    const currentHasChanges = JSON.stringify(entries) !== JSON.stringify(originalEntries);
+
+    // Check if data actually changed (not just a re-render with same data)
+    const dataChanged = JSON.stringify(initialEntries) !== JSON.stringify(originalEntries);
+
+    // Only update if no unsaved changes OR if picklistId changed (different picklist entirely)
+    const picklistIdChanged = entries.length > 0 && entries[0]?.team &&
+      initialEntries.length > 0 && initialEntries[0]?.team &&
+      entries[0].team !== initialEntries[0].team; // Rough heuristic for different picklist
+
+    if (picklistIdChanged) {
+      // Different picklist - always update
+      setEntries(initialEntries);
+      setOriginalEntries(initialEntries);
+      setJustSaved(false);
+    } else if (dataChanged) {
+      // Skip notification if we just saved (this is likely our own change coming back)
+      if (justSaved) {
+        console.log("[usePicklistEditor] Skipping remote notification - just saved");
+        setEntries(initialEntries);
+        setOriginalEntries(initialEntries);
+        setJustSaved(false);
+      } else if (onRemoteChangesDetected) {
+        // Same picklist, but remote data changed - notify the component
+        const acceptChanges = () => {
+          setEntries(initialEntries);
+          setOriginalEntries(initialEntries);
+        };
+        const rejectChanges = () => {
+          // Keep current entries, mark as having changes
+          setOriginalEntries(initialEntries); // Update original so hasChanges will be true
+        };
+        onRemoteChangesDetected(currentHasChanges, acceptChanges, rejectChanges);
+      } else if (!currentHasChanges) {
+        // No unsaved changes and no callback - auto-update
+        setEntries(initialEntries);
+        setOriginalEntries(initialEntries);
+      }
+    } else if (!currentHasChanges && !justSaved) {
+      // No changes - auto-update
+      setEntries(initialEntries);
+      setOriginalEntries(initialEntries);
+    } else {
+      console.log("[usePicklistEditor] Ignoring remote update - unsaved local changes present");
+    }
+  }, [picklistId, JSON.stringify(initialEntries), onRemoteChangesDetected, justSaved]); // Update on picklistId OR when actual data changes
+
+  // Auto-save on unmount if there are unsaved changes
+  // Use refs to avoid re-running cleanup on every state change
+  const entriesRef = useRef(entries);
+  const originalEntriesRef = useRef(originalEntries);
+
+  useEffect(() => {
+    entriesRef.current = entries;
+    originalEntriesRef.current = originalEntries;
+  });
+
+  useEffect(() => {
+    // Cleanup only runs on actual unmount (no dependencies)
+    return () => {
+      const currentHasChanges = JSON.stringify(entriesRef.current) !== JSON.stringify(originalEntriesRef.current);
+      if (currentHasChanges) {
+        console.log("[usePicklistEditor] Component unmounting with unsaved changes, auto-saving...");
+
+        // Fire-and-forget save on unmount
+        const validEntries = entriesRef.current.map((e) => ({
+          team: e.team,
+          rank: e.rank ?? 0,
+          flags: e.flags ?? {},
+        }));
+
+        updatePicklist(picklistId, eventKey, title, validEntries, type)
+          .then(() => {
+            console.log("[usePicklistEditor] ✅ Auto-saved on unmount");
+          })
+          .catch((error) => {
+            console.error("[usePicklistEditor] Auto-save failed:", error);
+          });
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps = cleanup only on unmount
 
   // Check if there are unsaved changes
   const hasChanges = JSON.stringify(entries) !== JSON.stringify(originalEntries);
 
   /**
    * Handle drag-and-drop reordering
-   * Saves immediately for real-time sync across devices
+   * DEBOUNCED: Marks as dirty, doesn't save immediately (call saveChanges() to persist)
    */
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -97,27 +180,13 @@ export function usePicklistEditor(
     }
 
     setEntries(reordered);
-    setOriginalEntries(reordered); // Update original to prevent "unsaved changes" state
-
-    // Save immediately for real-time sync
-    try {
-      const validEntries = reordered.map((e) => ({
-        team: e.team,
-        rank: e.rank ?? 0,
-        flags: e.flags ?? {},
-      }));
-
-      await updatePicklist(picklistId, eventKey, title, validEntries, type);
-    } catch (error) {
-      console.error("Failed to save picklist reorder:", error);
-      // Revert on error
-      setEntries(originalEntries);
-    }
+    // DON'T update originalEntries - this marks hasChanges = true
+    console.log("[usePicklistEditor] Reordered (unsaved)");
   };
 
   /**
    * Toggle exclude flag for a team
-   * Saves immediately for real-time sync across devices
+   * DEBOUNCED: Marks as dirty, doesn't save immediately (call saveChanges() to persist)
    */
   const toggleExclude = async (teamKey: string) => {
     const updated = entries.map((e) =>
@@ -127,29 +196,16 @@ export function usePicklistEditor(
     );
 
     setEntries(updated);
-    setOriginalEntries(updated); // Update original to prevent "unsaved changes" state
-
-    // Save immediately for real-time sync
-    try {
-      const validEntries = updated.map((e) => ({
-        team: e.team,
-        rank: e.rank ?? 0,
-        flags: e.flags ?? {},
-      }));
-
-      await updatePicklist(picklistId, eventKey, title, validEntries, type);
-    } catch (error) {
-      console.error("Failed to save picklist exclude:", error);
-      // Revert on error
-      setEntries(originalEntries);
-    }
+    // DON'T update originalEntries - this marks hasChanges = true
+    console.log("[usePicklistEditor] Toggled exclude (unsaved)");
   };
 
   /**
    * Save changes to database
+   * This is the ONLY function that actually persists to Supabase
    */
   const saveChanges = async (): Promise<void> => {
-    if (!hasChanges) return;
+    if (!hasChanges || isSaving) return;
 
     setIsSaving(true);
 
@@ -163,6 +219,12 @@ export function usePicklistEditor(
 
       await updatePicklist(picklistId, eventKey, title, validEntries, type);
 
+      // Update original to match current state (marks hasChanges = false)
+      setOriginalEntries(entries);
+      // Skip next remote change notification (likely our own save coming back)
+      setJustSaved(true);
+
+      console.log("[usePicklistEditor] ✅ Saved changes to Supabase");
       onSaveSuccess?.();
     } catch (error) {
       console.error("Failed to update picklist:", error);

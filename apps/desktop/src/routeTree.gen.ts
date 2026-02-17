@@ -13,6 +13,7 @@ import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as TestPicklistsRouteImport } from './routes/test-picklists'
 import { Route as ScouterRatingsRouteImport } from './routes/scouter-ratings'
 import { Route as ResetRouteImport } from './routes/reset'
+import { Route as ExclusionTestRouteImport } from './routes/exclusion-test'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AuthIndexRouteRouteImport } from './routes/auth/index.route'
@@ -37,6 +38,11 @@ const ResetRoute = ResetRouteImport.update({
   path: '/reset',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExclusionTestRoute = ExclusionTestRouteImport.update({
+  id: '/exclusion-test',
+  path: '/exclusion-test',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -55,6 +61,7 @@ const AuthIndexRouteRoute = AuthIndexRouteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/exclusion-test': typeof ExclusionTestRoute
   '/reset': typeof ResetRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/test-picklists': typeof TestPicklistsRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/exclusion-test': typeof ExclusionTestRoute
   '/reset': typeof ResetRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/test-picklists': typeof TestPicklistsRoute
@@ -74,6 +82,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/exclusion-test': typeof ExclusionTestRoute
   '/reset': typeof ResetRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/test-picklists': typeof TestPicklistsRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/exclusion-test'
     | '/reset'
     | '/scouter-ratings'
     | '/test-picklists'
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/exclusion-test'
     | '/reset'
     | '/scouter-ratings'
     | '/test-picklists'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/exclusion-test'
     | '/reset'
     | '/scouter-ratings'
     | '/test-picklists'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ExclusionTestRoute: typeof ExclusionTestRoute
   ResetRoute: typeof ResetRoute
   ScouterRatingsRoute: typeof ScouterRatingsRoute
   TestPicklistsRoute: typeof TestPicklistsRoute
@@ -151,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/exclusion-test': {
+      id: '/exclusion-test'
+      path: '/exclusion-test'
+      fullPath: '/exclusion-test'
+      preLoaderRoute: typeof ExclusionTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -177,6 +197,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ExclusionTestRoute: ExclusionTestRoute,
   ResetRoute: ResetRoute,
   ScouterRatingsRoute: ScouterRatingsRoute,
   TestPicklistsRoute: TestPicklistsRoute,

@@ -30,6 +30,7 @@ type MatchEditStatsType = {
   matchNum?: string | null;
   alliance?: string | null;
   practice?: boolean | null;
+  fromView?: string | null; // "scouting" or "teamView" - determines home button behavior
 };
 
 export const Route = createFileRoute("/match_edit_stats")({
@@ -40,6 +41,7 @@ export const Route = createFileRoute("/match_edit_stats")({
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
       practice: search.practice as boolean | undefined | null,
+      fromView: search.fromView as string | undefined | null,
     };
   },
 });
@@ -47,7 +49,7 @@ export const Route = createFileRoute("/match_edit_stats")({
 function MatchEditStats() {
   const { isWrongOrientation } = useOrientation("portrait");
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice, fromView } = Route.useSearch();
   const { currentEvent } = useEvent();
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
   const [notes, setNotes] = useState("");
@@ -56,41 +58,99 @@ function MatchEditStats() {
   // Load match data - check both sessionStorage (from match_play) and Supabase (for editing)
   useEffect(() => {
     async function loadMatchData() {
+      // Use match-specific sessionStorage key to prevent interference between matches
+      const sessionKey = matchNum && teamNum
+        ? `matchData_${matchNum}_${teamNum}`
+        : "currentMatchData";
+
+      console.log("[MatchEditStats] Loading match data:", {
+        currentEvent,
+        teamNum,
+        matchNum,
+        alliance,
+        fromView,
+        sessionKey,
+        hasSessionStorage: !!sessionStorage.getItem(sessionKey),
+      });
+
       // First try sessionStorage (for new match flow from match_play)
-      const saved = sessionStorage.getItem("currentMatchData");
+      const saved = sessionStorage.getItem(sessionKey);
       if (saved) {
         try {
           const data = JSON.parse(saved);
+          console.log("[MatchEditStats] Loaded from sessionStorage:", {
+            sessionKey,
+            hasPresetActions: Array.isArray(data.presetActions),
+            presetActionsCount: data.presetActions?.length ?? 0,
+            hasRatings: !!data.postMatch?.ratings,
+            notesLength: data.notes?.length ?? 0,
+          });
           setMatchData(data);
           setNotes(data.notes || "");
           return;
         } catch (error) {
           console.error(
-            "Failed to load match data from sessionStorage:",
+            "[MatchEditStats] Failed to load match data from sessionStorage:",
             error
           );
         }
       }
 
-      // If no sessionStorage and we have route params, try to load from Supabase
+      // If no sessionStorage and we have route params, decide whether to load from Supabase or start fresh
       if (currentEvent && teamNum && matchNum) {
         try {
-          const allMatchData = await getMatchData(currentEvent);
-          const existingData = allMatchData.find(
-            (m) => m.team === teamNum && m.match === matchNum
-          );
+          // If from team view, load existing data for editing
+          // Otherwise (scouting flow), start with fresh form for new scout
+          if (fromView === "teamView") {
+            console.log(
+              "[MatchEditStats] Team view edit - loading existing data from Supabase"
+            );
 
-          // Check if data_raw exists and is not empty (ignore EPA/OPR - that's in team_data)
-          if (
-            existingData?.data_raw &&
-            Object.keys(existingData.data_raw).length > 0
-          ) {
-            // Has actual scouting data - pre-populate form for editing
-            const uiData = reverseTransformMatchData(existingData.data_raw);
-            setMatchData(uiData);
-            setNotes(uiData.notes || "");
+            const allMatchData = await getMatchData(currentEvent);
+            const existingData = allMatchData.find(
+              (m) => m.team === teamNum && m.match === matchNum
+            );
+
+            console.log("[MatchEditStats] Supabase query result:", {
+              totalMatches: allMatchData.length,
+              foundMatch: !!existingData,
+              hasDataRaw: !!existingData?.data_raw,
+              dataRawKeys: existingData?.data_raw
+                ? Object.keys(existingData.data_raw)
+                : [],
+            });
+
+            // Check if data_raw exists and is not empty (ignore EPA/OPR - that's in team_data)
+            if (
+              existingData?.data_raw &&
+              Object.keys(existingData.data_raw).length > 0
+            ) {
+              // Has actual scouting data - pre-populate form for editing
+              const uiData = reverseTransformMatchData(existingData.data_raw);
+              console.log("[MatchEditStats] Pre-populating form with existing data");
+              setMatchData(uiData);
+              setNotes(uiData.notes || "");
+            } else {
+              // No existing data - initialize empty form
+              console.log(
+                "[MatchEditStats] No existing data found, initializing empty form"
+              );
+              setMatchData({
+                presetActions: [],
+                locationActions: [],
+                toggleActions: [],
+                postMatch: {
+                  ratings: {},
+                },
+                notes: "",
+              });
+              setNotes("");
+            }
           } else {
-            // No existing data - initialize empty form for new entry
+            // Scouting flow - always start fresh (even if previous data exists)
+            console.log(
+              "[MatchEditStats] Scouting flow - starting with fresh form (re-scout)"
+            );
             setMatchData({
               presetActions: [],
               locationActions: [],
@@ -103,7 +163,10 @@ function MatchEditStats() {
             setNotes("");
           }
         } catch (error) {
-          console.error("Failed to load match data from Supabase:", error);
+          console.error(
+            "[MatchEditStats] Failed to load match data from Supabase:",
+            error
+          );
           toast.error("Failed to load match data");
         }
       }
@@ -113,15 +176,54 @@ function MatchEditStats() {
   }, [currentEvent, teamNum, matchNum]);
 
   const handleBack = () => {
-    navigate({
-      to: "/match_end",
-      search: { teamNum, matchNum, alliance, practice },
-    });
+    // Home button behavior depends on context:
+    // - If from team view: go to dashboard (user is editing, not scouting)
+    // - If from scouting flow: go to match end screen (user can resume scouting)
+    if (fromView === "teamView") {
+      navigate({ to: "/" }); // Dashboard
+    } else {
+      navigate({
+        to: "/match_end",
+        search: { teamNum, matchNum, alliance, practice },
+      });
+    }
   };
 
   const handleSubmit = async () => {
+    // CRITICAL: Log submission attempt for debugging null overwrite bug
+    console.log("[MatchEditStats] Submit attempt:", {
+      hasMatchData: !!matchData,
+      currentEvent,
+      teamNum,
+      matchNum,
+      alliance,
+      fromView,
+      sessionStorageExists: !!sessionStorage.getItem("currentMatchData"),
+    });
+
     if (!matchData || !currentEvent || !teamNum || !matchNum) {
       toast.error("Missing match data");
+      console.error("[MatchEditStats] Missing required data:", {
+        hasMatchData: !!matchData,
+        currentEvent,
+        teamNum,
+        matchNum,
+      });
+      return;
+    }
+
+    // Validate parameters are valid strings, not empty
+    if (
+      typeof teamNum !== "string" ||
+      typeof matchNum !== "string" ||
+      teamNum.trim() === "" ||
+      matchNum.trim() === ""
+    ) {
+      toast.error("Invalid match or team parameters");
+      console.error("[MatchEditStats] Invalid parameters:", {
+        teamNum,
+        matchNum,
+      });
       return;
     }
 
@@ -154,6 +256,35 @@ function MatchEditStats() {
       // Transform to database format
       const transformedData = transformMatchData(completeMatchData, 2025);
 
+      // CRITICAL: Validate transformed data is not empty before submitting
+      if (!transformedData || Object.keys(transformedData).length === 0) {
+        toast.error(
+          "Match data is empty. Please ensure all fields are filled."
+        );
+        console.error("[MatchEditStats] Transformed data is empty:", {
+          matchData,
+          transformedData,
+        });
+        return;
+      }
+
+      // CRITICAL: Log the exact data being submitted
+      console.log("[MatchEditStats] Submitting data:", {
+        event: currentEvent,
+        match: matchNum,
+        team: teamNum,
+        alliance,
+        scoutName,
+        scoutUid,
+        transformedDataKeys: Object.keys(transformedData),
+        hasPresetActions: Array.isArray(matchData.presetActions),
+        presetActionsCount: matchData.presetActions?.length ?? 0,
+        hasRatings: !!matchData.postMatch?.ratings,
+        ratingsKeys: matchData.postMatch?.ratings
+          ? Object.keys(matchData.postMatch.ratings)
+          : [],
+      });
+
       // Upload via offline-first pattern (alliance is validated above)
       await putMatchData(
         currentEvent,
@@ -165,15 +296,21 @@ function MatchEditStats() {
         { name: scoutName }
       );
 
-      // Clear sessionStorage
-      sessionStorage.removeItem("currentMatchData");
+      console.log("[MatchEditStats] Upload successful");
+
+      // Clear match-specific sessionStorage
+      const sessionKey = matchNum && teamNum
+        ? `matchData_${matchNum}_${teamNum}`
+        : "currentMatchData";
+      sessionStorage.removeItem(sessionKey);
+      console.log("[MatchEditStats] Cleared sessionStorage key:", sessionKey);
 
       toast.success("Match data uploaded!");
 
-      // Navigate back to home page
-      navigate({ to: "/home" });
+      // After successful submission, ALWAYS go to dashboard
+      navigate({ to: "/" });
     } catch (error) {
-      console.error("Failed to upload:", error);
+      console.error("[MatchEditStats] Failed to upload:", error);
       toast.error("Failed to upload match data");
     } finally {
       setIsSubmitting(false);
@@ -289,23 +426,30 @@ function MatchEditStats() {
     // Use activeToggles to get current state across all phases
     const currentlyActive = activeToggles[actionType];
 
-    // Handle climb exclusivity - only one climb level can be active at a time
+    // Handle climb exclusivity - only one climb level can be active at a time PER PHASE
+    // Auto climb (L1 in auto) and teleop climb (L1/L2/L3 in endgame) are independent
     const newActions: ToggleAction[] = [];
     if (actionType.startsWith("climb_") && !currentlyActive) {
-      // Deactivate any other active climb levels
+      // Deactivate any other active climb levels IN THE SAME PHASE
       const climbTypes: ToggleActionType[] = [
         "climb_L1",
         "climb_L2",
         "climb_L3",
       ];
       climbTypes.forEach((climbType) => {
-        if (climbType !== actionType && activeToggles[climbType]) {
-          newActions.push({
-            type: climbType,
-            timestamp: Date.now(),
-            active: false,
-            phase,
-          });
+        if (climbType !== actionType) {
+          // Check if this climb type is active in the CURRENT phase
+          const isActiveInSamePhase = matchData?.toggleActions.some(
+            (a) => a.type === climbType && a.active && a.phase === phase
+          );
+          if (isActiveInSamePhase) {
+            newActions.push({
+              type: climbType,
+              timestamp: Date.now(),
+              active: false,
+              phase,
+            });
+          }
         }
       });
     }

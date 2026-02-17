@@ -179,12 +179,18 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }
+      // Reset polling controller to trigger fresh fetches immediately
+      if (pollingController.current) pollingController.current.forceRefresh();
+
       fetchAnalytics();
     }
   }, [currentEvent, dbInitialized, fetchAnalytics, isOnline]);
 
   const refresh = useCallback(async () => {
     console.log("[AnalyticsDataContext] Refresh callback triggered");
+    // Reset polling interval to trigger fresh fetches sooner
+    if (pollingController.current) pollingController.current.forceRefresh();
+
     // Use ref to call current fetch function without changing callback identity
     if (fetchAnalyticsRef.current) {
       await fetchAnalyticsRef.current();

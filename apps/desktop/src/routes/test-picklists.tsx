@@ -111,8 +111,19 @@ function TestPicklistsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Note: Real-time refresh is handled by DesktopCompetitionDataContext
-  // No need to register another callback here (would cause duplicate refreshes and UI flashing)
+  // 15-second polling for conflict detection (realtime subscriptions are disabled)
+  // Calls refresh() which checks Supabase for updates
+  useEffect(() => {
+    if (!currentEvent || !selectedPicklistId) return;
+
+    console.log("[test-picklists] Starting 15s polling for conflict detection");
+    const interval = setInterval(() => {
+      console.log("[test-picklists] 15s poll - checking for updates");
+      refresh();
+    }, 15000); // Check every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [currentEvent, selectedPicklistId, refresh]);
 
   // Memoize picklist and entries to prevent flash during refresh
   const selectedPicklist = useMemo(
@@ -136,14 +147,34 @@ function TestPicklistsPage() {
 
   const {
     entries,
+    hasChanges,
+    isSaving,
     handleDragEnd: editorHandleDragEnd,
     toggleExclude,
+    saveChanges,
   } = usePicklistEditor({
     initialEntries: isValidSelection ? selectedEntries : [],
     picklistId: selectedPicklistId || "",
     eventKey: currentEvent || "",
     title: selectedPicklist?.title || "",
     type: (selectedPicklist?.type as "public" | "private" | "default") || "public",
+    onRemoteChangesDetected: (hasUnsavedChanges, acceptChanges, rejectChanges) => {
+      const message = hasUnsavedChanges
+        ? "Someone else updated this picklist. You have unsaved changes."
+        : "Someone else updated this picklist.";
+
+      const accept = window.confirm(
+        `${message}\n\nClick OK to accept their changes, or Cancel to keep your version.`
+      );
+
+      if (accept) {
+        acceptChanges();
+        alert("Loaded remote changes");
+      } else {
+        rejectChanges();
+        alert("Keeping your version - save to sync with Supabase");
+      }
+    },
   });
 
   // Update title and type when switching to a different picklist (not on refresh)
@@ -337,23 +368,37 @@ function TestPicklistsPage() {
 
                   {selectedPicklist && (
                     <div className="pt-4 border-t space-y-2">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium">
                           {displayEntries.length} teams (
                           {excludedEntries.length} excluded)
+                          {hasChanges && <span className="text-yellow-600"> (unsaved)</span>}
                         </span>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleDeletePicklist}
-                          disabled={isDeleting}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          {isDeleting ? "Deleting..." : "Delete"}
-                        </Button>
+                        <div className="flex gap-2">
+                          {hasChanges && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => saveChanges()}
+                              disabled={isSaving}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              {isSaving ? "Saving..." : "Save"}
+                            </Button>
+                          )}
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleDeletePicklist}
+                            disabled={isDeleting}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            {isDeleting ? "Deleting..." : "Delete"}
+                          </Button>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        💡 Changes save automatically and sync in real-time
+                        💡 {hasChanges ? "Click Save to sync with Supabase" : "Changes are synced with Supabase"}
                       </p>
                     </div>
                   )}

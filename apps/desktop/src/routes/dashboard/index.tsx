@@ -34,6 +34,8 @@ import { useDesktopEvent } from "../../contexts/DesktopEventContext";
 import { useDesktopRealtime } from "../../contexts/DesktopRealtimeContext";
 import { useDesktopTeamData } from "../../contexts/DesktopTeamDataContext";
 import { useDesktopCompetitionData } from "../../contexts/DesktopCompetitionDataContext";
+import { getUserProfiles } from "@lib/data/scouterRatings";
+import { getPitScoutingData, getMatchScoutingData } from "../../lib/db";
 
 export const Route = createFileRoute("/dashboard/")({
   beforeLoad: async () => {
@@ -78,6 +80,8 @@ function DashboardPage() {
   const [picklistTitle, setPicklistTitle] = useState("");
   const [picklistType, setPicklistType] = useState<"public" | "private" | "default">("public");
   const [creatingPicklist, setCreatingPicklist] = useState(false);
+  const [testResults, setTestResults] = useState<Record<string, string>>({});
+  const [testingCache, setTestingCache] = useState(false);
 
   // Update last sync time when data changes
   useEffect(() => {
@@ -240,6 +244,70 @@ function DashboardPage() {
     }
   };
 
+  const handleTestCacheFunctions = async () => {
+    if (!currentEvent) {
+      alert("Please select an event first");
+      return;
+    }
+
+    setTestingCache(true);
+    const results: Record<string, string> = {};
+
+    try {
+      console.log("[Dashboard Test] Testing all cache functions...");
+
+      // Test user profiles
+      try {
+        const profiles = await getUserProfiles();
+        results["User Profiles"] = `✅ ${profiles.length} profiles`;
+        console.log("[Dashboard Test] User Profiles:", profiles.length);
+      } catch (error) {
+        results["User Profiles"] = `❌ ${error instanceof Error ? error.message : String(error)}`;
+        console.error("[Dashboard Test] User Profiles error:", error);
+      }
+
+      // Test pit scouting data
+      try {
+        const pitData = await getPitScoutingData(currentEvent);
+        results["Pit Scouting"] = `✅ ${pitData.length} submissions`;
+        console.log("[Dashboard Test] Pit Scouting:", pitData.length);
+      } catch (error) {
+        results["Pit Scouting"] = `❌ ${error instanceof Error ? error.message : String(error)}`;
+        console.error("[Dashboard Test] Pit Scouting error:", error);
+      }
+
+      // Test match scouting data
+      try {
+        const matchData = await getMatchScoutingData(currentEvent);
+        results["Match Scouting"] = `✅ ${matchData.length} submissions`;
+        console.log("[Dashboard Test] Match Scouting:", matchData.length);
+      } catch (error) {
+        results["Match Scouting"] = `❌ ${error instanceof Error ? error.message : String(error)}`;
+        console.error("[Dashboard Test] Match Scouting error:", error);
+      }
+
+      // Test teams (from context)
+      results["Teams"] = `✅ ${teams.length} teams`;
+
+      // Test schedule (from context)
+      results["Schedule"] = `✅ ${schedule.length} entries`;
+
+      // Test picklists (from context)
+      results["Picklists"] = `✅ ${picklists.length} picklists`;
+
+      // Test picklist entries (from context)
+      results["Picklist Entries"] = `✅ ${picklistEntries.length} entries`;
+
+      setTestResults(results);
+      console.log("[Dashboard Test] All tests complete:", results);
+    } catch (error) {
+      console.error("[Dashboard Test] Test suite failed:", error);
+      alert(`❌ Test failed:\n\n${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setTestingCache(false);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Bootstrap Event Dialog */}
@@ -363,10 +431,10 @@ function DashboardPage() {
             <Button
               variant="outline"
               className="border-purple-600 text-purple-600 hover:bg-purple-600/10"
-              onClick={() => navigate({ to: "/scouter-ratings" })}
+              onClick={() => navigate({ to: "/exclusion-test" })}
             >
               <Users className="h-4 w-4 mr-2" />
-              Scouter Ratings
+              Exclusion Test
             </Button>
             <Button
               variant="outline"
@@ -575,6 +643,51 @@ function DashboardPage() {
           <p className="text-sm text-muted-foreground mt-4">
             💡 Test realtime: Edit picklists on mobile or desktop and watch them
             sync instantly!
+          </p>
+        </div>
+
+        {/* Cache Testing Section */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-2xl font-bold">Cache Function Tests</h3>
+            <Button
+              variant="outline"
+              className="border-blue-600 text-blue-600 hover:bg-blue-600/10"
+              onClick={handleTestCacheFunctions}
+              disabled={!currentEvent || testingCache}
+            >
+              <FlaskConical className="h-4 w-4 mr-2" />
+              {testingCache ? "Testing..." : "Run Cache Tests"}
+            </Button>
+          </div>
+
+          {Object.keys(testResults).length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Object.entries(testResults).map(([key, value]) => (
+                <Card key={key}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">{key}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className={`text-sm font-mono ${value.startsWith("✅") ? "text-green-600" : "text-red-600"}`}>
+                      {value}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {Object.keys(testResults).length === 0 && (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                No tests run yet. Click "Run Cache Tests" to verify all data functions work correctly.
+              </CardContent>
+            </Card>
+          )}
+
+          <p className="text-sm text-muted-foreground mt-4">
+            💡 This tests all cache functions: user profiles, pit scouting, match scouting, teams, schedule, and picklists.
           </p>
         </div>
         </div>
