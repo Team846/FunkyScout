@@ -280,6 +280,26 @@ export async function cacheEventTeamData(
 export async function getEventSchedule(
   event: string,
 ): Promise<EventScheduleEntry[]> {
+  // Tauri: fetch directly from Supabase instead of local SQLite
+  if (isTauri()) {
+    console.log("[getEventSchedule] Tauri: Fetching from Supabase for event:", event);
+    const { default: supabase } = await import("@lib/supabase/supabase");
+    const { data, error } = await supabase
+      .from("event_schedule")
+      .select("*")
+      .eq("event", event)
+      .is("deleted_at", null);
+
+    if (error) {
+      console.error("[getEventSchedule] Supabase error:", error);
+      throw error;
+    }
+
+    console.log("[getEventSchedule] Tauri: Fetched", data?.length || 0, "schedule entries");
+    return (data || []) as EventScheduleEntry[];
+  }
+
+  // Mobile: use WASM SQLite
   await initDatabase();
   const rows = await execWorker(
     "SELECT * FROM event_schedule WHERE event = ? AND deleted_at IS NULL",
@@ -292,6 +312,25 @@ export async function getUserEventScheduleAssignments(
   event: string,
   userName: string,
 ): Promise<EventScheduleEntry[]> {
+  // Tauri: fetch directly from Supabase instead of local SQLite
+  if (isTauri()) {
+    const { default: supabase } = await import("@lib/supabase/supabase");
+    const { data, error } = await supabase
+      .from("event_schedule")
+      .select("*")
+      .eq("event", event)
+      .eq("name", userName)
+      .is("deleted_at", null);
+
+    if (error) {
+      console.error("[getUserEventScheduleAssignments] Supabase error:", error);
+      throw error;
+    }
+
+    return (data || []) as EventScheduleEntry[];
+  }
+
+  // Mobile: use WASM SQLite
   await initDatabase();
   const rows = await execWorker(
     `SELECT * FROM event_schedule
@@ -355,6 +394,33 @@ export async function getEventMatchData(
   match?: string,
   team?: string,
 ): Promise<EventMatchData[]> {
+  // Tauri: fetch directly from Supabase instead of local SQLite
+  if (isTauri()) {
+    const { default: supabase } = await import("@lib/supabase/supabase");
+    let query = supabase
+      .from("event_match_data")
+      .select("*")
+      .eq("event", event)
+      .is("deleted_at", null);
+
+    if (match) {
+      query = query.eq("match", match);
+    }
+    if (team) {
+      query = query.eq("team", team);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("[getEventMatchData] Supabase error:", error);
+      throw error;
+    }
+
+    return (data || []) as EventMatchData[];
+  }
+
+  // Mobile: use WASM SQLite
   await initDatabase();
   let sql =
     "SELECT * FROM event_match_data WHERE event = ? AND deleted_at IS NULL";

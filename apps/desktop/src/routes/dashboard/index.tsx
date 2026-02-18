@@ -431,10 +431,10 @@ function DashboardPage() {
             <Button
               variant="outline"
               className="border-purple-600 text-purple-600 hover:bg-purple-600/10"
-              onClick={() => navigate({ to: "/exclusion-test" })}
+              onClick={() => navigate({ to: "/shifts" })}
             >
               <Users className="h-4 w-4 mr-2" />
-              Exclusion Test
+              View Shifts
             </Button>
             <Button
               variant="outline"

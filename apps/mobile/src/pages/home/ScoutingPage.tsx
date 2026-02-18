@@ -80,35 +80,62 @@ export function ScoutingPage() {
   
       const fetchShiftData = async () => {
         try {
+          const now = Date.now();
+
+          // Count ACTUAL completed match scouting submissions FIRST (doesn't depend on assignments)
+          const session = await getSession();
+          const currentUid = session?.user?.id;
+
+          let shiftsActuallyDone = 0;
+          try {
+            const allMatchData = await getEventMatchData(currentEvent);
+            console.log("[ScoutingPage] Counting shifts done:", {
+              totalMatches: allMatchData.length,
+              currentUid,
+              event: currentEvent,
+            });
+
+            // Count matches user actually scouted (not deleted, belongs to user)
+            // Same logic as "Edit Past Matches" but without time filtering
+            const scoutedMatches = allMatchData.filter((m) => {
+              // Must have actual scouting data and not be deleted
+              if (!m.name || m.deleted_at) return false;
+              // Must be scouted by current user
+              return m.uid === currentUid;
+            });
+
+            shiftsActuallyDone = scoutedMatches.length;
+            console.log("[ScoutingPage] Shifts actually done:", shiftsActuallyDone, scoutedMatches);
+          } catch (error) {
+            console.error("Failed to count completed shifts:", error);
+          }
+
+          // Now fetch scheduled assignments (may be empty)
           const assignments = await getUserEventScheduleAssignments(
             currentEvent,
             userData.name
           );
-  
+
           if (assignments.length === 0) {
+            // User has no scheduled assignments, but may have completed shifts
             setNextShift(null);
-            setShiftStats({ done: 0, left: 0, untilBreak: 0 });
+            setShiftStats({ done: shiftsActuallyDone, left: 0, untilBreak: 0 });
             return;
           }
-  
-          const now = Date.now();
-  
+
           // Map assignments to include match times
           const shiftsWithTimes = assignments.map((assignment) => {
             const matchData = tbaSchedule[assignment.match];
             const matchTime = matchData?.est_time
               ? matchData.est_time * 1000
               : null;
-  
+
             return {
               assignment,
               matchTime,
             };
           });
-  
-          const pastShiftsCount = shiftsWithTimes.filter(
-            (s) => s.matchTime && s.matchTime <= now
-          ).length;
+
           const futureShiftsCount = shiftsWithTimes.filter(
             (s) => s.matchTime && s.matchTime > now
           ).length;
@@ -148,7 +175,7 @@ export function ScoutingPage() {
           }
   
           setShiftStats({
-            done: pastShiftsCount,
+            done: shiftsActuallyDone,
             left: futureShiftsCount,
             untilBreak,
           });
