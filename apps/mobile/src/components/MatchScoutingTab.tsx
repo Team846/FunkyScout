@@ -321,11 +321,13 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
           <p className="text-lg font-semibold text-primary">{teleopScore}</p>
         </div>
         <div className="rounded-lg bg-background p-3">
-          <p className="text-xs text-muted-foreground mb-1">Total Actions</p>
-          <p className="text-lg font-semibold text-primary">{totalActions}</p>
+          <p className="text-xs text-muted-foreground mb-1">Auto Climb</p>
+          <p className="text-lg font-semibold text-primary">
+            {matchStats.climb.hasAutoClimb ? "L1" : "None"}
+          </p>
         </div>
         <div className="rounded-lg bg-background p-3">
-          <p className="text-xs text-muted-foreground mb-1">Climb Level</p>
+          <p className="text-xs text-muted-foreground mb-1">Teleop Climb</p>
           <p className="text-lg font-semibold text-primary">{climbLevel}</p>
         </div>
       </div>

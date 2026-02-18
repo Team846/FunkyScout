@@ -431,10 +431,10 @@ function DashboardPage() {
             <Button
               variant="outline"
               className="border-purple-600 text-purple-600 hover:bg-purple-600/10"
-              onClick={() => navigate({ to: "/shifts" })}
+              onClick={() => navigate({ to: "/match-edit-test" })}
             >
-              <Users className="h-4 w-4 mr-2" />
-              View Shifts
+              <Activity className="h-4 w-4 mr-2" />
+              Edit Match Test
             </Button>
             <Button
               variant="outline"

@@ -704,7 +704,7 @@ impl SyncService {
             sqlx::query(
                 "INSERT INTO event_picklist (id, event, title, uid, uname, type, timestamp, last_modified)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(id, event) DO UPDATE SET
+                 ON CONFLICT(id) DO UPDATE SET
                    title = excluded.title,
                    uid = excluded.uid,
                    uname = excluded.uname,
@@ -819,7 +819,7 @@ impl SyncService {
             sqlx::query(
                 "INSERT INTO event_match_data (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(event, match, team, uid, timestamp) DO UPDATE SET
+                 ON CONFLICT(event, match, team) DO UPDATE SET
                    alliance = excluded.alliance,
                    data_raw = excluded.data_raw,
                    data = excluded.data,
@@ -1071,8 +1071,12 @@ impl SyncService {
         let data_raw = payload.get("dataRaw").cloned().unwrap_or(json!({}));
         let name = payload.get("name").and_then(|v| v.as_str());
         let uid = payload.get("uid").and_then(|v| v.as_str());
+        let user_jwt = payload.get("user_jwt").and_then(|v| v.as_str());
 
-        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid).await?;
+        println!("[SyncQueue] PUT_MATCH_DATA: event={}, match={}, team={}, alliance={}, has_jwt={}",
+            event, match_key, team, alliance, user_jwt.is_some());
+
+        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid, user_jwt).await?;
 
         Ok(())
     }

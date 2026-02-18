@@ -222,9 +222,10 @@ export async function putMatchData(
     };
 
     // 1. Cache locally (Tauri SQLite)
-    await invoke("cache_match_data", { data: [matchData] });
+    await invoke("cache_match_scouting_data", { data: [matchData] });
 
-    // 2. Add to sync queue
+    // 2. Add to sync queue (include user JWT so Rust can write to Supabase with auth)
+    const user_jwt = await getUserJWT();
     await invoke("add_to_sync_queue", {
       operation: "PUT_MATCH_DATA",
       payload: {
@@ -236,6 +237,7 @@ export async function putMatchData(
         ...(options?.name ? { name: options.name } : {}), // Only include if defined
         uid: uid,
         timestamp: now,
+        user_jwt,
       },
     });
 

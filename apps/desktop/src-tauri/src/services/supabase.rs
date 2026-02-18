@@ -100,6 +100,7 @@ impl SupabaseService {
         name: Option<&str>,
         uid: Option<&str>,
         timestamp_ms: i64,
+        user_jwt: Option<&str>,
     ) -> Result<()> {
         // Build payload dynamically - only include fields that are Some()
         // This prevents overwriting existing fields with null values
@@ -109,6 +110,7 @@ impl SupabaseService {
             "team": team,
             "alliance": alliance,
             "data_raw": data_raw,
+            "data": {},  // deprecated but NOT NULL constraint requires it
             "timestamp": Self::timestamp_to_iso(timestamp_ms),
             "last_modified": Self::now_iso(),
         });
@@ -121,13 +123,30 @@ impl SupabaseService {
             payload["uid"] = json!(uid_val);
         }
 
-        self.client
+        // Use user JWT if provided (required for RLS), otherwise use service key
+        let client = if let Some(jwt) = user_jwt {
+            println!("[Supabase] upsert_match_data: using user JWT (RLS will pass)");
+            self.client_with_jwt(jwt)
+        } else {
+            println!("[Supabase] upsert_match_data: WARNING - no user JWT, using anon key (RLS may block)");
+            self.client.clone()
+        };
+
+        let response = client
             .from("event_match_data")
             .upsert(&payload.to_string())
             .on_conflict("event,match,team")
             .execute()
             .await
             .context("Failed to upsert match data")?;
+
+        let status = response.status();
+        println!("[Supabase] upsert_match_data response status: {}", status);
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            eprintln!("[Supabase] upsert_match_data ERROR body: {}", body);
+            anyhow::bail!("upsert_match_data failed with status {}: {}", status, body);
+        }
 
         Ok(())
     }
@@ -733,9 +752,10 @@ impl SupabaseService {
         data_raw: Value,
         name: Option<&str>,
         uid: Option<&str>,
+        user_jwt: Option<&str>,
     ) -> Result<()> {
         let timestamp_ms = chrono::Utc::now().timestamp_millis();
-        self.upsert_match_data(event, match_key, team, alliance, data_raw, name, uid, timestamp_ms).await
+        self.upsert_match_data(event, match_key, team, alliance, data_raw, name, uid, timestamp_ms, user_jwt).await
     }
 
     // Note: delete_match_data already exists above and takes timestamp_ms parameter
