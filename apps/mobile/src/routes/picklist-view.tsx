@@ -88,7 +88,7 @@ function PicklistViewPage() {
       console.log("[picklist-view] Loaded picklist from cache:", picklist);
       setPicklist(picklist);
       setEntries(entries);
-      setHasUnsavedChanges(false);  // Clear unsaved changes on fresh load
+      setHasUnsavedChanges(false); // Clear unsaved changes on fresh load
       setLastLoadedTimestamp(picklist?.last_modified || Date.now()); // Track when we loaded this
     } catch (error) {
       console.error("Failed to load picklist:", error);
@@ -118,7 +118,8 @@ function PicklistViewPage() {
         }
 
         // Check cache (CompetitionDataContext polls Supabase every 2-4 min and updates cache)
-        const { picklist: cachedPicklist, entries: cachedEntries } = await getPicklistById(currentEvent, id);
+        const { picklist: cachedPicklist, entries: cachedEntries } =
+          await getPicklistById(currentEvent, id);
 
         const cachedTimestamp = cachedPicklist?.last_modified || 0;
         const timeDiff = cachedTimestamp - lastLoadedTimestamp;
@@ -129,15 +130,16 @@ function PicklistViewPage() {
           cachedTitle: cachedPicklist?.title,
           cachedEntryCount: cachedEntries?.length || 0,
           localLastLoadedTimestamp: lastLoadedTimestamp,
-          localTitle: picklist.title,
+          localTitle: picklist?.title,
           localEntryCount: entries.length,
           timeDifference: `${timeDiff}ms`,
           isNewer,
         });
 
         if (isNewer) {
-          console.log("[picklist-view] ⚠️ Remote changes detected - cache is newer!");
-
+          console.log(
+            "[picklist-view] ⚠️ Remote changes detected - cache is newer!"
+          );
 
           // Always show notification with options (even if no unsaved changes)
           toast.warning("Picklist updated by someone else", {
@@ -153,19 +155,25 @@ function PicklistViewPage() {
               label: "Keep mine",
               onClick: () => {
                 // Update timestamp to prevent repeated notifications
-                setLastLoadedTimestamp(cachedPicklist.last_modified || Date.now());
+                setLastLoadedTimestamp(
+                  cachedPicklist?.last_modified || Date.now()
+                );
                 // Mark as having unsaved changes (your version != Supabase)
                 setHasUnsavedChanges(true);
               },
             },
             duration: 8000,
-            className: "bg-yellow-50 text-yellow-900 border-yellow-200",
+            style: {
+              backgroundColor: "hsl(var(--accent))",
+              color: "hsl(var(--foreground))",
+              border: "1px solid hsl(var(--accent))",
+            },
             actionButtonStyle: {
-              backgroundColor: "hsl(var(--primary))",
+              backgroundColor: "hsl(var(--chart-1))",
               color: "white",
             },
             cancelButtonStyle: {
-              backgroundColor: "hsl(142 76% 36%)",
+              backgroundColor: "hsl(var(--destructive))",
               color: "white",
             },
           });
@@ -253,21 +261,29 @@ function PicklistViewPage() {
     }
 
     setEntries(reordered);
-    setHasUnsavedChanges(true);  // Mark as dirty, don't sync yet
+    setHasUnsavedChanges(true); // Mark as dirty, don't sync yet
     console.log("[picklist-view] Reordered (unsaved)");
   };
 
   const toggleExclude = async (team: string) => {
     if (!canEdit || !picklist || !currentEvent) return;
 
-    const updated = entries.map((e) =>
+    let updated = entries.map((e) =>
       e.team === team
         ? { ...e, flags: { ...e.flags, excluded: !e.flags?.excluded } }
         : e
     );
 
+    // If partitioning excluded to bottom, re-partition and update ranks
+    if (excludedToBottom) {
+      updated = partitionExcluded(updated).map((e, idx) => ({
+        ...e,
+        rank: idx + 1,
+      }));
+    }
+
     setEntries(updated);
-    setHasUnsavedChanges(true);  // Mark as dirty, don't sync yet
+    setHasUnsavedChanges(true); // Mark as dirty, don't sync yet
     console.log("[picklist-view] Toggled exclude (unsaved)");
   };
 
@@ -291,7 +307,9 @@ function PicklistViewPage() {
       );
 
       setHasUnsavedChanges(false);
-      console.log("[picklist-view] ✅ Saved changes, refreshing from Supabase to get authoritative timestamp");
+      console.log(
+        "[picklist-view] ✅ Saved changes, refreshing from Supabase to get authoritative timestamp"
+      );
 
       // Temporarily set timestamp to prevent false conflict during refresh
       // (prevents the 15s check from thinking our own save is someone else's change)
@@ -304,9 +322,14 @@ function PicklistViewPage() {
       // 2. Detect if someone else saved while we were editing
       console.log("[picklist-view] Calling refreshCompetition()...");
       await refreshCompetition();
-      console.log("[picklist-view] refreshCompetition() completed, reading cache...");
+      console.log(
+        "[picklist-view] refreshCompetition() completed, reading cache..."
+      );
 
-      const { picklist: updatedPicklist } = await getPicklistById(currentEvent, id);
+      const { picklist: updatedPicklist } = await getPicklistById(
+        currentEvent,
+        id
+      );
 
       if (updatedPicklist) {
         console.log("[picklist-view] Post-save picklist from cache:", {
@@ -317,9 +340,14 @@ function PicklistViewPage() {
         setPicklist(updatedPicklist);
         // Update with the actual Supabase timestamp for future conflict checks
         setLastLoadedTimestamp(updatedPicklist.last_modified || Date.now());
-        console.log("[picklist-view] ✅ lastLoadedTimestamp updated to:", updatedPicklist.last_modified);
+        console.log(
+          "[picklist-view] ✅ lastLoadedTimestamp updated to:",
+          updatedPicklist.last_modified
+        );
       } else {
-        console.warn("[picklist-view] ⚠️ updatedPicklist is null after refresh!");
+        console.warn(
+          "[picklist-view] ⚠️ updatedPicklist is null after refresh!"
+        );
       }
 
       toast.success("Saved!");
@@ -349,7 +377,9 @@ function PicklistViewPage() {
     // Cleanup only runs on actual unmount (no dependencies)
     return () => {
       if (hasUnsavedChangesRef.current && picklistRef.current && currentEvent) {
-        console.log("[picklist-view] Component unmounting with unsaved changes, auto-saving...");
+        console.log(
+          "[picklist-view] Component unmounting with unsaved changes, auto-saving..."
+        );
 
         // Fire-and-forget save on unmount
         const validEntries = entriesRef.current.map((e) => ({
@@ -364,11 +394,13 @@ function PicklistViewPage() {
           picklistRef.current.title || "",
           validEntries,
           picklistRef.current.type as any
-        ).then(() => {
-          console.log("[picklist-view] ✅ Auto-saved on unmount");
-        }).catch((error) => {
-          console.error("[picklist-view] Auto-save failed:", error);
-        });
+        )
+          .then(() => {
+            console.log("[picklist-view] ✅ Auto-saved on unmount");
+          })
+          .catch((error) => {
+            console.error("[picklist-view] Auto-save failed:", error);
+          });
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -481,7 +513,6 @@ function PicklistViewPage() {
             <p className="text-primary text-xl font-medium truncate">
               {picklist.title}
             </p>
-            {hasUnsavedChanges}
           </div>
           <div className="flex items-center justify-end gap-2">
             {canEdit && hasUnsavedChanges && (

@@ -12,6 +12,7 @@ import { updatePicklist } from "@lib/data/writes";
 
 export interface PicklistEditorState {
   entries: EventPicklistEntry[];
+  displayEntries: EventPicklistEntry[]; // For rendering only (partitioned if excludedToBottom)
   hasChanges: boolean;
   isSaving: boolean;
 }
@@ -64,6 +65,8 @@ export function usePicklistEditor(
   const [originalEntries, setOriginalEntries] = useState<EventPicklistEntry[]>(initialEntries);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false); // Skip next remote update notification after save
+  const [lastPicklistId, setLastPicklistId] = useState<string>(picklistId); // Track picklist ID changes
+  const [saveTimestamp, setSaveTimestamp] = useState<number>(0); // Track when we last saved
 
   // Update entries when picklistId or data changes (for real-time updates)
   // BUT: Don't overwrite local changes if user has unsaved edits
@@ -73,25 +76,52 @@ export function usePicklistEditor(
     // Check if data actually changed (not just a re-render with same data)
     const dataChanged = JSON.stringify(initialEntries) !== JSON.stringify(originalEntries);
 
-    // Only update if no unsaved changes OR if picklistId changed (different picklist entirely)
-    const picklistIdChanged = entries.length > 0 && entries[0]?.team &&
-      initialEntries.length > 0 && initialEntries[0]?.team &&
-      entries[0].team !== initialEntries[0].team; // Rough heuristic for different picklist
+    // Check if we switched to a different picklist (use actual picklistId, not team order)
+    const picklistIdChanged = picklistId !== lastPicklistId;
+
+    // Ignore updates for 5 seconds after save to prevent race conditions
+    const timeSinceSave = Date.now() - saveTimestamp;
+    const inSaveGracePeriod = saveTimestamp > 0 && timeSinceSave < 5000;
+
+    console.log("[usePicklistEditor] useEffect triggered:", {
+      picklistId,
+      lastPicklistId,
+      currentHasChanges,
+      dataChanged,
+      picklistIdChanged,
+      justSaved,
+      inSaveGracePeriod,
+      timeSinceSave,
+      entriesCount: entries.length,
+      initialEntriesCount: initialEntries.length,
+      entriesFirstExcluded: entries[0]?.flags?.excluded,
+      initialEntriesFirstExcluded: initialEntries[0]?.flags?.excluded,
+    });
 
     if (picklistIdChanged) {
       // Different picklist - always update
+      console.log("[usePicklistEditor] Different picklist - updating entries");
       setEntries(initialEntries);
       setOriginalEntries(initialEntries);
       setJustSaved(false);
+      setSaveTimestamp(0);
+      setLastPicklistId(picklistId);
     } else if (dataChanged) {
+      // Ignore updates during save grace period (prevents race conditions)
+      if (inSaveGracePeriod) {
+        console.log("[usePicklistEditor] ⏸️ Ignoring update - within 5s grace period after save");
+        return;
+      }
+
       // Skip notification if we just saved (this is likely our own change coming back)
       if (justSaved) {
-        console.log("[usePicklistEditor] Skipping remote notification - just saved");
+        console.log("[usePicklistEditor] Just saved - accepting remote data");
         setEntries(initialEntries);
         setOriginalEntries(initialEntries);
         setJustSaved(false);
       } else if (onRemoteChangesDetected) {
         // Same picklist, but remote data changed - notify the component
+        console.log("[usePicklistEditor] Remote changes detected - notifying component");
         const acceptChanges = () => {
           setEntries(initialEntries);
           setOriginalEntries(initialEntries);
@@ -103,17 +133,19 @@ export function usePicklistEditor(
         onRemoteChangesDetected(currentHasChanges, acceptChanges, rejectChanges);
       } else if (!currentHasChanges) {
         // No unsaved changes and no callback - auto-update
+        console.log("[usePicklistEditor] No unsaved changes - auto-updating");
         setEntries(initialEntries);
         setOriginalEntries(initialEntries);
       }
     } else if (!currentHasChanges && !justSaved) {
       // No changes - auto-update
+      console.log("[usePicklistEditor] No changes - auto-updating");
       setEntries(initialEntries);
       setOriginalEntries(initialEntries);
     } else {
       console.log("[usePicklistEditor] Ignoring remote update - unsaved local changes present");
     }
-  }, [picklistId, JSON.stringify(initialEntries), onRemoteChangesDetected, justSaved]); // Update on picklistId OR when actual data changes
+  }, [picklistId, JSON.stringify(initialEntries), onRemoteChangesDetected, justSaved, saveTimestamp]); // Update on picklistId OR when actual data changes
 
   // Auto-save on unmount if there are unsaved changes
   // Use refs to avoid re-running cleanup on every state change
@@ -189,15 +221,32 @@ export function usePicklistEditor(
    * DEBOUNCED: Marks as dirty, doesn't save immediately (call saveChanges() to persist)
    */
   const toggleExclude = async (teamKey: string) => {
-    const updated = entries.map((e) =>
+    const beforeExcluded = entries.find(e => e.team === teamKey)?.flags?.excluded;
+
+    let updated = entries.map((e) =>
       e.team === teamKey
         ? { ...e, flags: { ...e.flags, excluded: !e.flags?.excluded } }
         : e
     );
 
+    // If partitioning excluded to bottom, re-partition and update ranks
+    if (excludedToBottom) {
+      updated = partitionExcluded(updated).map((e, idx) => ({
+        ...e,
+        rank: idx + 1,
+      }));
+    }
+
+    console.log("[usePicklistEditor] Toggling exclude:", {
+      team: teamKey,
+      beforeExcluded,
+      afterExcluded: !beforeExcluded,
+      excludedToBottom,
+    });
+
     setEntries(updated);
     // DON'T update originalEntries - this marks hasChanges = true
-    console.log("[usePicklistEditor] Toggled exclude (unsaved)");
+    console.log("[usePicklistEditor] ✓ Toggled exclude (unsaved)");
   };
 
   /**
@@ -206,6 +255,14 @@ export function usePicklistEditor(
    */
   const saveChanges = async (): Promise<void> => {
     if (!hasChanges || isSaving) return;
+
+    console.log("[usePicklistEditor] 💾 Starting save:", {
+      picklistId,
+      eventKey,
+      title,
+      entriesCount: entries.length,
+      firstEntryExcluded: entries[0]?.flags?.excluded,
+    });
 
     setIsSaving(true);
 
@@ -217,17 +274,22 @@ export function usePicklistEditor(
         flags: e.flags ?? {},
       }));
 
+      console.log("[usePicklistEditor] Calling updatePicklist...");
       await updatePicklist(picklistId, eventKey, title, validEntries, type);
+      console.log("[usePicklistEditor] updatePicklist returned");
 
+      const now = Date.now();
       // Update original to match current state (marks hasChanges = false)
       setOriginalEntries(entries);
       // Skip next remote change notification (likely our own save coming back)
       setJustSaved(true);
+      // Track save time to ignore older remote updates
+      setSaveTimestamp(now);
 
-      console.log("[usePicklistEditor] ✅ Saved changes to Supabase");
+      console.log("[usePicklistEditor] ✅ Save complete - justSaved flag set, saveTimestamp:", now);
       onSaveSuccess?.();
     } catch (error) {
-      console.error("Failed to update picklist:", error);
+      console.error("[usePicklistEditor] ❌ Save failed:", error);
       onSaveError?.(error as Error);
       // Revert on error
       setEntries(originalEntries);
@@ -243,8 +305,12 @@ export function usePicklistEditor(
     setEntries(originalEntries);
   };
 
+  // Get display entries (for UI only - doesn't affect saved ranks)
+  const displayEntries = excludedToBottom ? partitionExcluded(entries) : entries;
+
   return {
     entries,
+    displayEntries,
     hasChanges,
     isSaving,
     handleDragEnd,

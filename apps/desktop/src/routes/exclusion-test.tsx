@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -15,6 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@shadcn/ui/components/select.tsx";
+import { Switch } from "@shadcn/ui/components/switch.tsx";
+import { Label } from "@shadcn/ui/components/label.tsx";
 import { GripVertical, X, Check, Loader2, Save } from "lucide-react";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
@@ -102,8 +104,9 @@ function SortableItem({ team, rank, excluded, onToggleExclude }: SortableItemPro
 
 function PicklistEditorPage() {
   const { currentEvent } = useDesktopEvent();
-  const { picklists, picklistEntries, refreshFromCache } = useDesktopCompetitionData();
+  const { picklists, picklistEntries } = useDesktopCompetitionData();
   const [selectedPicklistId, setSelectedPicklistId] = useState<string | null>(null);
+  const [excludedToBottom, setExcludedToBottom] = useState(true);
 
   // Find selected picklist and its entries
   const selectedPicklist = picklists.find((p) => p.id === selectedPicklistId);
@@ -111,9 +114,21 @@ function PicklistEditorPage() {
     ? picklistEntries.filter((e) => e.id === selectedPicklistId)
     : [];
 
+  // Debug: Log when selectedEntries changes
+  useEffect(() => {
+    if (selectedEntries.length > 0) {
+      console.log("[exclusion-test] selectedEntries updated from context:", {
+        count: selectedEntries.length,
+        firstEntryExcluded: selectedEntries[0]?.flags?.excluded,
+        firstEntryTeam: selectedEntries[0]?.team,
+      });
+    }
+  }, [selectedEntries]);
+
   // Use the picklist editor hook
   const {
     entries,
+    displayEntries,
     hasChanges,
     isSaving,
     handleDragEnd: hookHandleDragEnd,
@@ -126,12 +141,11 @@ function PicklistEditorPage() {
     eventKey: currentEvent || "",
     title: selectedPicklist?.title || "",
     type: selectedPicklist?.type as "public" | "private" | "default" | undefined,
-    excludedToBottom: true,
+    excludedToBottom,
     onSaveSuccess: async () => {
       toast.success("Picklist saved successfully");
-      // Refresh from cache to immediately show the change in UI
-      // (updatePicklist already cached the data, we just need to update React state)
-      await refreshFromCache();
+      // No need to refresh - updatePicklist already cached locally
+      // The hook maintains the correct state, and background polling will sync eventually
     },
     onSaveError: (error) => {
       toast.error(`Failed to save picklist: ${error.message}`);
@@ -194,6 +208,20 @@ function PicklistEditorPage() {
             </Select>
           </div>
 
+          {/* Excluded to Bottom Toggle */}
+          {selectedPicklistId && (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="excluded-to-bottom"
+                checked={excludedToBottom}
+                onCheckedChange={setExcludedToBottom}
+              />
+              <Label htmlFor="excluded-to-bottom" className="text-sm font-medium cursor-pointer">
+                Move excluded teams to bottom
+              </Label>
+            </div>
+          )}
+
           {/* Editor */}
           {selectedPicklistId && entries.length > 0 ? (
             <>
@@ -240,11 +268,11 @@ function PicklistEditorPage() {
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={entries.map((e) => e.team)}
+                  items={displayEntries.map((e) => e.team)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-2">
-                    {entries.map((entry) => (
+                  <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                    {displayEntries.map((entry) => (
                       <SortableItem
                         key={entry.team}
                         team={entry.team}
@@ -258,8 +286,8 @@ function PicklistEditorPage() {
               </DndContext>
 
               <div className="text-xs text-muted-foreground text-center pt-4">
-                {entries.filter((e) => !e.flags?.excluded).length} included,{" "}
-                {entries.filter((e) => e.flags?.excluded).length} excluded
+                {displayEntries.filter((e) => !e.flags?.excluded).length} included,{" "}
+                {displayEntries.filter((e) => e.flags?.excluded).length} excluded
               </div>
             </>
           ) : selectedPicklistId ? (

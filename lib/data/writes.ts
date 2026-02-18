@@ -610,9 +610,18 @@ export async function updatePicklist(
         last_modified: now,
       }));
 
+      console.log("[Writes] Desktop: Caching locally - picklist entries:", {
+        count: picklistEntries.length,
+        firstEntryExcluded: picklistEntries[0]?.flags?.excluded,
+        firstEntryTeam: picklistEntries[0]?.team,
+      });
+
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
+      console.log("[Writes] Desktop: ✓ Cached picklist header");
+
       await invoke("cache_picklist_entries", { entries: picklistEntries });
+      console.log("[Writes] Desktop: ✓ Cached picklist entries");
 
       // Get user JWT for proper authentication
       const user_jwt = await getUserJWT();
@@ -631,13 +640,19 @@ export async function updatePicklist(
         },
       });
 
-      console.log(`[Writes] Desktop: Queued picklist update: ${title}`);
+      console.log(`[Writes] Desktop: ✓ Queued for sync: ${title}`);
 
-      // Trigger instant sync (non-blocking, fire-and-forget)
-      invoke("trigger_sync_now").catch((e) => {
-        console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
-      });
+      // Trigger instant sync and wait for it to complete
+      // This prevents background polling from overwriting local changes before sync finishes
+      try {
+        console.log("[Writes] Desktop: Triggering instant sync...");
+        await invoke("trigger_sync_now");
+        console.log("[Writes] Desktop: ✅ Sync completed successfully");
+      } catch (e) {
+        console.warn("[Writes] Desktop: ⚠️ Instant sync trigger failed (will sync in next cycle):", e);
+      }
 
+      console.log("[Writes] Desktop: updatePicklist complete");
       return;
     } catch (error) {
       console.error("[Writes] Desktop path failed:", error);
