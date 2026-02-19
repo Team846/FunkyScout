@@ -3,11 +3,14 @@
  * If no underscore, returns the key as-is.
  */
 function getMatchPart(matchKey: string): string {
+  // split on undersscore and take last part
   const parts = matchKey.split("_");
+  // make sure format is recognizable
   if (parts.length >= 2) {
     return parts[1]!;
   }
   else {
+    // no underscore, return as-is
     return matchKey;
   }
 }
@@ -20,9 +23,13 @@ function getMatchPart(matchKey: string): string {
 export function getMatchSortOrder(matchKey: string): number[] {
   const part = getMatchPart(matchKey);
 
+  // parsing qual matches as [0, matchNum]
+  // e.g. "qm2" -> [0, 2]
   const qmMatch = part.match(/^qm(\d+)$/i);
   if (qmMatch) return [0, parseInt(qmMatch[1], 10) || 0];
 
+  // parsing sf matches as [1, sfNum, matchNum]
+  // e.g. "sf1m2" -> [1, 1, 2]
   const sfMatch = part.match(/^sf(\d+)m(\d+)$/i);
   if (sfMatch)
     return [
@@ -30,11 +37,14 @@ export function getMatchSortOrder(matchKey: string): number[] {
       parseInt(sfMatch[1], 10) || 0,
       parseInt(sfMatch[2], 10) || 0,
     ];
-
+  
+  // parsing final matches as [2, fnum, matchNum]
+  // e.g. "f1m2" -> [2, 1, 2]
   const fMatch = part.match(/^f(\d+)m(\d+)$/i);
   if (fMatch)
     return [2, parseInt(fMatch[1], 10) || 0, parseInt(fMatch[2], 10) || 0];
 
+  // default to [3, 0] for unrecognized formats, which will sort after all recognized matches
   return [3, 0];
 }
 
