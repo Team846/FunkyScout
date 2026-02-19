@@ -27,7 +27,7 @@ export const PRESET_ACTION_LOCATIONS = {
   station_intake: [0.05, 0.9] as FieldCoords,
   stocking: [0.05, 0.9] as FieldCoords,
   climb: [0.05, 0.6] as FieldCoords,
-  depot: [0.05, 0.3] as FieldCoords,
+  bump: [0.05, 0.3] as FieldCoords,
   shoot: [0.5, 0.5] as FieldCoords,
 };
 

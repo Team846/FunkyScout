@@ -31,13 +31,12 @@ interface PitData {
   teamNum: number;
   teamName: string;
   movement: {
-    depot: boolean;
+    bump: boolean;
     trough: boolean;
   };
   intake: {
     ground: boolean;
     station: boolean;
-    depot: boolean;
     stocking: boolean;
   };
   fuel: {
@@ -46,11 +45,14 @@ interface PitData {
     bps?: string;
     capacity?: string;
   };
-  climb: {
+  autoClimb: {
     level: string | null;
-    left: boolean;
-    right: boolean;
-    declimb: boolean;
+    orientation?: string | null;
+    declimbTime?: string;
+  };
+  teleopClimb: {
+    level: string | null;
+    orientation?: string | null;
   };
   autos: Array<{
     name?: string;
