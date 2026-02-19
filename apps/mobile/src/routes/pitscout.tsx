@@ -477,7 +477,7 @@ function ScoutPage() {
               pressed={intakeStocking}
               onPressedChange={setIntakeStocking}
               className="w-full"
-              info="Can the robot intake while stocking? (Only if station intake is available)"
+              info="Can the robot feed the station with balls?"
             >
               Stocking
             </ScoutToggle>

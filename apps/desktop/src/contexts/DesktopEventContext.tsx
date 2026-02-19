@@ -11,6 +11,8 @@ import { invoke } from "@tauri-apps/api/core";
 interface DesktopEventContextType {
   currentEvent: string | null;
   setCurrentEvent: (event: string | null) => Promise<void>;
+  homeTeam: number;
+  setHomeTeam: (team: number) => Promise<void>;
 }
 
 const DesktopEventContext = createContext<DesktopEventContextType | undefined>(
@@ -19,17 +21,20 @@ const DesktopEventContext = createContext<DesktopEventContextType | undefined>(
 
 export function DesktopEventProvider({ children }: { children: ReactNode }) {
   const [currentEvent, _setCurrentEvent] = useState<string | null>(null);
+  const [homeTeam, _setHomeTeam] = useState<number>(846);
   const [loading, setLoading] = useState(true);
 
-  // Load current event from Tauri store on mount
+  // Load current event and home team from Tauri store on mount
   useEffect(() => {
-    const loadEvent = async () => {
+    const loadConfig = async () => {
       try {
         const config = await invoke<any>("get_config");
         _setCurrentEvent(config.event_key || null);
+        const parsedTeam = parseInt(config.team_key || "846", 10);
+        _setHomeTeam(isNaN(parsedTeam) ? 846 : parsedTeam);
       } catch (error) {
         console.error(
-          "[DesktopEvent] Failed to load event from Tauri store:",
+          "[DesktopEvent] Failed to load config from Tauri store:",
           error
         );
       } finally {
@@ -37,19 +42,15 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    loadEvent();
+    loadConfig();
   }, []);
 
   const setCurrentEvent = useCallback(async (event: string | null) => {
     try {
-      // Save to Tauri store
       const config = await invoke<any>("get_config");
       config.event_key = event || "";
       await invoke("save_config", { config });
-
-      // Update local state
       _setCurrentEvent(event);
-
       console.log("[DesktopEvent] Event changed to:", event);
     } catch (error) {
       console.error(
@@ -60,13 +61,29 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Don't render children until we've loaded the initial event
+  const setHomeTeam = useCallback(async (team: number) => {
+    try {
+      const config = await invoke<any>("get_config");
+      config.team_key = String(team);
+      await invoke("save_config", { config });
+      _setHomeTeam(team);
+      console.log("[DesktopEvent] Home team changed to:", team);
+    } catch (error) {
+      console.error(
+        "[DesktopEvent] Failed to save home team to Tauri store:",
+        error
+      );
+      throw error;
+    }
+  }, []);
+
+  // Don't render children until we've loaded the initial config
   if (loading) {
     return null;
   }
 
   return (
-    <DesktopEventContext.Provider value={{ currentEvent, setCurrentEvent }}>
+    <DesktopEventContext.Provider value={{ currentEvent, setCurrentEvent, homeTeam, setHomeTeam }}>
       {children}
     </DesktopEventContext.Provider>
   );

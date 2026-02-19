@@ -8,7 +8,7 @@ const RootLayout = () => {
   }, []);
 
   return (
-    <>
+  <>
       <Outlet />
       <Toaster position="top-center" />
     </>
