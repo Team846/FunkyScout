@@ -22,6 +22,11 @@ import {
   getActiveToggles,
 } from "@lib/types/matchScouting";
 
+
+import { getEventTeamData } from "@lib/db";
+import { useEvent } from "@lib/context/EventContext";
+import { AutoPathDisplay } from "../components/AutoPathDisplay";
+
 type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
@@ -211,6 +216,27 @@ function MatchPlay() {
 
     vibrateTap();
   };
+
+  const { currentEvent } = useEvent();
+  const [autos, setAutos] = useState<any[]>([]);
+  const [selectedAutoIndex, setSelectedAutoIndex] = useState(0);
+
+
+  useEffect(() => {
+    console.log("looking for:", `frc${teamNum}`)
+    console.log("looking for:", `${teamNum}`)
+    if (!currentEvent || !teamNum) return;
+    console.log("here")
+    getEventTeamData(currentEvent).then((data) => {
+
+      const teamData = data.find((t) => t.team === `${teamNum}`);
+
+      if (teamData?.data?.autos) {
+        setAutos(teamData.data.autos);
+      }
+      console.log(teamData?.data.autos)
+    });
+  }, []);
 
   // Toggle action (disable, defend, climb)
   const toggleAction = (actionType: ToggleActionType) => {
@@ -715,8 +741,35 @@ function MatchPlay() {
             </svg>
           </div>
         </div>
+        
+        
 
-        <div className="w-[60vw] h-full flex items-center justify-center">
+        {isAuto && autos.length > 0 && (
+          <div className="flex flex-col justify-center items-between gap-2 w-[15vw] h-full py-2 overflow-y-auto">
+            {autos.map((auto, i) => (
+              
+              <div key={i} onClick={() => setSelectedAutoIndex(i)} 
+                  className={`flex flex-col gap-1 p-2 rounded-xl cursor-pointer border-2 transition-all`}
+              >
+                <p className={`text-xs font-medium ${i === selectedAutoIndex ? "text-[#CDA745]" : "text-muted-foreground"}`}>
+                  {auto.name || `Auto ${i + 1}`}
+                </p>
+                {auto.drawing ? (
+                  <AutoPathDisplay
+                    drawing={auto.drawing}
+                    alliance={alliance as "red" | "blue"}
+                    className="w-full"
+                  />
+                ) : (
+                  <div className="w-full aspect-[3/2] rounded-lg bg-[#1E1E1E] flex items-center justify-center">
+                    <p className="text-[10px] text-muted-foreground">No path</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={`${isAuto && autos.length > 0 ? "w-[45vw]" : "w-[60vw]"} h-full flex items-center justify-center`}>
           <div
             ref={fieldContainerRef}
             onClick={handleFieldClick}
