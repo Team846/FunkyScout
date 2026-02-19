@@ -4,28 +4,13 @@
 
 import { getSchedule } from "@lib/data";
 import { fetchAllUserDetails } from "@lib/supabase/user";
+import { getMatchSortOrder } from "@lib/utils/match";
 import type { CycleInput, Scouter } from "./cycle";
 
-/** Sort match keys: qm1, qm2, ..., qmN, then sf1m1, sf2m1, ..., then f1m1, f1m2 */
 function sortMatchKeys(matchKeys: string[]): string[] {
-  const order = (mk: string): number[] => {
-    if (mk.startsWith("qm")) {
-      return [0, parseInt(mk.slice(2), 10) || 0];
-    } 
-    if (mk.startsWith("sf")) {
-      const m = mk.match(/sf(\d+)m(\d+)/);
-      return [1, m ? parseInt(m[1], 10) : 0, m ? parseInt(m[2], 10) : 0];
-    }
-    if (mk.startsWith("f")) {
-      const m = mk.match(/f(\d+)m(\d+)/);
-      return [2, m ? parseInt(m[1], 10) : 0, m ? parseInt(m[2], 10) : 0];
-    }
-    return [3, 0];
-  };
-
   return [...matchKeys].sort((a, b) => {
-    const oa = order(a);
-    const ob = order(b);
+    const oa = getMatchSortOrder(a);
+    const ob = getMatchSortOrder(b);
     for (let i = 0; i < Math.max(oa.length, ob.length); i++) {
       const d = (oa[i] ?? 0) - (ob[i] ?? 0);
       if (d !== 0) return d;
