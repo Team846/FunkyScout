@@ -64,7 +64,8 @@ function MatchPlay() {
 
   const [isAuto, setIsAuto] = useState(true);
 
-  const [isRotated, setIsRotated] = useState(false);
+  // Blue alliance starts rotated so cage bar is on same visual side as red
+  const [isRotated, setIsRotated] = useState(alliance === 'blue');
 
   const [shake, setShake] = useState(false);
   const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
@@ -77,6 +78,21 @@ function MatchPlay() {
   const countdownAutoRef = useRef<number | null>(null);
   const countdownTeleopRef = useRef<number | null>(null);
   const baseTimeRef = useRef<number>(performance.now());
+  const dismountTimerRef = useRef<number | null>(null);
+
+  // --- Auto climb state ---
+  const [autoClimbActive, setAutoClimbActive] = useState(false);
+  const autoClimbActiveRef = useRef(false);
+  const [autoClimbOrientation, setAutoClimbOrientation] = useState<'left' | 'right' | 'center' | null>(null);
+
+  // --- Teleop climb state ---
+  const [teleopClimbActive, setTeleopClimbActive] = useState(false);
+  const teleopClimbLevelRef = useRef<'L1' | 'L2' | 'L3' | null>(null);
+  const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<'left' | 'right' | 'center' | null>(null);
+
+  // --- Dismount state ---
+  const [dismountRecorded, setDismountRecorded] = useState(false);
+  const dismountRecordedRef = useRef(false);
 
   // Match scouting data - load from localStorage if exists
   const [matchData, setMatchData] = useState<MatchScoutingData>(() => {
@@ -125,34 +141,25 @@ function MatchPlay() {
     [matchData.toggleActions]
   );
 
-  // Reset auto climb when transitioning from auto to teleop
+  // Handle auto→teleop transition: set up dismount timer if auto climb was active
   const prevIsAutoRef = useRef(isAuto);
   useEffect(() => {
-    // Check if we just transitioned from auto to teleop
     if (prevIsAutoRef.current === true && isAuto === false) {
-      // Check if climb_L1 is active from auto phase
-      const hasAutoClimb = matchData.toggleActions.some(
-        (a) => a.type === "climb_L1" && a.active && a.phase === "auto"
-      );
-
-      if (hasAutoClimb) {
-        // Deactivate the auto climb
-        const deactivateAction: ToggleAction = {
-          type: "climb_L1",
-          timestamp: Date.now(),
-          active: false,
-          phase: "teleop",
-        };
-
-        setMatchData((prev) => ({
-          ...prev,
-          toggleActions: [...prev.toggleActions, deactivateAction],
-        }));
+      if (autoClimbActiveRef.current) {
+        dismountTimerRef.current = window.setTimeout(() => {
+          if (!dismountRecordedRef.current) {
+            setMatchData(prev => ({
+              ...prev,
+              postMatch: { ...prev.postMatch, teleopDismountTime: 11 },
+            }));
+            setDismountRecorded(true);
+            dismountRecordedRef.current = true;
+          }
+        }, 10 * 1000);
       }
     }
-
     prevIsAutoRef.current = isAuto;
-  }, [isAuto, matchData.toggleActions]);
+  }, [isAuto]);
 
   // Memoize total action count for undo button
   const totalActions = useMemo(
@@ -175,6 +182,109 @@ function MatchPlay() {
     baseTimeRef.current = performance.now();
     setSeconds(0);
   }, []);
+
+  // Update postMatch fields in matchData
+  const updatePostMatch = useCallback((updates: Partial<NonNullable<MatchScoutingData['postMatch']>>) => {
+    setMatchData(prev => ({
+      ...prev,
+      postMatch: { ...prev.postMatch, ...updates },
+    }));
+  }, []);
+
+  // --- Auto climb handlers ---
+  const handleAutoClimbStart = useCallback(() => {
+    setAutoClimbActive(true);
+    autoClimbActiveRef.current = true;
+    const newAction: ToggleAction = {
+      type: 'climb_L1',
+      timestamp: Date.now(),
+      active: true,
+      phase: 'auto',
+    };
+    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    setUndoStack([]);
+    vibrateTap();
+  }, []);
+
+  const handleAutoClimbFail = useCallback(() => {
+    setAutoClimbActive(false);
+    autoClimbActiveRef.current = false;
+    setAutoClimbOrientation(null);
+    const newAction: ToggleAction = {
+      type: 'climb_L1',
+      timestamp: Date.now(),
+      active: false,
+      phase: 'auto',
+    };
+    setMatchData(prev => ({
+      ...prev,
+      toggleActions: [...prev.toggleActions, newAction],
+      postMatch: { ...prev.postMatch, autoClimbOrientation: undefined },
+    }));
+    setUndoStack([]);
+    vibrateTap();
+  }, []);
+
+  const handleAutoOrientationPress = useCallback((orientation: 'left' | 'right' | 'center') => {
+    setAutoClimbOrientation(orientation);
+    updatePostMatch({ autoClimbOrientation: orientation });
+    vibrateTap();
+  }, [updatePostMatch]);
+
+  // --- Teleop climb handlers ---
+  const handleTeleopClimbStart = useCallback((level: 'L1' | 'L2' | 'L3') => {
+    setTeleopClimbActive(true);
+    teleopClimbLevelRef.current = level;
+    const newAction: ToggleAction = {
+      type: `climb_${level}` as ToggleActionType,
+      timestamp: Date.now(),
+      active: true,
+      phase: 'endgame',
+    };
+    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    setUndoStack([]);
+    vibrateTap();
+  }, []);
+
+  const handleTeleopClimbFail = useCallback(() => {
+    const level = teleopClimbLevelRef.current;
+    setTeleopClimbActive(false);
+    teleopClimbLevelRef.current = null;
+    if (level) {
+      const newAction: ToggleAction = {
+        type: `climb_${level}` as ToggleActionType,
+        timestamp: Date.now(),
+        active: false,
+        phase: 'endgame',
+      };
+      setMatchData(prev => ({
+        ...prev,
+        toggleActions: [...prev.toggleActions, newAction],
+        postMatch: {
+          ...prev.postMatch,
+          teleopFailedClimbCount: (prev.postMatch?.teleopFailedClimbCount || 0) + 1,
+        },
+      }));
+      setUndoStack([]);
+    }
+    vibrateTap();
+  }, []);
+
+  const handleTeleopOrientationPress = useCallback((orientation: 'left' | 'right' | 'center') => {
+    setTeleopClimbOrientation(orientation);
+    updatePostMatch({ teleopClimbOrientation: orientation });
+    vibrateTap();
+  }, [updatePostMatch]);
+
+  // --- Dismount handler (field button during first 10s of teleop) ---
+  const handleDismount = useCallback(() => {
+    if (dismountRecorded) return;
+    setDismountRecorded(true);
+    dismountRecordedRef.current = true;
+    if (dismountTimerRef.current) clearTimeout(dismountTimerRef.current);
+    updatePostMatch({ teleopDismountTime: seconds }); // seconds is teleop-relative (0-140)
+    vibrateTap();
+  }, [dismountRecorded, seconds, updatePostMatch]);
 
   // Add preset action (fuel, station)
   const addPresetAction = (actionType: PresetActionType) => {
@@ -516,12 +626,12 @@ function MatchPlay() {
 
     animationFrameRef.current = requestAnimationFrame(updateTimer);
 
-    // Auto mode countdown: trigger at 17s (3 seconds before 20s switch)
+    // Auto mode countdown: trigger at 20s (after bar fully fills, starts the 3-2-1 transition)
     countdownAutoRef.current = window.setTimeout(() => {
       triggerCountdown();
-    }, 17 * 1000);
+    }, 20 * 1000);
 
-    // Auto->Teleop switch at 20s
+    // Auto->Teleop switch at 23s (20s auto + 3s countdown transition)
     timer1Ref.current = window.setTimeout(() => {
       setIsAuto(false);
       reset();
@@ -530,9 +640,9 @@ function MatchPlay() {
       countdownTeleopRef.current = window.setTimeout(() => {
         triggerCountdown();
       }, 137 * 1000);
-    }, 20 * 1000);
+    }, 23 * 1000);
 
-    // Match end at 160s total
+    // Match end at 163s total (23s auto+transition + 140s teleop)
     timer2Ref.current = window.setTimeout(() => {
       // Store matchData in sessionStorage to pass to match_end
       sessionStorage.setItem(
@@ -549,7 +659,7 @@ function MatchPlay() {
           practice: practice,
         },
       });
-    }, 160 * 1000);
+    }, 163 * 1000);
 
     shakeTimerRef.current = window.setTimeout(() => {
       setShake(true);
@@ -566,6 +676,7 @@ function MatchPlay() {
       if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
       if (countdownAutoRef.current) clearTimeout(countdownAutoRef.current);
       if (countdownTeleopRef.current) clearTimeout(countdownTeleopRef.current);
+      if (dismountTimerRef.current) clearTimeout(dismountTimerRef.current);
     };
   }, []);
 
@@ -819,6 +930,74 @@ function MatchPlay() {
                 />
               </svg>
             </div>
+
+            {/* Cage orientation buttons and dismount — normalized across alliances and rotations.
+                cageOnLeft: red+unrotated OR blue+rotated (both show cage on left edge).
+                Button order: when cage is on left, R=top/L=bottom (right end is higher on screen).
+                When cage is on right (field rotated), order flips: L=top/R=bottom. */}
+            {(() => {
+              const cageOnLeft = (alliance === 'red') !== isRotated;
+              const edgeStyle = cageOnLeft
+                ? { left: '4px', top: '50%', transform: 'translateY(-50%)' }
+                : { right: '4px', top: '50%', transform: 'translateY(-50%)' };
+              const btnOrder = cageOnLeft
+                ? (['right', 'center', 'left'] as const)
+                : (['left', 'center', 'right'] as const);
+
+              return (
+                <>
+                  {/* Auto climb orientation buttons */}
+                  {isAuto && autoClimbActive && (
+                    <div className="absolute flex flex-col gap-3" style={edgeStyle}>
+                      {btnOrder.map((o) => (
+                        <div
+                          key={o}
+                          onClick={(e) => { e.stopPropagation(); handleAutoOrientationPress(o); }}
+                          className={`flex items-center justify-center w-10 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 ${
+                            autoClimbOrientation === o
+                              ? 'border-[#4ADE80] text-[#4ADE80] bg-[#4ADE80]/20'
+                              : 'border-[#4ADE80] text-[#4ADE80]'
+                          }`}
+                        >
+                          {o === 'left' ? 'L' : o === 'center' ? 'C' : 'R'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Teleop climb orientation buttons */}
+                  {!isAuto && (teleopClimbActive || teleopClimbOrientation !== null) && (
+                    <div className="absolute flex flex-col gap-3" style={edgeStyle}>
+                      {btnOrder.map((o) => (
+                        <div
+                          key={o}
+                          onClick={(e) => { e.stopPropagation(); handleTeleopOrientationPress(o); }}
+                          className={`flex items-center justify-center w-10 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 ${
+                            teleopClimbOrientation === o
+                              ? 'border-[#4ADE80] text-[#4ADE80] bg-[#4ADE80]/20'
+                              : 'border-[#4ADE80] text-[#4ADE80]'
+                          }`}
+                        >
+                          {o === 'left' ? 'L' : o === 'center' ? 'C' : 'R'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Dismount button — centered on cage edge, first 10s of teleop */}
+                  {!isAuto && autoClimbActiveRef.current && seconds <= 10 && !dismountRecorded && (
+                    <div className="absolute" style={edgeStyle}>
+                      <div
+                        onClick={(e) => { e.stopPropagation(); handleDismount(); }}
+                        className="flex items-center justify-center w-20 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 border-[#CDA745] text-[#CDA745]"
+                      >
+                        Dismount
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
         
@@ -826,22 +1005,6 @@ function MatchPlay() {
         <div className="flex justify-center items-center w-[30vw] h-full gap-0 p-2.5 rounded-[15px] bg-black-950">
           {/*side bar, 5% */}
           <div className="flex flex-col justify-center-items-center w-[7.5vw] h-full gap-2.5 p-2.5">
-            <div
-              onClick={() => addPresetAction("station_intake")}
-              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
-            >
-              <p className="rotate-270 text-xs text-outfit text-muted-foreground">Station</p>
-              
-            </div>
-
-            <div
-              onClick={() => addPresetAction("stocking")}
-              className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
-            >
-              <p className="rotate-270 text-xs text-outfit text-muted-foreground">Stocking</p>
-              
-            </div>
-
             <div
               onClick={() => toggleAction("disable")}
               className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
@@ -879,6 +1042,18 @@ function MatchPlay() {
 
           
 
+          {/* Teleop only: Stocking row above intake/pass */}
+          {!isAuto && (
+            <div className="flex gap-2.5 w-full h-full">
+              <div
+                onClick={() => addPresetAction("stocking")}
+                className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+              >
+                <p className="text-xs text-outfit text-muted-foreground">Stocking</p>
+              </div>
+            </div>
+          )}
+
           {/* Location action buttons (user selects position on field) */}
           <div className="flex gap-2.5 w-full h-full">
             <div
@@ -892,7 +1067,7 @@ function MatchPlay() {
               <p
                 className={`text-xs text-outfit ${pendingLocationAction === "ground_intake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
               >
-                Ground
+                Intake
               </p>
             </div>
 
@@ -929,74 +1104,43 @@ function MatchPlay() {
             </div>
           </div>
 
-          {/* Climb toggles - L1 always available, L2/L3 teleop only, dismount auto & first 5s teleop */}
+          {/* Climb row: auto shows Start Climb / Fail; teleop shows L1/L2/L3 or Fail Climb */}
           <div className="flex gap-2.5 w-full h-full">
-            <div
-              onClick={() => toggleAction("climb_L1")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                activeToggles.climb_L1
-                  ? "border-2 border-[#4ADE80]"
-                  : "border-2 border-[#1E1E1E]"
-              }`}
-              
-            >
-              <p
-                className={`text-xs text-outfit ${activeToggles.climb_L1 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
-              >
-                L1
-              </p>
-            </div>
-
-            {!isAuto && (
-              <>
+            {isAuto ? (
+              autoClimbActive ? (
                 <div
-                  onClick={() => toggleAction("climb_L2")}
-                  className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                    activeToggles.climb_L2
-                      ? "border-2 border-[#4ADE80]"
-                      : "border-2 border-[#1E1E1E]"
-                  }`}
+                  onClick={handleAutoClimbFail}
+                  className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#4ADE80]"
                 >
-                  <p
-                    className={`text-xs text-outfit ${activeToggles.climb_L2 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
-                  >
-                    L2
-                  </p>
+                  <p className="text-xs text-outfit text-[#4ADE80]">Fail</p>
                 </div>
-
+              ) : (
                 <div
-                  onClick={() => toggleAction("climb_L3")}
-                  className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                    activeToggles.climb_L3
-                      ? "border-2 border-[#4ADE80]"
-                      : "border-2 border-[#1E1E1E]"
-                  }`}
+                  onClick={handleAutoClimbStart}
+                  className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
                 >
-                  <p
-                    className={`text-xs text-outfit ${activeToggles.climb_L3 ? "text-[#4ADE80]" : "text-muted-foreground"}`}
-                  >
-                    L3
-                  </p>
+                  <p className="text-xs text-outfit text-muted-foreground">Start Climb</p>
                 </div>
-              </>
-            )}
-
-            {/* Dismount button - appears during auto and first 5s of teleop */}
-            {(isAuto || seconds <= 5) && (
+              )
+            ) : teleopClimbActive ? (
               <div
-                onClick={() => toggleAction("climb_dismount")}
-                className={`flex justify-center items-center ${isAuto ? 'w-1/2' : 'w-1/4'} h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                  activeToggles.climb_dismount
-                    ? "border-2 border-[#4ADE80]"
-                    : "border-2 border-[#1E1E1E]"
-                }`}
+                onClick={handleTeleopClimbFail}
+                className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#4ADE80]"
               >
-                <p
-                  className={`text-xs text-outfit ${!isAuto ? 'rotate-270' : ''} ${activeToggles.climb_dismount ? "text-[#4ADE80]" : "text-muted-foreground"}`}
-                >
-                  Dismount
-                </p>
+                <p className="text-xs text-outfit text-[#4ADE80]">Fail Climb</p>
               </div>
+            ) : (
+              <>
+                {(['L1', 'L2', 'L3'] as const).map((level) => (
+                  <div
+                    key={level}
+                    onClick={() => handleTeleopClimbStart(level)}
+                    className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+                  >
+                    <p className="text-xs text-outfit text-muted-foreground">{level}</p>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>
@@ -1014,7 +1158,7 @@ function MatchPlay() {
             <>
               <div className="w-[5vw]"></div>
               <p className="text-xs text-[#CDA745]">
-                {Math.round(seconds) + "/"}
+                {Math.min(Math.round(seconds), isAuto ? 20 : 140) + "/"}
                 {isAuto ? "20" : "140"}
               </p>
               <div className="relative flex flex-col gap-0 flex-1 w-1.25">
@@ -1023,13 +1167,13 @@ function MatchPlay() {
                 )}
                 <div
                   style={{
-                    height: `${(seconds / (isAuto ? 20 : 140)) * 100}%`,
+                    height: `${(Math.min(seconds, isAuto ? 20 : 140) / (isAuto ? 20 : 140)) * 100}%`,
                   }}
                   className="flex flex-col w-full bg-[#CDA745] "
                 ></div>
                 <div
                   style={{
-                    height: `${(((isAuto ? 20 : 140) - seconds) / (isAuto ? 20 : 140)) * 100}%`,
+                    height: `${(Math.max(0, (isAuto ? 20 : 140) - seconds) / (isAuto ? 20 : 140)) * 100}%`,
                   }}
                   className="flex flex-col w-full bg-[#CDA745] opacity-70"
                 ></div>

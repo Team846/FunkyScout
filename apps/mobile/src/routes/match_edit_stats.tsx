@@ -320,7 +320,7 @@ function MatchEditStats() {
   // Check if form is complete (all ratings filled and notes not empty)
   const isFormComplete =
     matchData?.postMatch?.ratings?.ground !== undefined &&
-    matchData?.postMatch?.ratings?.station !== undefined &&
+    matchData?.postMatch?.ratings?.shooting !== undefined &&
     matchData?.postMatch?.ratings?.passing !== undefined &&
     matchData?.postMatch?.ratings?.driver !== undefined &&
     notes.trim() !== "";
@@ -423,8 +423,11 @@ function MatchEditStats() {
   ) => {
     if (!matchData) return;
 
-    // Use activeToggles to get current state across all phases
-    const currentlyActive = activeToggles[actionType];
+    // For climb actions, check phase-specific state (auto and teleop climbs are independent).
+    // For non-climb toggles (disable, defend), use cross-phase activeToggles.
+    const currentlyActive = actionType.startsWith("climb_")
+      ? matchData.toggleActions.some((a) => a.type === actionType && a.active && a.phase === phase)
+      : activeToggles[actionType];
 
     // Handle climb exclusivity - only one climb level can be active at a time PER PHASE
     // Auto climb (L1 in auto) and teleop climb (L1/L2/L3 in endgame) are independent
@@ -468,18 +471,6 @@ function MatchEditStats() {
   };
 
   // Calculate stats
-  const autoStation =
-    matchData?.presetActions.filter(
-      (a) => a.type === "station_intake" && a.phase === "auto"
-    ).length || 0;
-  const teleopStation =
-    matchData?.presetActions.filter(
-      (a) => a.type === "station_intake" && a.phase === "teleop"
-    ).length || 0;
-  const autoStocking =
-    matchData?.presetActions.filter(
-      (a) => a.type === "stocking" && a.phase === "auto"
-    ).length || 0;
   const teleopStocking =
     matchData?.presetActions.filter(
       (a) => a.type === "stocking" && a.phase === "teleop"
@@ -527,63 +518,6 @@ function MatchEditStats() {
         : null;
 
   // Direct value setters for preset actions
-  const setAutoStation = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "station_intake" && a.phase === "auto")
-    );
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "station_intake",
-        timestamp: Date.now(),
-        phase: "auto",
-      });
-    }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
-  };
-
-  const setTeleopStation = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "station_intake" && a.phase === "teleop")
-    );
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "station_intake",
-        timestamp: Date.now(),
-        phase: "teleop",
-      });
-    }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
-  };
-
-  const setAutoStocking = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "stocking" && a.phase === "auto")
-    );
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "stocking",
-        timestamp: Date.now(),
-        phase: "auto",
-      });
-    }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
-  };
-
   const setTeleopStocking = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
@@ -777,139 +711,11 @@ function MatchEditStats() {
                   </div>
                 </div>
 
-                {/* Station Intake Row */}
-                <div className="grid grid-cols-3 gap-4 items-center">
-                  <div className="text-sm text-foreground">Station Intake</div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Input
-                      type="number"
-                      value={autoStation}
-                      onChange={(e) =>
-                        setAutoStation(parseInt(e.target.value) || 0)
-                      }
-                      className="h-8 w-16 text-center bg-background border-border"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAutoStation(autoStation + 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 3L9 7H3L6 3Z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAutoStation(autoStation - 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 9L3 5H9L6 9Z" />
-                        </svg>
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Input
-                      type="number"
-                      value={teleopStation}
-                      onChange={(e) =>
-                        setTeleopStation(parseInt(e.target.value) || 0)
-                      }
-                      className="h-8 w-16 text-center bg-background border-border"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeleopStation(teleopStation + 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 3L9 7H3L6 3Z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeleopStation(teleopStation - 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 9L3 5H9L6 9Z" />
-                        </svg>
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Stocking Row */}
+                {/* Stocking Row (teleop only) */}
                 <div className="grid grid-cols-3 gap-4 items-center">
                   <div className="text-sm text-foreground">Stocking</div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Input
-                      type="number"
-                      value={autoStocking}
-                      onChange={(e) =>
-                        setAutoStocking(parseInt(e.target.value) || 0)
-                      }
-                      className="h-8 w-16 text-center bg-background border-border"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAutoStocking(autoStocking + 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 3L9 7H3L6 3Z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAutoStocking(autoStocking - 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 9L3 5H9L6 9Z" />
-                        </svg>
-                      </Button>
-                    </div>
+                  <div className="flex items-center justify-center">
+                    <span className="text-sm text-muted-foreground">—</span>
                   </div>
                   <div className="flex items-center justify-center gap-2">
                     <Input
@@ -957,7 +763,7 @@ function MatchEditStats() {
 
                 {/* Ground Intakes Row */}
                 <div className="grid grid-cols-3 gap-4 items-center">
-                  <div className="text-sm text-foreground">Ground Intake</div>
+                  <div className="text-sm text-foreground">Intake</div>
                   <div className="flex items-center justify-center gap-2">
                     <Input
                       type="number"
@@ -1248,20 +1054,28 @@ function MatchEditStats() {
                       {hasAutoClimb ? "Auto Climb ✓" : "Auto Climb"}
                     </Button>
                     <Button
-                      variant={
-                        activeToggles.climb_dismount ? "default" : "outline"
-                      }
-                      onClick={() => toggleAction("climb_dismount", "auto")}
-                      className={
-                        activeToggles.climb_dismount
-                          ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90"
-                          : ""
-                      }
+                      variant={matchData?.postMatch?.autoClimbFailed ? "destructive" : "outline"}
+                      onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, autoClimbFailed: !matchData?.postMatch?.autoClimbFailed } })}
                     >
-                      {activeToggles.climb_dismount
-                        ? "Climb Dismount ✓"
-                        : "Climb Dismount"}
+                      {matchData?.postMatch?.autoClimbFailed ? "Fail ✓" : "Fail"}
                     </Button>
+                  </div>
+                  {/* Auto climb orientation */}
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-muted-foreground">Auto Climb Orientation</p>
+                    <div className="flex gap-2">
+                      {([undefined, 'left', 'center', 'right'] as const).map((o) => (
+                        <Button
+                          key={o ?? 'na'}
+                          size="sm"
+                          variant={matchData?.postMatch?.autoClimbOrientation === o ? "default" : "outline"}
+                          onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, autoClimbOrientation: o } })}
+                          className={`flex-1 ${matchData?.postMatch?.autoClimbOrientation === o ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
+                        >
+                          {o === undefined ? "N/A" : o.charAt(0).toUpperCase() + o.slice(1)}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1325,6 +1139,37 @@ function MatchEditStats() {
                       {climbLevel === "3" ? "Climb L3 ✓" : "Climb L3"}
                     </Button>
                   </div>
+
+                  {/* Failed teleop climb toggle */}
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      variant={(matchData?.postMatch?.teleopFailedClimbCount || 0) >= 1 ? "destructive" : "outline"}
+                      onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, teleopFailedClimbCount: (matchData?.postMatch?.teleopFailedClimbCount || 0) >= 1 ? 0 : 1 } })}
+                      className="w-full"
+                    >
+                      {(matchData?.postMatch?.teleopFailedClimbCount || 0) >= 1 ? "Fail Climb ✓" : "Fail Climb"}
+                    </Button>
+                  </div>
+
+                  {/* Teleop climb orientation */}
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-muted-foreground">Teleop Climb Orientation</p>
+                    <div className="flex gap-2">
+                      {([undefined, 'left', 'center', 'right'] as const).map((o) => (
+                        <Button
+                          key={o ?? 'na'}
+                          size="sm"
+                          variant={matchData?.postMatch?.teleopClimbOrientation === o ? "default" : "outline"}
+                          onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, teleopClimbOrientation: o } })}
+                          className={`flex-1 ${matchData?.postMatch?.teleopClimbOrientation === o ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
+                        >
+                          {o === undefined ? "N/A" : o.charAt(0).toUpperCase() + o.slice(1)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -1337,7 +1182,7 @@ function MatchEditStats() {
               <div className="space-y-4">
                 {/* Ground Rating */}
                 <div className="space-y-2">
-                  <p className="text-sm text-foreground">Ground Intake</p>
+                  <p className="text-sm text-foreground">Intake</p>
                   <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((rating) => (
                       <Button
@@ -1368,16 +1213,16 @@ function MatchEditStats() {
                   </div>
                 </div>
 
-                {/* Station Rating */}
+                {/* Shooting Rating */}
                 <div className="space-y-2">
-                  <p className="text-sm text-foreground">Station Intake</p>
+                  <p className="text-sm text-foreground">Shooting</p>
                   <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((rating) => (
                       <Button
                         key={rating}
                         size="sm"
                         variant={
-                          matchData?.postMatch?.ratings?.station === rating
+                          matchData?.postMatch?.ratings?.shooting === rating
                             ? "default"
                             : "outline"
                         }
@@ -1388,12 +1233,12 @@ function MatchEditStats() {
                               ...matchData!.postMatch,
                               ratings: {
                                 ...matchData!.postMatch?.ratings,
-                                station: rating as 1 | 2 | 3 | 4 | 5,
+                                shooting: rating as 1 | 2 | 3 | 4 | 5,
                               },
                             },
                           });
                         }}
-                        className={`flex-1 ${matchData?.postMatch?.ratings?.station === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
+                        className={`flex-1 ${matchData?.postMatch?.ratings?.shooting === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
                       >
                         {rating}
                       </Button>
@@ -1474,110 +1319,34 @@ function MatchEditStats() {
               <h2 className="text-lg font-semibold text-primary">
                 Capabilities
               </h2>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                <Button
-                  size="sm"
-                  variant={matchData?.postMatch?.depot ? "default" : "outline"}
-                  onClick={() => {
-                    setMatchData({
-                      ...matchData!,
-                      postMatch: {
-                        ...matchData!.postMatch,
-                        depot: !matchData?.postMatch?.depot,
-                      },
-                    });
-                  }}
-                  className={`flex-1 ${matchData?.postMatch?.depot ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-                >
-                  Depot
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    matchData?.postMatch?.through ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setMatchData({
-                      ...matchData!,
-                      postMatch: {
-                        ...matchData!.postMatch,
-                        through: !matchData?.postMatch?.through,
-                      },
-                    });
-                  }}
-                  className={`flex-1 ${matchData?.postMatch?.through ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-                >
-                  Trough
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    matchData?.postMatch?.climb_orientation === "left"
-                      ? "default"
-                      : "outline"
-                  }
-                  onClick={() => {
-                    setMatchData({
-                      ...matchData!,
-                      postMatch: {
-                        ...matchData!.postMatch,
-                        climb_orientation:
-                          matchData?.postMatch?.climb_orientation === "left"
-                            ? undefined
-                            : "left",
-                      },
-                    });
-                  }}
-                  className={`flex-1 ${matchData?.postMatch?.climb_orientation === "left" ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-                >
-                  Climb Left
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    matchData?.postMatch?.climb_orientation === "right"
-                      ? "default"
-                      : "outline"
-                  }
-                  onClick={() => {
-                    setMatchData({
-                      ...matchData!,
-                      postMatch: {
-                        ...matchData!.postMatch,
-                        climb_orientation:
-                          matchData?.postMatch?.climb_orientation === "right"
-                            ? undefined
-                            : "right",
-                      },
-                    });
-                  }}
-                  className={`flex-1 ${matchData?.postMatch?.climb_orientation === "right" ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-                >
-                  Climb Right
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    matchData?.postMatch?.climb_orientation === "center"
-                      ? "default"
-                      : "outline"
-                  }
-                  onClick={() => {
-                    setMatchData({
-                      ...matchData!,
-                      postMatch: {
-                        ...matchData!.postMatch,
-                        climb_orientation:
-                          matchData?.postMatch?.climb_orientation === "center"
-                            ? undefined
-                            : "center",
-                      },
-                    });
-                  }}
-                  className={`flex-1 ${matchData?.postMatch?.climb_orientation === "center" ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-                >
-                  Climb Center
-                </Button>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { key: 'bump', label: 'Bump' },
+                  { key: 'through', label: 'Trough' },
+                  { key: 'canStation', label: 'Station' },
+                  { key: 'canGround', label: 'Ground' },
+                ] as const).map(({ key, label }) => {
+                  const active = !!(matchData?.postMatch as Record<string, unknown>)?.[key];
+                  return (
+                    <Button
+                      key={key}
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      onClick={() => {
+                        setMatchData({
+                          ...matchData!,
+                          postMatch: {
+                            ...matchData!.postMatch,
+                            [key]: !active,
+                          },
+                        });
+                      }}
+                      className={`flex-1 ${active ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
 

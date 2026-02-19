@@ -57,8 +57,7 @@ export type ToggleActionType =
   | 'defend'          // No location needed (TELEOP ONLY)
   | 'climb_L1'        // Has preset location (both phases)
   | 'climb_L2'        // Has preset location (TELEOP ONLY)
-  | 'climb_L3'        // Has preset location (TELEOP ONLY)
-  | 'climb_dismount'; // Dismount - available in auto and first 5s of teleop
+  | 'climb_L3';       // Has preset location (TELEOP ONLY)
 
 export interface ToggleAction {
   type: ToggleActionType;
@@ -73,14 +72,26 @@ export interface ToggleAction {
 
 export interface PostMatchData {
   // Capability toggles
-  depot?: boolean;
+  bump?: boolean;
   through?: boolean;
-  climb_orientation?: 'left' | 'right' | 'center';
+  canStation?: boolean;  // demonstrated station intake this match
+  canGround?: boolean;   // demonstrated ground intake this match
+
+  // Climb orientation (separate for auto and teleop)
+  autoClimbOrientation?: 'left' | 'right' | 'center';
+  autoClimbFailed?: boolean;
+  teleopClimbOrientation?: 'left' | 'right' | 'center';
+
+  // Dismount time in seconds from teleop start (11 = timed out at 10s)
+  teleopDismountTime?: number;
+
+  // Number of failed teleop climb attempts
+  teleopFailedClimbCount?: number;
 
   // 1-5 ratings for various abilities
   ratings?: {
     ground?: 1 | 2 | 3 | 4 | 5;
-    station?: 1 | 2 | 3 | 4 | 5;
+    shooting?: 1 | 2 | 3 | 4 | 5;
     passing?: 1 | 2 | 3 | 4 | 5;
     driver?: 1 | 2 | 3 | 4 | 5;
   };
@@ -121,7 +132,6 @@ export interface ActiveToggles {
   climb_L1: boolean;
   climb_L2: boolean;
   climb_L3: boolean;
-  climb_dismount: boolean;
 }
 
 /**
@@ -190,12 +200,13 @@ export function getActiveToggles(actions: ToggleAction[]): ActiveToggles {
     climb_L1: false,
     climb_L2: false,
     climb_L3: false,
-    climb_dismount: false,
   };
 
   // Process actions in order to get final state
   actions.forEach(action => {
-    state[action.type] = action.active;
+    if (action.type in state) {
+      (state as unknown as Record<string, boolean>)[action.type] = action.active;
+    }
   });
 
   return state;

@@ -7,7 +7,15 @@
  * - Maps field names and extracts ratings
  */
 
-import type { MatchScoutingData } from '@lib/types/matchScouting';
+import type {
+  MatchScoutingData,
+  PresetAction,
+  PresetActionType,
+  LocationAction,
+  LocationActionType,
+  ToggleAction,
+  ToggleActionType,
+} from '@lib/types/matchScouting';
 import type { MatchDataRaw, MatchAction } from '@lib/config/match-action-schemas/actions.types';
 
 /**
@@ -82,10 +90,17 @@ export function transformMatchData(
     teleopActions,
     postMatch: {
       trough: scoutingData.postMatch?.through, // Field name mapping: through → trough
-      climbOrientation: scoutingData.postMatch?.climb_orientation,
+      bump: scoutingData.postMatch?.bump,
+      canStation: scoutingData.postMatch?.canStation,
+      canGround: scoutingData.postMatch?.canGround,
+      autoClimbOrientation: scoutingData.postMatch?.autoClimbOrientation,
+      autoClimbFailed: scoutingData.postMatch?.autoClimbFailed,
+      teleopClimbOrientation: scoutingData.postMatch?.teleopClimbOrientation,
+      teleopDismountTime: scoutingData.postMatch?.teleopDismountTime,
+      teleopFailedClimbCount: scoutingData.postMatch?.teleopFailedClimbCount,
       ratings: {
         groundIntake: scoutingData.postMatch?.ratings?.ground,
-        stationIntake: scoutingData.postMatch?.ratings?.station,
+        shooting: scoutingData.postMatch?.ratings?.shooting,
         passing: scoutingData.postMatch?.ratings?.passing,
       }
     },
@@ -164,14 +179,20 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
     toggleActions,
     postMatch: {
       ratings: {
-        ground: dataRaw.postMatch?.ratings?.groundIntake,
-        station: dataRaw.postMatch?.ratings?.stationIntake,
-        passing: dataRaw.postMatch?.ratings?.passing,
-        driver: dataRaw.driverRating
+        ground: dataRaw.postMatch?.ratings?.groundIntake as 1|2|3|4|5 | undefined,
+        shooting: dataRaw.postMatch?.ratings?.shooting as 1|2|3|4|5 | undefined,
+        passing: dataRaw.postMatch?.ratings?.passing as 1|2|3|4|5 | undefined,
+        driver: dataRaw.driverRating as 1|2|3|4|5 | undefined,
       },
       through: dataRaw.postMatch?.trough, // Field name mapping: trough → through
-      climb_orientation: dataRaw.postMatch?.climbOrientation,
-      depot: dataRaw.postMatch?.depot
+      bump: dataRaw.postMatch?.bump,
+      canStation: dataRaw.postMatch?.canStation,
+      canGround: dataRaw.postMatch?.canGround,
+      autoClimbOrientation: dataRaw.postMatch?.autoClimbOrientation,
+      autoClimbFailed: dataRaw.postMatch?.autoClimbFailed,
+      teleopClimbOrientation: dataRaw.postMatch?.teleopClimbOrientation,
+      teleopDismountTime: dataRaw.postMatch?.teleopDismountTime,
+      teleopFailedClimbCount: dataRaw.postMatch?.teleopFailedClimbCount,
     },
     notes: dataRaw.notes || ''
   };

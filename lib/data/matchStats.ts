@@ -32,9 +32,13 @@ interface ActionCounts {
  */
 interface ClimbInfo {
   hasAutoClimb: boolean;
-  hasDismount: boolean;
-  level: "L1" | "L2" | "L3" | null;
-  orientation: "left" | "right" | "center" | null;
+  autoClimbTime: number | null;      // seconds robot climbed in auto (20 - start time)
+  autoClimbOrientation: "left" | "right" | "center" | null;
+  level: "L1" | "L2" | "L3" | null; // final teleop climb level
+  teleopClimbTime: number | null;    // seconds robot climbed in teleop (140 - start time)
+  teleopClimbOrientation: "left" | "right" | "center" | null;
+  failedClimbCount: number;          // teleop failed climb attempts
+  dismountTime: number | null;       // seconds from teleop start (11 = timeout)
 }
 
 /**
@@ -50,16 +54,18 @@ export interface MatchStats {
 
   // Ratings (from postMatch)
   ratings: {
-    ground: number | null; // 1-5
-    station: number | null; // 1-5
-    passing: number | null; // 1-5
-    driver: number | null; // 1-5
+    ground: number | null;    // 1-5
+    shooting: number | null;  // 1-5 (was station)
+    passing: number | null;   // 1-5
+    driver: number | null;    // 1-5
   };
 
   // Capabilities
   capabilities: {
-    depot: boolean;
+    bump: boolean;
     trough: boolean;
+    canStation: boolean;
+    canGround: boolean;
   };
 
   // Match info
@@ -109,7 +115,6 @@ export interface TeamStats {
   // Climb statistics
   climb: {
     autoClimbPercentage: number; // % of matches with auto climb
-    dismountPercentage: number; // % of matches with dismount
     L1Percentage: number; // % ending at L1
     L2Percentage: number; // % ending at L2
     L3Percentage: number; // % ending at L3
@@ -119,7 +124,7 @@ export interface TeamStats {
   // Average ratings across all matches
   ratings: {
     ground: number | null;
-    station: number | null;
+    shooting: number | null;
     passing: number | null;
     driver: number | null;
     overall: number | null; // Average of all four ratings
@@ -130,8 +135,10 @@ export interface TeamStats {
   defendPercentage: number; // % of matches playing defense
 
   // Capabilities (any match where true)
-  hasDepot: boolean;
+  hasBump: boolean;
   hasTrough: boolean;
+  hasStation: boolean;
+  hasGround: boolean;
 
   // Consistency scores (variability across matches)
   consistency: {
@@ -185,7 +192,8 @@ export function calculateSingleMatchStats(
   // Determine final climb state
   const climbInfo = analyzeClimbActions(
     raw.autoActions || [],
-    raw.teleopActions || []
+    raw.teleopActions || [],
+    raw.postMatch
   );
 
   // Extract ratings
@@ -197,8 +205,10 @@ export function calculateSingleMatchStats(
     climb: climbInfo,
     ratings,
     capabilities: {
-      depot: raw.postMatch?.bump || false,
+      bump: raw.postMatch?.bump || false,
       trough: raw.postMatch?.trough || false,
+      canStation: raw.postMatch?.canStation || false,
+      canGround: raw.postMatch?.canGround || false,
     },
     matchKey: matchData.match,
     team: matchData.team,
@@ -255,8 +265,10 @@ export function calculateTeamStats(
     ratings: calculateAverageRatings(matchStats),
     disabledPercentage: calculatePercentage(matchStats, (s) => s.wasDisabled),
     defendPercentage: calculatePercentage(matchStats, (s) => s.didDefend),
-    hasDepot: matchStats.some((s) => s.capabilities.depot),
+    hasBump: matchStats.some((s) => s.capabilities.bump),
     hasTrough: matchStats.some((s) => s.capabilities.trough),
+    hasStation: matchStats.some((s) => s.capabilities.canStation),
+    hasGround: matchStats.some((s) => s.capabilities.canGround),
     consistency: calculateConsistencyScores(matchStats),
     successRates: calculateSuccessRates(matchStats),
     timeline: calculateTimelineAnalysis(matchStats),
@@ -308,36 +320,67 @@ function countActions(actions: MatchAction[]): ActionCounts {
 }
 
 /**
- * Analyze climb actions to determine final state
+ * Analyze climb actions to determine final state.
+ * Toggle actions use enabled=true (start) / enabled=false (fail/end).
+ * A climb is "successful" if the last enabled=true has no subsequent enabled=false.
  */
 function analyzeClimbActions(
   autoActions: MatchAction[],
-  teleopActions: MatchAction[]
+  teleopActions: MatchAction[],
+  postMatch?: PostMatchData
 ): ClimbInfo {
-  // Check auto climb (climb_L1 in auto phase)
-  const hasAutoClimb = autoActions.some(
-    (a) => a.actionId === "climb_L1" && a.enabled === true
-  );
+  // --- Auto climb (climb_L1 only in auto) ---
+  const autoClimbActions = autoActions.filter((a) => a.actionId === "climb_L1");
+  let hasAutoClimb = false;
+  let autoClimbTime: number | null = null;
 
-  // Check dismount
-  const hasDismount = autoActions.some(
-    (a) => a.actionId === "climb_dismount" && a.enabled === true
-  );
-
-  // Determine final climb level from teleop (last enabled climb action)
-  const climbActions = teleopActions.filter(
-    (a) => a.actionId.startsWith("climb_L") && a.enabled === true
-  );
-
-  let level: "L1" | "L2" | "L3" | null = null;
-  if (climbActions.length > 0) {
-    const last = climbActions[climbActions.length - 1];
-    if (last.actionId === "climb_L1") level = "L1";
-    else if (last.actionId === "climb_L2") level = "L2";
-    else if (last.actionId === "climb_L3") level = "L3";
+  if (autoClimbActions.length > 0) {
+    const lastStart = [...autoClimbActions].reverse().find((a) => a.enabled === true);
+    if (lastStart) {
+      // Check if there's a fail (enabled=false) after the last start
+      const lastStartIdx = autoClimbActions.indexOf(lastStart);
+      const failAfter = autoClimbActions.slice(lastStartIdx + 1).some((a) => a.enabled === false);
+      if (!failAfter) {
+        hasAutoClimb = true;
+        // timestamp is ms from match start during auto (0-20000ms)
+        autoClimbTime = Math.max(0, 20 - lastStart.timestamp / 1000);
+      }
+    }
   }
 
-  return { hasAutoClimb, hasDismount, level, orientation: null };
+  // --- Teleop climb (L1/L2/L3) ---
+  const teleopClimbActions = teleopActions.filter((a) => a.actionId.startsWith("climb_L"));
+  let level: "L1" | "L2" | "L3" | null = null;
+  let teleopClimbTime: number | null = null;
+
+  if (teleopClimbActions.length > 0) {
+    const lastStart = [...teleopClimbActions].reverse().find((a) => a.enabled === true);
+    if (lastStart) {
+      const lastStartIdx = teleopClimbActions.indexOf(lastStart);
+      const failAfter = teleopClimbActions.slice(lastStartIdx + 1).some((a) => a.enabled === false);
+      if (!failAfter) {
+        if (lastStart.actionId === "climb_L1") level = "L1";
+        else if (lastStart.actionId === "climb_L2") level = "L2";
+        else if (lastStart.actionId === "climb_L3") level = "L3";
+        // timestamp is ms from teleop start (0-140000ms)
+        teleopClimbTime = Math.max(0, 140 - lastStart.timestamp / 1000);
+      }
+    }
+  }
+
+  // Count failed teleop climb attempts (enabled=true with a subsequent enabled=false)
+  let failedClimbCount = postMatch?.teleopFailedClimbCount ?? 0;
+
+  return {
+    hasAutoClimb,
+    autoClimbTime,
+    autoClimbOrientation: postMatch?.autoClimbOrientation ?? null,
+    level,
+    teleopClimbTime,
+    teleopClimbOrientation: postMatch?.teleopClimbOrientation ?? null,
+    failedClimbCount,
+    dismountTime: postMatch?.teleopDismountTime ?? null,
+  };
 }
 
 /**
@@ -349,7 +392,7 @@ function extractRatings(
 ): MatchStats["ratings"] {
   return {
     ground: postMatch?.ratings?.groundIntake ?? null,
-    station: postMatch?.ratings?.stationIntake ?? null,
+    shooting: postMatch?.ratings?.shooting ?? null,
     passing: postMatch?.ratings?.passing ?? null,
     driver: driverRating ?? null,
   };
@@ -440,7 +483,6 @@ function calculateClimbStats(matchStats: MatchStats[]) {
   if (total === 0) {
     return {
       autoClimbPercentage: 0,
-      dismountPercentage: 0,
       L1Percentage: 0,
       L2Percentage: 0,
       L3Percentage: 0,
@@ -460,8 +502,6 @@ function calculateClimbStats(matchStats: MatchStats[]) {
   return {
     autoClimbPercentage:
       (matchStats.filter((s) => s.climb.hasAutoClimb).length / total) * 100,
-    dismountPercentage:
-      (matchStats.filter((s) => s.climb.hasDismount).length / total) * 100,
     L1Percentage:
       (matchStats.filter((s) => s.climb.level === "L1").length / total) * 100,
     L2Percentage:
@@ -480,7 +520,7 @@ function calculateAverageRatings(matchStats: MatchStats[]) {
     values.filter((v): v is number => v !== null);
 
   const groundRatings = validRatings(matchStats.map((s) => s.ratings.ground));
-  const stationRatings = validRatings(matchStats.map((s) => s.ratings.station));
+  const shootingRatings = validRatings(matchStats.map((s) => s.ratings.shooting));
   const passingRatings = validRatings(matchStats.map((s) => s.ratings.passing));
   const driverRatings = validRatings(matchStats.map((s) => s.ratings.driver));
 
@@ -488,20 +528,20 @@ function calculateAverageRatings(matchStats: MatchStats[]) {
     values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
 
   const ground = avg(groundRatings);
-  const station = avg(stationRatings);
+  const shooting = avg(shootingRatings);
   const passing = avg(passingRatings);
   const driver = avg(driverRatings);
 
   // Calculate overall rating from all valid ratings
   const allRatings = [
     ...groundRatings,
-    ...stationRatings,
+    ...shootingRatings,
     ...passingRatings,
     ...driverRatings,
   ];
   const overall = avg(allRatings);
 
-  return { ground, station, passing, driver, overall };
+  return { ground, shooting, passing, driver, overall };
 }
 
 /**
@@ -523,7 +563,7 @@ function calculateConsistencyScores(matchStats: MatchStats[]) {
   const overallRatings = matchStats.map((s) => {
     const validRatings = [
       s.ratings.ground,
-      s.ratings.station,
+      s.ratings.shooting,
       s.ratings.passing,
       s.ratings.driver,
     ].filter((x): x is number => x !== null);

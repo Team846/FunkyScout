@@ -47,7 +47,8 @@ function MatchStart() {
     setIsActive(!isActive);
   };
 
-  const [isRotated, setIsRotated] = useState(false);
+  // Blue alliance starts rotated so field orientation matches red's visual layout
+  const [isRotated, setIsRotated] = useState(alliance === 'blue');
 
   const rotateField = () => {
     setIsRotated(!isRotated);

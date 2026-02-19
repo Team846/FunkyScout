@@ -337,8 +337,8 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
           <p className="text-sm font-semibold text-foreground">Ratings</p>
             <div className="grid grid-cols-2 space-y-4 py-2.5 gap-4">
               {[
-              { label: "Ground", value: matchDataRaw.postMatch.ratings.groundIntake },
-              { label: "Station", value: matchDataRaw.postMatch.ratings.stationIntake },
+              { label: "Intake", value: matchDataRaw.postMatch.ratings.groundIntake },
+              { label: "Shooting", value: matchDataRaw.postMatch.ratings.shooting },
               { label: "Passing", value: matchDataRaw.postMatch.ratings.passing },
               { label: "Driver", value: matchDataRaw.driverRating }
               ].map(
