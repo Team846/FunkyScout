@@ -27,6 +27,8 @@ type MatchType = {
   matchNum?: string | null;
   alliance?: string | null;
   practice?: boolean | null;
+  startX?: number | null;
+  startY?: number | null;
 };
 
 export const Route = createFileRoute("/match_play")({
@@ -37,6 +39,8 @@ export const Route = createFileRoute("/match_play")({
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
       practice: search.practice as boolean | undefined | null,
+      startX: search.startX as number | undefined | null,
+      startY: search.startY as number | undefined | null,
     };
   },
 });
@@ -44,7 +48,7 @@ export const Route = createFileRoute("/match_play")({
 function MatchPlay() {
   const { isWrongOrientation } = useOrientation("landscape");
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice, startX, startY } = Route.useSearch();
 
   // Use match-specific sessionStorage key to prevent interference between matches
   const sessionKey = matchNum && teamNum
@@ -101,10 +105,15 @@ function MatchPlay() {
       try {
         return JSON.parse(saved);
       } catch {
-        return createEmptyMatchData();
+        // fall through
       }
     }
-    return createEmptyMatchData();
+    const empty = createEmptyMatchData();
+    // Attach starting position from match_start if provided
+    if (startX != null && startY != null) {
+      empty.startPosition = [startX, startY];
+    }
+    return empty;
   });
   const matchDataRef = useRef<MatchScoutingData>(matchData);
   const [toastMessage, setToastMessage] = useState<string | null>(null);

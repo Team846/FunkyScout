@@ -107,6 +107,9 @@ export interface MatchScoutingData {
   presetActions: PresetAction[];
   toggleActions: ToggleAction[];
 
+  // Robot starting position — normalized [x, y] in 0-1 space (canonical red-alliance orientation)
+  startPosition?: [number, number];
+
   // Post-match data (all optional)
   postMatch: PostMatchData;
 

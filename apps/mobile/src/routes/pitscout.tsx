@@ -297,13 +297,12 @@ function ScoutPage() {
 
   /* GENERATED:STATE:START */
   // Movement state
-  const [movementDepot, setMovementDepot] = useState(false);
+  const [movementBump, setMovementBump] = useState(false);
   const [movementTrough, setMovementTrough] = useState(false);
 
   // Intake state
   const [intakeGround, setIntakeGround] = useState(false);
   const [intakeStation, setIntakeStation] = useState(false);
-  const [intakeDepot, setIntakeDepot] = useState(false);
   const [intakeStocking, setIntakeStocking] = useState(false);
 
   // Fuel state
@@ -312,11 +311,14 @@ function ScoutPage() {
   const [fuelBps, setFuelBps] = useState<string>("");
   const [fuelCapacity, setFuelCapacity] = useState<string>("");
 
-  // Climb state
-  const [climbLevel, setClimbLevel] = useState<string | null>("None");
-  const [climbLeft, setClimbLeft] = useState(false);
-  const [climbRight, setClimbRight] = useState(false);
-  const [climbDeclimb, setClimbDeclimb] = useState(false);
+  // Auto Climb state
+  const [autoClimbLevel, setAutoClimbLevel] = useState<string | null>("None");
+  const [autoClimbOrientation, setAutoClimbOrientation] = useState<string | null>(null);
+  const [autoClimbDeclimbTime, setAutoClimbDeclimbTime] = useState<string>("");
+
+  // Teleop Climb state
+  const [teleopClimbLevel, setTeleopClimbLevel] = useState<string | null>("None");
+  const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<string | null>(null);
 
     /* GENERATED:END */
 
@@ -327,20 +329,20 @@ function ScoutPage() {
   useEffect(() => {
     if (formData && formData.teamNum === teamNum) {
       /* GENERATED:RESTORE:START */
-      setMovementDepot(formData.movement.depot);
+      setMovementBump(formData.movement.bump);
       setMovementTrough(formData.movement.trough);
       setIntakeGround(formData.intake.ground);
       setIntakeStation(formData.intake.station);
-      setIntakeDepot(formData.intake.depot);
       setIntakeStocking(formData.intake.stocking);
       setFuelShootMoving(formData.fuel.shootMoving);
       setFuelPassing(formData.fuel.passing);
       setFuelBps(formData.fuel.bps || "");
       setFuelCapacity(formData.fuel.capacity || "");
-      setClimbLevel(formData.climb.level);
-      setClimbLeft(formData.climb.left);
-      setClimbRight(formData.climb.right);
-      setClimbDeclimb(formData.climb.declimb);
+      setAutoClimbLevel(formData.autoClimb.level);
+      setAutoClimbOrientation(formData.autoClimb.orientation);
+      setAutoClimbDeclimbTime(formData.autoClimb.declimbTime || "");
+      setTeleopClimbLevel(formData.teleopClimb.level);
+      setTeleopClimbOrientation(formData.teleopClimb.orientation);
     /* GENERATED:END */
       setAutoEntries(formData.autos);
     }
@@ -358,13 +360,12 @@ function ScoutPage() {
       teamName,
       /* GENERATED:SAVE:START */
       movement: {
-        depot: movementDepot,
+        bump: movementBump,
         trough: movementTrough,
       },
       intake: {
         ground: intakeGround,
         station: intakeStation,
-        depot: intakeDepot,
         stocking: intakeStocking,
       },
       fuel: {
@@ -373,11 +374,14 @@ function ScoutPage() {
         bps: fuelBps,
         capacity: fuelCapacity,
       },
-      climb: {
-        level: climbLevel,
-        left: climbLeft,
-        right: climbRight,
-        declimb: climbDeclimb,
+      autoClimb: {
+        level: autoClimbLevel,
+        orientation: autoClimbOrientation,
+        declimbTime: autoClimbDeclimbTime,
+      },
+      teleopClimb: {
+        level: teleopClimbLevel,
+        orientation: teleopClimbOrientation,
       },
     /* GENERATED:END */
       autos: autoEntries,
@@ -433,12 +437,12 @@ function ScoutPage() {
           <div className="flex flex-col gap-3 px-2">
             <div className="grid grid-cols-2 gap-3">
               <ScoutToggle
-                pressed={movementDepot}
-                onPressedChange={setMovementDepot}
+                pressed={movementBump}
+                onPressedChange={setMovementBump}
                 className="w-full"
-                info="Can the robot cross through the depot area?"
+                info="Can the robot cross through the bump area?"
               >
-                Depot
+                Bump
               </ScoutToggle>
               <ScoutToggle
                 pressed={movementTrough}
@@ -477,20 +481,10 @@ function ScoutPage() {
               pressed={intakeStocking}
               onPressedChange={setIntakeStocking}
               className="w-full"
-              info="Can the robot feed the station with balls?"
+              info="Can the robot intake while stocking?"
             >
               Stocking
             </ScoutToggle>
-            {intakeGround === true && (
-              <ScoutToggle
-                pressed={intakeDepot}
-                onPressedChange={setIntakeDepot}
-                className="w-full"
-                info="Can the robot intake from the depot? (Only if ground intake is available)"
-              >
-                Depot
-              </ScoutToggle>
-            )}
           </div>
         </Section>
 
@@ -504,7 +498,7 @@ function ScoutPage() {
                 className="w-full"
                 info="Can the robot shoot game pieces while moving?"
               >
-                Shoot as moving
+                Shoot Moving
               </ScoutToggle>
               <ScoutToggle
                 pressed={fuelPassing}
@@ -530,68 +524,116 @@ function ScoutPage() {
           </div>
         </Section>
 
-        {/* Climb Section */}
-        <Section title="Climb">
+        {/* Auto Climb Section */}
+        <Section title="Auto Climb">
+          <div className="flex flex-col gap-3 px-2">
+            <ScoutToggle
+              pressed={autoClimbLevel === "Climb"}
+              onPressedChange={(p) => setAutoClimbLevel(p ? "Climb" : null)}
+              className="w-full"
+            >
+              Climb
+            </ScoutToggle>
+            <ScoutToggle
+              pressed={autoClimbLevel === "None"}
+              onPressedChange={(p) => setAutoClimbLevel(p ? "None" : null)}
+              className="w-full"
+            >
+              None
+            </ScoutToggle>
+            {autoClimbLevel === "Climb" && (
+              <div className="grid-cols-3 grid gap-3">
+                <ScoutToggle
+                  pressed={autoClimbOrientation === "Left"}
+                  onPressedChange={(p) => setAutoClimbOrientation(p ? "Left" : null)}
+                  className="w-full"
+                >
+                  Left
+                </ScoutToggle>
+                <ScoutToggle
+                  pressed={autoClimbOrientation === "Center"}
+                  onPressedChange={(p) => setAutoClimbOrientation(p ? "Center" : null)}
+                  className="w-full"
+                >
+                  Center
+                </ScoutToggle>
+                <ScoutToggle
+                  pressed={autoClimbOrientation === "Right"}
+                  onPressedChange={(p) => setAutoClimbOrientation(p ? "Right" : null)}
+                  className="w-full"
+                >
+                  Right
+                </ScoutToggle>
+              </div>
+            )}
+            {autoClimbLevel !== "None" && (
+              <Input
+                value={autoClimbDeclimbTime}
+                onChange={(e) => setAutoClimbDeclimbTime(e.target.value)}
+                className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
+                placeholder="Declimb Time (s)"
+              />
+            )}
+          </div>
+        </Section>
+
+        {/* Teleop Climb Section */}
+        <Section title="Teleop Climb">
           <div className="flex flex-col gap-3 px-2">
             <div className="grid grid-cols-4 gap-3">
               <ScoutToggle
-                pressed={climbLevel === "L1"}
-                onPressedChange={(p) => setClimbLevel(p ? "L1" : null)}
+                pressed={teleopClimbLevel === "L1"}
+                onPressedChange={(p) => setTeleopClimbLevel(p ? "L1" : null)}
                 className="w-full"
               >
                 L1
               </ScoutToggle>
               <ScoutToggle
-                pressed={climbLevel === "L2"}
-                onPressedChange={(p) => setClimbLevel(p ? "L2" : null)}
+                pressed={teleopClimbLevel === "L2"}
+                onPressedChange={(p) => setTeleopClimbLevel(p ? "L2" : null)}
                 className="w-full"
               >
                 L2
               </ScoutToggle>
               <ScoutToggle
-                pressed={climbLevel === "L3"}
-                onPressedChange={(p) => setClimbLevel(p ? "L3" : null)}
+                pressed={teleopClimbLevel === "L3"}
+                onPressedChange={(p) => setTeleopClimbLevel(p ? "L3" : null)}
                 className="w-full"
               >
                 L3
               </ScoutToggle>
               <ScoutToggle
-                pressed={climbLevel === "None"}
-                onPressedChange={(p) => setClimbLevel(p ? "None" : null)}
+                pressed={teleopClimbLevel === "None"}
+                onPressedChange={(p) => setTeleopClimbLevel(p ? "None" : null)}
                 className="w-full"
               >
                 None
               </ScoutToggle>
             </div>
-            {climbLevel !== "None" && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <ScoutToggle
-                    pressed={climbLeft}
-                    onPressedChange={setClimbLeft}
-                    className="w-full"
-                    info="Can climb on the left side? (Only if climbing is possible)"
-                  >
-                    Left
-                  </ScoutToggle>
-                  <ScoutToggle
-                    pressed={climbRight}
-                    onPressedChange={setClimbRight}
-                    className="w-full"
-                    info="Can climb on the right side? (Only if climbing is possible)"
-                  >
-                    Right
-                  </ScoutToggle>
-                </div>
+            {teleopClimbLevel !== "None" && (
+              <div className="grid-cols-3 grid gap-3">
                 <ScoutToggle
-                  pressed={climbDeclimb}
-                  onPressedChange={setClimbDeclimb}
+                  pressed={teleopClimbOrientation === "Left"}
+                  onPressedChange={(p) => setTeleopClimbOrientation(p ? "Left" : null)}
                   className="w-full"
-                  info="Can the robot declimb after climbing? (Only if climbing is possible)"
                 >
-                  Declimb
+                  Left
                 </ScoutToggle>
-              </>
+                <ScoutToggle
+                  pressed={teleopClimbOrientation === "Center"}
+                  onPressedChange={(p) => setTeleopClimbOrientation(p ? "Center" : null)}
+                  className="w-full"
+                >
+                  Center
+                </ScoutToggle>
+                <ScoutToggle
+                  pressed={teleopClimbOrientation === "Right"}
+                  onPressedChange={(p) => setTeleopClimbOrientation(p ? "Right" : null)}
+                  className="w-full"
+                >
+                  Right
+                </ScoutToggle>
+              </div>
             )}
           </div>
         </Section>

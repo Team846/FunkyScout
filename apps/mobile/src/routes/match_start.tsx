@@ -34,7 +34,8 @@ function MatchStart() {
   const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
-  const [coordinates, setCoordinates] = useState([1000, 1000]);
+  // Normalized [x, y] in 0-1 space (canonical red-alliance orientation), null = not yet selected
+  const [coordinates, setCoordinates] = useState<[number, number] | null>(null);
   const [showPuff, setShowPuff] = useState(false);
   const handleBackClick = () => {
     if (practice) {
@@ -193,9 +194,15 @@ function MatchStart() {
           <img
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              const x = e.clientX - rect.left;
-              const y = e.clientY - rect.top;
-              setCoordinates([x, y]);
+              // Normalize to 0-1 fraction of container
+              let normX = (e.clientX - rect.left) / rect.width;
+              let normY = (e.clientY - rect.top) / rect.height;
+              // When rotated 180°, flip to canonical red-alliance coordinate space
+              if (isRotated) {
+                normX = 1 - normX;
+                normY = 1 - normY;
+              }
+              setCoordinates([normX, normY]);
               setShowPuff(true);
               setTimeout(() => setShowPuff(false), 600);
             }}
@@ -206,30 +213,26 @@ function MatchStart() {
               transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
             }}
           />
-          {showPuff && JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: `${coordinates[0]}px`,
-                top: `${coordinates[1]}px`,
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <div className="w-10 h-10 bg-[#658f6e] rounded-full animate-puff" />
-            </div>
-          )}
-          {!showPuff && JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: `${coordinates[0]}px`,
-                top: `${coordinates[1]}px`,
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <div className="h-5 w-5 bg-[#658f6e]" />
-            </div>
-          )}
+          {coordinates && (() => {
+            // Convert normalized coords back to display % (invert if rotated so dot stays on correct spot)
+            const displayX = isRotated ? 1 - coordinates[0] : coordinates[0];
+            const displayY = isRotated ? 1 - coordinates[1] : coordinates[1];
+            return showPuff ? (
+              <div
+                className="absolute pointer-events-none"
+                style={{ left: `${displayX * 100}%`, top: `${displayY * 100}%`, transform: "translate(-50%, -50%)" }}
+              >
+                <div className="w-10 h-10 bg-[#658f6e] rounded-full animate-puff" />
+              </div>
+            ) : (
+              <div
+                className="absolute pointer-events-none"
+                style={{ left: `${displayX * 100}%`, top: `${displayY * 100}%`, transform: "translate(-50%, -50%)" }}
+              >
+                <div className="h-5 w-5 bg-[#658f6e]" />
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -237,11 +240,11 @@ function MatchStart() {
         <p className="p-2 text-muted-foreground text-sm w-">
           Please select robot starting position on field!
         </p>
-        {JSON.stringify(coordinates) != JSON.stringify([1000, 1000]) && (
+        {coordinates && (
           <Button
             className="bg-secondary"
             onClick={() => {
-              setCoordinates([1000, 1000]);
+              setCoordinates(null);
             }}
           >
             <div className="flex flex-col justify-center items-center w-[159px] h-[58px] px-6 py-3 rounded-[15px] gap-2.5 fill-none">
@@ -251,9 +254,8 @@ function MatchStart() {
         )}
 
         <Button
-          disabled={JSON.stringify(coordinates) == JSON.stringify([1000, 1000])}
+          disabled={!coordinates}
           onClick={() => {
-            //navigate({ to: "/" });
             navigate({
               to: "/match_play",
               search: {
@@ -261,6 +263,8 @@ function MatchStart() {
                 matchNum: matchNum,
                 alliance: alliance,
                 practice: practice,
+                startX: coordinates![0],
+                startY: coordinates![1],
               },
             });
           }}

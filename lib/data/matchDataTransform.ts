@@ -88,6 +88,9 @@ export function transformMatchData(
     epochTime,
     autoActions,
     teleopActions,
+    startPosition: scoutingData.startPosition
+      ? { x: scoutingData.startPosition[0], y: scoutingData.startPosition[1] }
+      : undefined,
     postMatch: {
       trough: scoutingData.postMatch?.through, // Field name mapping: through → trough
       bump: scoutingData.postMatch?.bump,
@@ -177,6 +180,9 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
     presetActions,
     locationActions,
     toggleActions,
+    startPosition: dataRaw.startPosition
+      ? [dataRaw.startPosition.x, dataRaw.startPosition.y] as [number, number]
+      : undefined,
     postMatch: {
       ratings: {
         ground: dataRaw.postMatch?.ratings?.groundIntake as 1|2|3|4|5 | undefined,

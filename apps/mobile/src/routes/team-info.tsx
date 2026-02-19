@@ -483,11 +483,11 @@ function TeamInfoPage() {
                 </p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Depot</p>
+                    <p className="text-foreground">Bump</p>
                     <p
-                      className={`font-semibold ${pitData.movement?.depot ? "text-chart-2" : "text-destructive"}`}
+                      className={`font-semibold ${pitData.movement?.bump ? "text-chart-2" : "text-destructive"}`}
                     >
-                      {pitData.movement?.depot ? "Yes" : "No"}
+                      {pitData.movement?.bump ? "Yes" : "No"}
                     </p>
                   </div>
                   <div className="h-px bg-border my-2" />
@@ -544,7 +544,7 @@ function TeamInfoPage() {
                 </p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Shoot as moving</p>
+                    <p className="text-foreground">Shoot Moving</p>
                     <p
                       className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}
                     >
@@ -587,16 +587,58 @@ function TeamInfoPage() {
                 </div>
               </div>
 
-              {/* Climb Section */}
+              {/* Auto Climb Section */}
               <div>
                 <p className="text-base text-primary font-semibold mb-3">
-                  CLIMB
+                  AUTO CLIMB
+                </p>
+                <div className="rounded-2xl bg-muted px-6 py-4">
+                  {(pitData.autoClimb?.declimbTime) && (
+                    <>
+                      <div className="h-px bg-border my-2" />
+                      <div className="grid grid-cols-2 gap-4 py-2">
+                        {pitData.autoClimb?.declimbTime && (
+                          <div>
+                            <p className="text-foreground text-sm mb-1">Declimb Time (s)</p>
+                            <p className="font-semibold text-foreground">
+                              {pitData.autoClimb.declimbTime}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Auto Climb</p>
+                    <p className="font-semibold text-foreground">
+                      {pitData.autoClimb?.level || "None"}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Orientation</p>
+                    <p className="font-semibold text-foreground">
+                      {pitData.autoClimb?.orientation || "None"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Teleop Climb Section */}
+              <div>
+                <p className="text-base text-primary font-semibold mb-3">
+                  TELEOP CLIMB
                 </p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Max Level</p>
+                    <p className="text-foreground">Climb Level</p>
                     <p className="font-semibold text-foreground">
-                      {pitData.climb?.level || "None"}
+                      {pitData.teleopClimb?.level || "None"}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Orientation</p>
+                    <p className="font-semibold text-foreground">
+                      {pitData.teleopClimb?.orientation || "None"}
                     </p>
                   </div>
                 </div>

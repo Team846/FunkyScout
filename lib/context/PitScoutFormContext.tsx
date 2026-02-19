@@ -44,13 +44,12 @@ export interface PitScoutFormData {
   teamName: string;
   /* GENERATED:TYPES:START */
   movement: {
-    depot: boolean;
+    bump: boolean;
     trough: boolean;
   };
   intake: {
     ground: boolean;
     station: boolean;
-    depot: boolean;
     stocking: boolean;
   };
   fuel: {
@@ -59,11 +58,14 @@ export interface PitScoutFormData {
     bps?: string;
     capacity?: string;
   };
-  climb: {
+  autoClimb: {
     level: string | null;
-    left: boolean;
-    right: boolean;
-    declimb: boolean;
+    orientation: string | null;
+    declimbTime?: string;
+  };
+  teleopClimb: {
+    level: string | null;
+    orientation: string | null;
   };
     /* GENERATED:END */
   autos: AutoEntry[];

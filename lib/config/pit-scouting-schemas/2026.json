@@ -13,10 +13,10 @@
         "title": "Movement",
         "fields": [
           {
-            "name": "depot",
-            "label": "Depot",
+            "name": "bump",
+            "label": "Bump",
             "type": "boolean",
-            "info": "Can the robot cross through the depot area?"
+            "info": "Can the robot cross through the bump area?"
           },
           {
             "name": "trough",
@@ -43,20 +43,10 @@
             "info": "Can the robot intake from the station?"
           },
           {
-            "name": "depot",
-            "label": "Depot",
-            "type": "boolean",
-            "conditional": {
-              "field": "intake.ground",
-              "equals": true
-            },
-            "info": "Can the robot intake from the depot? (Only if ground intake is available)"
-          },
-          {
             "name": "stocking",
             "label": "Stocking",
             "type": "boolean",
-            "info": "Can the robot intake while stocking? (Only if station intake is available)"
+            "info": "Can the robot intake while stocking?"
           }
         ]
       },
@@ -66,7 +56,7 @@
         "fields": [
           {
             "name": "shootMoving",
-            "label": "Shoot as moving",
+            "label": "Shoot Moving",
             "type": "boolean",
             "info": "Can the robot shoot game pieces while moving?"
           },
@@ -93,48 +83,63 @@
         ]
       },
       {
-        "id": "climb",
-        "title": "Climb",
+        "id": "autoClimb",
+        "title": "Auto Climb",
         "fields": [
           {
             "name": "level",
-            "label": "Max Level",
+            "label": "Auto Climb",
+            "type": "select",
+            "options": ["Climb", "None"],
+            "info": "Did the robot climb during autonomous?"
+          },
+          {
+            "name": "orientation",
+            "label": "Orientation",
+            "type": "select",
+            "options": ["Left", "Center", "Right"],
+            "conditional": {
+              "field": "autoClimb.level",
+              "equals": "Climb"
+            },
+            "info": "Which cage position does the robot auto climb?"
+          },
+          {
+            "name": "declimbTime",
+            "label": "Declimb Time (s)",
+            "type": "text",
+            "optional": true,
+            "conditional": {
+              "field": "autoClimb.level",
+              "notEquals": "None"
+            },
+            "info": "How many seconds does it take the robot to declimb?"
+          }
+        ]
+      },
+      {
+        "id": "teleopClimb",
+        "title": "Teleop Climb",
+        "fields": [
+          {
+            "name": "level",
+            "label": "Climb Level",
             "type": "select",
             "options": ["L1", "L2", "L3", "None"],
-            "info": "Maximum climb level the robot can achieve"
+            "info": "Maximum climb level the robot can achieve in teleop"
           },
           {
-            "name": "left",
-            "label": "Left",
-            "type": "boolean",
+            "name": "orientation",
+            "label": "Orientation",
+            "type": "select",
+            "options": ["Left", "Center", "Right"],
             "conditional": {
-              "field": "climb.level",
+              "field": "teleopClimb.level",
               "notEquals": "None"
             },
-            "info": "Can climb on the left side? (Only if climbing is possible)"
-          },
-          {
-            "name": "right",
-            "label": "Right",
-            "type": "boolean",
-            "conditional": {
-              "field": "climb.level",
-              "notEquals": "None"
-            },
-            "info": "Can climb on the right side? (Only if climbing is possible)"
-          },
-          {
-            "name": "declimb",
-            "label": "Declimb",
-            "type": "boolean",
-            "conditional": {
-              "field": "climb.level",
-              "notEquals": "None"
-            },
-            "info": "Can the robot declimb after climbing? (Only if climbing is possible)"
+            "info": "Which cage positions can the robot climb?"
           }
         ]
       }
     ]
   }
-  
