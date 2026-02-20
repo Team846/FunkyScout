@@ -103,41 +103,19 @@ interface Verifications {
   };
 }
 function VerificationBadge({ item }: { item: VerificationItem }) {
-  if (item.matchObserved === null && item.pitClaimed === false) return null;
-  
-  if (item.matchObserved === null || item.matchObserved === false) {
-    // Not yet observed in matches — neutral
-    return (
-      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3ZM6.34277 11C5.79066 11.0002 5.34277 11.4478 5.34277 12C5.34277 12.5522 5.79066 12.9998 6.34277 13H17.6562C18.2085 13 18.6562 12.5523 18.6562 12C18.6562 11.4477 18.2085 11 17.6562 11H6.34277Z" fill="#F5864A"/>
-        </svg>
-
-
-      </span>
-    );
-  }
-  
-  if (item.verified) {
+  // Only show a checkmark when the match confirmed it happened — no negative indicators
+  if (item.verified && item.matchObserved !== null && item.matchObserved !== false) {
     return (
       <span className="text-xs text-chart-2 bg-chart-2/10 px-2 py-0.5 rounded-full">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="9" fill="#64BA58" strokeWidth="1.2"/>
         <path d="M8 12L11 15L16 9" stroke="#222" strokeWidth="1.2"/>
         </svg>
-
       </span>
     );
   }
-  
-  return (
-    <span className="text-xs text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3ZM16.707 7.29297C16.3166 6.9025 15.6835 6.90261 15.293 7.29297L12 10.5859L8.70703 7.29297C8.31649 6.90261 7.68344 6.9025 7.29297 7.29297C6.9025 7.68344 6.90261 8.31649 7.29297 8.70703L10.5859 12L7.29297 15.293C6.90244 15.6835 6.90244 16.3165 7.29297 16.707C7.68349 17.0976 8.31651 17.0976 8.70703 16.707L12 13.4141L15.293 16.707C15.6835 17.0976 16.3165 17.0976 16.707 16.707C17.0976 16.3165 17.0976 15.6835 16.707 15.293L13.4141 12L16.707 8.70703C17.0974 8.31649 17.0975 7.68344 16.707 7.29297Z" fill="#EF4444"/>
-      </svg>
 
-    </span>
-  );
+  return null;
 }
 function TeamInfoPage() {
   const navigate = useNavigate();

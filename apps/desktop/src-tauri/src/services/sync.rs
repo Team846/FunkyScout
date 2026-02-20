@@ -219,7 +219,6 @@ impl SyncService {
                     "opr": opr,
                     "dpr": dpr,
                     "ccwm": ccwm,
-                    "last_synced": chrono::Utc::now().timestamp_millis(), // For mobile TBA failsafe detection
                 });
 
                 json!({
@@ -231,31 +230,78 @@ impl SyncService {
             .collect();
 
         if !team_data_records.is_empty() {
-            // Log how many teams have EPA/OPR data
-            let teams_with_epa = team_data_records.iter()
+            // Load cached team data for change detection.
+            // Only push rows whose meaningful fields actually changed to avoid
+            // spurious Supabase writes (each write fires realtime for all subscribers).
+            let cached_team_data: HashMap<String, serde_json::Value> = {
+                let rows: Vec<(String, String)> = sqlx::query_as(
+                    "SELECT team, data FROM event_team_data WHERE event = ?"
+                )
+                .bind(&self.current_event)
+                .fetch_all(&self.sqlx_pool)
+                .await
+                .unwrap_or_default();
+
+                rows.into_iter()
+                    .filter_map(|(team, data_str)| {
+                        serde_json::from_str::<serde_json::Value>(&data_str)
+                            .ok()
+                            .map(|d| (team, d))
+                    })
+                    .collect()
+            };
+
+            let changed_team_records: Vec<serde_json::Value> = team_data_records
+                .iter()
+                .filter(|record| {
+                    let team = match record.get("team").and_then(|v| v.as_str()) {
+                        Some(t) => t,
+                        None => return true,
+                    };
+                    let new_data = record.get("data").unwrap_or(&json!({}));
+                    let cached = match cached_team_data.get(team) {
+                        Some(c) => c,
+                        None => return true, // New team — always push
+                    };
+                    // Compare rank, record, match pointers, OPR
+                    for field in &["rank", "record", "next_match", "last_match", "opr", "dpr", "ccwm"] {
+                        if cached.get(*field) != new_data.get(*field) {
+                            return true;
+                        }
+                    }
+                    // Compare EPA total mean
+                    let old_epa = cached.get("epa").and_then(|e| e.get("total_points")).and_then(|t| t.get("mean"));
+                    let new_epa = new_data.get("epa").and_then(|e| e.get("total_points")).and_then(|t| t.get("mean"));
+                    old_epa != new_epa
+                })
+                .cloned()
+                .collect();
+
+            let teams_with_epa = changed_team_records.iter()
                 .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
                 .count();
-            let teams_with_opr = team_data_records.iter()
-                .filter(|r| r.get("data").and_then(|d| d.get("opr")).is_some())
-                .count();
-            println!("[Sync] Pushing {} teams ({} with EPA, {} with OPR)",
-                team_data_records.len(), teams_with_epa, teams_with_opr);
+            println!("[Sync] {}/{} teams changed ({} with EPA)",
+                changed_team_records.len(), team_data_records.len(), teams_with_epa);
 
-            // Cache to local SQLite FIRST (for offline support)
+            // Cache ALL to local SQLite (for offline support)
             self.cache_teams_to_sqlite(&team_data_records)
                 .await
                 .context("Failed to cache team data to SQLite")?;
 
-            // Then push to Supabase with merge logic
-            match self.supabase
-                .bulk_upsert_team_data(&self.current_event, team_data_records.clone())
-                .await
-            {
-                Ok(_) => println!("[Sync] ✓ Successfully pushed team data to Supabase"),
-                Err(e) => {
-                    eprintln!("[Sync] ✗ Failed to push team data to Supabase: {}", e);
-                    return Err(e).context("Failed to push team data to Supabase");
+            // Only push changed rows to Supabase
+            if !changed_team_records.is_empty() {
+                match self.supabase
+                    .bulk_upsert_team_data(&self.current_event, changed_team_records)
+                    .await
+                {
+                    Ok(_) => println!("[Sync] ✓ Pushed changed team data to Supabase"),
+                    Err(e) => {
+                        eprintln!("[Sync] ✗ Failed to push team data to Supabase: {}", e);
+                        return Err(e).context("Failed to push team data to Supabase");
+                    }
                 }
+            } else {
+                println!("[Sync] ✓ Team data unchanged — skipping Supabase push");
             }
         }
 
@@ -344,16 +390,64 @@ impl SyncService {
             .collect();
 
         if !schedule_records.is_empty() {
-            // Cache to local SQLite FIRST (for offline support)
+            // Load cached schedule for change detection.
+            // Only push rows where TBA timing/scores/predictions actually changed.
+            // Assignment fields (name, uid) are written by mobile, not desktop — exclude from comparison.
+            let cached_schedule: HashMap<(String, String), (Option<i64>, Option<i64>, Option<i64>, Option<f64>, Option<f64>, Option<f64>)> = {
+                let rows: Vec<(String, String, Option<i64>, Option<i64>, Option<i64>, Option<f64>, Option<f64>, Option<f64>)> =
+                    sqlx::query_as(
+                        "SELECT match, team, est_time, red_score, blue_score, red_win_prob, \
+                         predicted_red_score, predicted_blue_score \
+                         FROM event_schedule WHERE event = ?"
+                    )
+                    .bind(&self.current_event)
+                    .fetch_all(&self.sqlx_pool)
+                    .await
+                    .unwrap_or_default();
+
+                rows.into_iter()
+                    .map(|(m, t, et, rs, bs, rwp, prs, pbs)| ((m, t), (et, rs, bs, rwp, prs, pbs)))
+                    .collect()
+            };
+
+            let changed_schedule_records: Vec<serde_json::Value> = schedule_records
+                .iter()
+                .filter(|record| {
+                    let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    match cached_schedule.get(&(match_key, team)) {
+                        None => true, // New row
+                        Some(&(cet, crs, cbs, crwp, cprs, cpbs)) => {
+                            record.get("est_time").and_then(|v| v.as_i64()) != cet
+                                || record.get("red_score").and_then(|v| v.as_i64()) != crs
+                                || record.get("blue_score").and_then(|v| v.as_i64()) != cbs
+                                || record.get("red_win_prob").and_then(|v| v.as_f64()) != crwp
+                                || record.get("predicted_red_score").and_then(|v| v.as_f64()) != cprs
+                                || record.get("predicted_blue_score").and_then(|v| v.as_f64()) != cpbs
+                        }
+                    }
+                })
+                .cloned()
+                .collect();
+
+            println!("[Sync] {}/{} schedule rows changed",
+                changed_schedule_records.len(), schedule_records.len());
+
+            // Cache ALL to local SQLite (for offline support)
             self.cache_schedule_to_sqlite(&schedule_records)
                 .await
                 .context("Failed to cache schedule to SQLite")?;
 
-            // Then push to Supabase
-            self.supabase
-                .bulk_upsert_schedule(schedule_records)
-                .await
-                .context("Failed to push schedule to Supabase")?;
+            // Only push changed rows to Supabase
+            if !changed_schedule_records.is_empty() {
+                self.supabase
+                    .bulk_upsert_schedule(changed_schedule_records)
+                    .await
+                    .context("Failed to push schedule to Supabase")?;
+                println!("[Sync] ✓ Pushed changed schedule rows to Supabase");
+            } else {
+                println!("[Sync] ✓ Schedule unchanged — skipping Supabase push");
+            }
         }
 
         // 9.5. Fetch TBA score breakdowns to extract climb data (desktop-only, not synced to Supabase)

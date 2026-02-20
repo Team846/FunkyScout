@@ -21,8 +21,8 @@ export const DEFAULT_POLLING_CONFIG: PollingConfig = {
 const isDevelopment = import.meta.env.DEV;
 
 export const LIVE_POLLING_CONFIG: PollingConfig = {
-  baseInterval: isDevelopment ? 120_000 : 240_000, // 2min dev, 4min production (proven 2024 config)
-  maxInterval: 300_000, // 5min max for both
+  baseInterval: 300_000, // 5min for both dev and prod (incremental sync reduces per-poll egress)
+  maxInterval: 600_000, // 10min max for backoff headroom
   backoffFactor: 2,
 };
 

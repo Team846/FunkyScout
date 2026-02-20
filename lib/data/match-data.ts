@@ -1,5 +1,9 @@
 import supabase from "../supabase/supabase";
-import { cacheEventMatchData } from "../db";
+import { cacheEventMatchData, upsertEventMatchDataRows } from "../db";
+
+// Per-event localStorage key tracking when we last successfully fetched match data.
+// Enables incremental fetching: only rows with last_modified >= last sync are fetched.
+const matchSyncKey = (event: string) => `lastMatchSync_${event}`;
 
 /**
  * Bootstrap event_match_data from event_schedule.
@@ -94,11 +98,27 @@ export async function bootstrapMatchData(eventKey: string) {
 
 /**
  * Fetch event_match_data from Supabase and cache locally.
- * Similar to getSchedule() pattern.
+ *
+ * Incremental sync: after the first successful fetch, subsequent calls only
+ * fetch rows modified since the last sync (with a 1-minute clock-skew buffer).
+ * Incremental results are upserted into the local cache (no DELETE), so
+ * existing rows are preserved and only changed rows are updated.
+ *
+ * Soft-delete propagation: incremental fetches omit the deleted_at filter so
+ * that rows that were just soft-deleted are fetched and stored locally with
+ * their deleted_at value, which local read queries already filter out.
  */
 export async function getMatchData(eventKey: string) {
+  const lastSyncStr = localStorage.getItem(matchSyncKey(eventKey));
+  const isIncremental = !!lastSyncStr;
+
+  // 1-minute buffer to account for clock skew between client and Supabase server
+  const cutoffISO = isIncremental
+    ? new Date(new Date(lastSyncStr!).getTime() - 60_000).toISOString()
+    : null;
+
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("event_match_data")
       .select(`
         event,
@@ -113,30 +133,48 @@ export async function getMatchData(eventKey: string) {
         last_modified,
         deleted_at
       `)
-      .eq("event", eventKey)
-      .is("deleted_at", null);
+      .eq("event", eventKey);
 
+    if (isIncremental) {
+      // Incremental: fetch only rows changed since last sync.
+      // No deleted_at filter — we need soft-deleted rows to propagate to local cache.
+      query = query.gte("last_modified", cutoffISO!);
+    } else {
+      // Full load: only non-deleted rows (DELETE + INSERT via cacheEventMatchData)
+      query = query.is("deleted_at", null);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
 
-    if (data) {
-      await cacheEventMatchData(
-        eventKey,
-        data.map((d) => ({
-          event: d.event,
-          match: d.match,
-          team: d.team,
-          alliance: (d.alliance as "red" | "blue") || undefined,
-          data_raw: d.data_raw,
-          data: d.data,
-          name: d.name || undefined,
-          uid: d.uid || undefined,  // Allow undefined for unscout matches
-          timestamp: d.timestamp || undefined,  // Allow undefined for unscout matches
-          // Convert PostgreSQL timestamps to epoch milliseconds for SQLite
-          last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
-          deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,
-        })),
-      );
+    const processed = (data ?? []).map((d) => ({
+      event: d.event,
+      match: d.match,
+      team: d.team,
+      alliance: (d.alliance as "red" | "blue") || undefined,
+      data_raw: d.data_raw,
+      data: d.data,
+      name: d.name || undefined,
+      uid: d.uid || undefined,
+      timestamp: d.timestamp ? new Date(d.timestamp).getTime() : undefined,
+      last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
+      deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,
+    }));
+
+    if (isIncremental) {
+      // Upsert only changed rows — preserves the rest of the local cache
+      if (processed.length > 0) {
+        await upsertEventMatchDataRows(eventKey, processed);
+        console.log(`[MatchData] Incremental: upserted ${processed.length} changed rows`);
+      }
+    } else {
+      // Full load: replace entire local cache
+      await cacheEventMatchData(eventKey, processed);
+      console.log(`[MatchData] Full load: cached ${processed.length} rows`);
     }
+
+    // Record this sync time for the next incremental fetch
+    localStorage.setItem(matchSyncKey(eventKey), new Date().toISOString());
 
     return data ?? [];
   } catch (e) {

@@ -628,6 +628,175 @@ export async function cacheEventPicklistEntries(
   });
 }
 
+// ============ INCREMENTAL UPSERT FUNCTIONS ============
+// Like cache* functions but WITHOUT the DELETE step — used for incremental sync
+// so that existing local rows are preserved and only changed rows are updated.
+
+export async function upsertEventMatchDataRows(
+  _eventKey: string,
+  data: EventMatchData[],
+): Promise<void> {
+  if (data.length === 0) return;
+  return await withWriteLock(async () => {
+    await initDatabase();
+    await execWorker("BEGIN TRANSACTION");
+    try {
+      for (const item of data) {
+        await execWorker(
+          `INSERT INTO event_match_data
+           (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(event, match, team) DO UPDATE SET
+           alliance=excluded.alliance, data_raw=excluded.data_raw, data=excluded.data,
+           name=excluded.name, uid=excluded.uid, timestamp=excluded.timestamp,
+           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
+          [
+            item.event,
+            item.match,
+            item.team,
+            item.alliance,
+            JSON.stringify(item.data_raw),
+            JSON.stringify(item.data),
+            item.name,
+            item.uid,
+            item.timestamp,
+            item.last_modified,
+            item.deleted_at,
+          ],
+        );
+      }
+      await execWorker("COMMIT");
+    } catch (e) {
+      await execWorker("ROLLBACK");
+      throw e;
+    }
+  });
+}
+
+export async function upsertEventScheduleRows(
+  _eventKey: string,
+  entries: EventScheduleEntry[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  return await withWriteLock(async () => {
+    await initDatabase();
+    await execWorker("BEGIN TRANSACTION");
+    try {
+      for (const entry of entries) {
+        await execWorker(
+          `INSERT INTO event_schedule
+           (event, match, team, alliance, name, uid, last_modified, deleted_at,
+            est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(event, match, team) DO UPDATE SET
+           alliance=excluded.alliance, name=excluded.name, uid=excluded.uid,
+           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at,
+           est_time=excluded.est_time, red_score=excluded.red_score, blue_score=excluded.blue_score,
+           red_win_prob=excluded.red_win_prob, predicted_red_score=excluded.predicted_red_score,
+           predicted_blue_score=excluded.predicted_blue_score`,
+          [
+            entry.event,
+            entry.match,
+            entry.team,
+            entry.alliance,
+            entry.name,
+            entry.uid,
+            entry.last_modified,
+            entry.deleted_at,
+            (entry as any).est_time,
+            (entry as any).red_score,
+            (entry as any).blue_score,
+            (entry as any).red_win_prob,
+            (entry as any).predicted_red_score,
+            (entry as any).predicted_blue_score,
+          ],
+        );
+      }
+      await execWorker("COMMIT");
+    } catch (e) {
+      await execWorker("ROLLBACK");
+      throw e;
+    }
+  });
+}
+
+export async function upsertEventPicklistsRows(
+  _eventKey: string,
+  picklists: EventPicklist[],
+): Promise<void> {
+  if (picklists.length === 0) return;
+  return await withWriteLock(async () => {
+    await initDatabase();
+    await execWorker("BEGIN TRANSACTION");
+    try {
+      for (const list of picklists) {
+        await execWorker(
+          `INSERT INTO event_picklist
+           (id, event, title, picklist, uname, uid, type, timestamp, last_modified, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+           event=excluded.event, title=excluded.title, picklist=excluded.picklist,
+           uname=excluded.uname, uid=excluded.uid, type=excluded.type,
+           timestamp=excluded.timestamp, last_modified=excluded.last_modified,
+           deleted_at=excluded.deleted_at`,
+          [
+            list.id,
+            list.event,
+            list.title,
+            JSON.stringify(list.picklist),
+            list.uname,
+            list.uid,
+            list.type,
+            list.timestamp,
+            list.last_modified,
+            list.deleted_at,
+          ],
+        );
+      }
+      await execWorker("COMMIT");
+    } catch (e) {
+      await execWorker("ROLLBACK");
+      throw e;
+    }
+  });
+}
+
+export async function upsertEventPicklistEntriesRows(
+  _eventKey: string,
+  entries: EventPicklistEntry[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  return await withWriteLock(async () => {
+    await initDatabase();
+    await execWorker("BEGIN TRANSACTION");
+    try {
+      for (const entry of entries) {
+        await execWorker(
+          `INSERT INTO event_picklist_entries
+           (event, id, team, rank, flags, last_modified, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(event, id, team) DO UPDATE SET
+           rank=excluded.rank, flags=excluded.flags,
+           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
+          [
+            entry.event,
+            entry.id,
+            entry.team,
+            entry.rank,
+            JSON.stringify(entry.flags),
+            entry.last_modified,
+            entry.deleted_at,
+          ],
+        );
+      }
+      await execWorker("COMMIT");
+    } catch (e) {
+      await execWorker("ROLLBACK");
+      throw e;
+    }
+  });
+}
+
 // ============ TBA CACHE CRUD ============
 
 export async function getTbaTeams(event: string): Promise<TbaTeam[]> {
