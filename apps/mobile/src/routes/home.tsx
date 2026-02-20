@@ -25,11 +25,18 @@ import { ShiftsPage } from "../pages/home/ShiftsPage";
 import { DataPage } from "../pages/home/DataPage";
 import { ScoutingPage } from "../pages/home/ScoutingPage";
 
+type PageType = "dashboard" | "shifts" | "data" | "scouting";
+
+type HomeSearch = {
+  tab?: PageType;
+};
+
 export const Route = createFileRoute("/home")({
   component: HomePage,
+  validateSearch: (search: Record<string, unknown>): HomeSearch => ({
+    tab: (search.tab as PageType | undefined),
+  }),
 });
-
-type PageType = "dashboard" | "shifts" | "data" | "scouting";
 
 const PAGE_TITLES: Record<PageType, string> = {
   dashboard: "Dashboard",
@@ -40,9 +47,14 @@ const PAGE_TITLES: Record<PageType, string> = {
 
 function HomePage() {
   const navigate = useNavigate();
+  const { tab } = Route.useSearch();
+  const currentPage: PageType = tab || "dashboard";
   const { currentEvent } = useEvent();
   const [userData, setUserData] = useState(getLocalUserData());
-  const [currentPage, setCurrentPage] = useState<PageType>("dashboard");
+
+  const setCurrentPage = (page: PageType) => {
+    navigate({ to: "/home", search: { tab: page }, replace: true });
+  };
 
   // Context refresh functions
   const { refresh: refreshTeams } = useTeamData();
