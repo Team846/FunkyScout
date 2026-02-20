@@ -58,7 +58,7 @@ export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
           return cached.map((profile) => ({
             uid: profile.uid,
             name: profile.name,
-            role: profile.role as "user" | "scouter" | "lead",
+            role: profile.role as "user" | "scouter" | "admin",
             settings: profile.settings || {},
             last_modified: new Date(profile.last_modified).toISOString(), // Convert epoch to ISO string
             deleted_at: null,

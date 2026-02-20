@@ -4,7 +4,7 @@
 use crate::AppState;
 use sea_orm::sqlx::{self, Row};
 use serde_json::Value as JsonValue;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 /// Team data from SQLite cache
@@ -827,6 +827,98 @@ pub async fn get_match_scouting_data(
         .collect())
 }
 
+/// TBA climb entry (per team per match)
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TbaClimbEntry {
+    pub event: String,
+    pub match_key: String,
+    pub team: String,
+    pub auto_climb: Option<String>,   // "L1", "L2", "L3", or null
+    pub teleop_climb: Option<String>, // "L1", "L2", "L3", or null
+}
+
+/// Fetch cached TBA climb data for an event
+#[tauri::command]
+pub async fn get_tba_climb_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+) -> Result<Vec<TbaClimbEntry>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let rows = sqlx::query(
+        "SELECT event, match_key, team, auto_climb, teleop_climb
+         FROM tba_match_climb
+         WHERE event = ?
+         ORDER BY match_key, team"
+    )
+    .bind(&event)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query TBA climb data: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| TbaClimbEntry {
+            event: row.try_get("event").unwrap_or_default(),
+            match_key: row.try_get("match_key").unwrap_or_default(),
+            team: row.try_get("team").unwrap_or_default(),
+            auto_climb: row.try_get("auto_climb").ok().flatten(),
+            teleop_climb: row.try_get("teleop_climb").ok().flatten(),
+        })
+        .collect())
+}
+
+/// Cache TBA climb data to SQLite (called by sync service after fetch_match_breakdowns)
+#[tauri::command]
+pub async fn cache_tba_climb_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+    entries: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in entries {
+        let match_key = record.get("match_key").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let auto_climb = record.get("auto_climb").and_then(|v| v.as_str());
+        let teleop_climb = record.get("teleop_climb").and_then(|v| v.as_str());
+
+        sqlx::query(
+            "INSERT INTO tba_match_climb (event, match_key, team, auto_climb, teleop_climb)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(event, match_key, team) DO UPDATE SET
+               auto_climb = excluded.auto_climb,
+               teleop_climb = excluded.teleop_climb"
+        )
+        .bind(&event)
+        .bind(match_key)
+        .bind(team)
+        .bind(auto_climb)
+        .bind(teleop_climb)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache TBA climb entry for {}/{}/{}: {}", event, match_key, team, e))?;
+    }
+
+    Ok(())
+}
+
 /// Cache match scouting data to SQLite (called by frontend after Supabase fetch)
 #[tauri::command]
 pub async fn cache_match_scouting_data(
@@ -890,3 +982,4 @@ pub async fn cache_match_scouting_data(
 
     Ok(())
 }
+

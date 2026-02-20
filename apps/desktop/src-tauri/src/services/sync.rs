@@ -16,6 +16,8 @@ pub struct SyncService {
     statbotics: StatboticsService,
     current_event: String,
     sqlx_pool: sqlx::SqlitePool,
+    /// Updated after each successful sync — used to filter incremental fetches
+    last_sync_time: std::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>,
 }
 
 impl SyncService {
@@ -32,21 +34,22 @@ impl SyncService {
             statbotics,
             current_event,
             sqlx_pool,
+            last_sync_time: std::sync::Mutex::new(None),
         }
     }
 
-    /// Start background sync loop (60s interval + instant trigger)
-    /// Syncs every 60s OR immediately when triggered
+    /// Start background sync loop (120s interval + instant trigger)
+    /// Syncs every 120s OR immediately when triggered
     pub async fn start_background_sync(self, mut trigger_rx: tokio::sync::mpsc::Receiver<()>) {
-        let mut ticker = interval(Duration::from_secs(60));
+        let mut ticker = interval(Duration::from_secs(120));
 
         loop {
             tokio::select! {
-                // Periodic sync every 60s
+                // Periodic sync every 120s
                 _ = ticker.tick() => {
-                    println!("[Sync] Periodic sync (60s interval)");
+                    println!("[Sync] Periodic sync (120s interval)");
                     if let Err(e) = self.sync_once().await {
-                        eprintln!("[Sync] Error during periodic sync: {}", e);
+                        eprintln!("[Sync] Error during periodic sync: {:#}", e);
                     }
                 }
 
@@ -97,7 +100,7 @@ impl SyncService {
             .map(|t| t.team)
             .collect();
 
-        // Try batch endpoint first
+        // Try batch endpoint first — fetches all teams for the year in 1 call
         let mut epa_data = Vec::new();
         match self.statbotics.fetch_event_team_years(&self.current_event, &event_year).await {
             Ok(team_years) => {
@@ -108,7 +111,6 @@ impl SyncService {
                     .into_iter()
                     .filter_map(|data| {
                         let team_num = data.get("team").and_then(|t| t.as_i64()).map(|t| t as i32)?;
-                        // Only include if team is at this event
                         if event_team_nums.contains(&team_num) {
                             Some((team_num, data))
                         } else {
@@ -118,73 +120,11 @@ impl SyncService {
                     .collect();
 
                 println!("[Sync] ✓ Matched {}/{} event teams with EPA data", epa_data.len(), teams.len());
-
-                // Check if we got all teams
-                if epa_data.len() < teams.len() {
-                    // Some teams at this event don't have year data yet - check individually
-                    let fetched_teams: std::collections::HashSet<i32> = epa_data.iter().map(|(t, _)| *t).collect();
-                    let missing_teams: Vec<i32> = teams.iter()
-                        .map(|t| t.team)
-                        .filter(|t| !fetched_teams.contains(t))
-                        .collect();
-
-                    println!("[Sync] Checking {} teams individually (not in year data)...", missing_teams.len());
-                    let mut found_count = 0;
-                    let mut not_found_count = 0;
-
-                    for team_num in missing_teams {
-                        match self.statbotics.fetch_team_year(team_num, &event_year).await {
-                            Ok(Some(data)) => {
-                                found_count += 1;
-                                println!("[Sync] ✓ Team {} has EPA data (individual fetch)", team_num);
-                                epa_data.push((team_num, data));
-                            },
-                            Ok(None) => {
-                                not_found_count += 1;
-                                println!("[Sync] ✗ Team {} has no {} EPA data", team_num, event_year);
-                            },
-                            Err(e) => {
-                                not_found_count += 1;
-                                eprintln!("[Sync] ✗ Team {} fetch failed: {}", team_num, e);
-                            }
-                        }
-                    }
-                    println!("[Sync] Individual fetch results: {} found, {} not found", found_count, not_found_count);
-                    println!("[Sync] ✓ After fallback: {} team EPAs total", epa_data.len());
-                }
             },
             Err(e) => {
-                eprintln!("[Sync] ✗ Batch EPA fetch failed: {}", e);
-                eprintln!("[Sync] Falling back to individual fetches for all {} teams...", teams.len());
-
-                // Fallback: Fetch all teams individually
-                let mut epa_handles = Vec::new();
-                for team in &teams {
-                    let statbotics = self.statbotics.clone();
-                    let year = event_year.clone();
-                    let team_num = team.team;
-
-                    let handle = tokio::spawn(async move {
-                        match statbotics.fetch_team_year(team_num, &year).await {
-                            Ok(Some(data)) => Some((team_num, data)),
-                            Ok(None) => None,
-                            Err(e) => {
-                                eprintln!("[Sync] EPA fetch failed for team {}: {}", team_num, e);
-                                None
-                            }
-                        }
-                    });
-                    epa_handles.push(handle);
-                }
-
-                // Wait for all tasks to complete
-                for handle in epa_handles {
-                    if let Ok(Some(result)) = handle.await {
-                        epa_data.push(result);
-                    }
-                }
-
-                println!("[Sync] ✓ Individual fetches complete: {} team EPAs", epa_data.len());
+                // Statbotics may be temporarily unavailable (503, rate limit, etc).
+                // Skip EPA this cycle — next sync will retry. Do NOT hammer with individual calls.
+                eprintln!("[Sync] ✗ Statbotics batch EPA unavailable, skipping this cycle: {}", e);
             }
         }
 
@@ -217,7 +157,7 @@ impl SyncService {
         // Log teams missing EPA data
         if epa_map.len() < teams.len() {
             let missing_count = teams.len() - epa_map.len();
-            println!("[Sync] {} teams missing EPA data (no 2025 data available yet)", missing_count);
+            println!("[Sync] {} teams missing EPA data (no {} data yet or Statbotics unavailable)", missing_count, event_year);
         }
 
         // 5. Transform TBA teams + EPA + OPR to comprehensive Supabase format
@@ -416,7 +356,39 @@ impl SyncService {
                 .context("Failed to push schedule to Supabase")?;
         }
 
-        // 10. Fetch user profiles from Supabase and cache locally
+        // 9.5. Fetch TBA score breakdowns to extract climb data (desktop-only, not synced to Supabase)
+        match self.tba.fetch_match_breakdowns(&self.current_event).await {
+            Ok(climb_entries) => {
+                if !climb_entries.is_empty() {
+                    println!("[Sync] TBA climb data fetched: {} entries", climb_entries.len());
+                    self.cache_climb_to_sqlite(&climb_entries)
+                        .await
+                        .unwrap_or_else(|e| eprintln!("[Sync] Failed to cache TBA climb data: {}", e));
+                }
+            }
+            Err(e) => {
+                // Non-fatal: score breakdowns may not be available yet
+                eprintln!("[Sync] TBA climb breakdown fetch skipped: {}", e);
+            }
+        }
+
+        // Compute incremental sync window: only fetch records modified since last sync.
+        // 5-minute buffer handles clock skew and edge cases.
+        // On first sync (last_sync_time = None), fetches all rows for a full initial load.
+        let since_iso: Option<String> = {
+            let guard = self.last_sync_time.lock().unwrap();
+            guard.as_ref().map(|dt| {
+                (*dt - chrono::Duration::minutes(5)).to_rfc3339()
+            })
+        };
+        let is_first_sync = since_iso.is_none();
+        if is_first_sync {
+            println!("[Sync] First sync — performing full table fetch");
+        } else {
+            println!("[Sync] Incremental fetch since: {}", since_iso.as_deref().unwrap_or("?"));
+        }
+
+        // 10. Fetch user profiles from Supabase and cache locally (always full — small table)
         let user_profiles = match self.supabase.fetch_user_profiles().await {
             Ok(profiles) => profiles,
             Err(e) => {
@@ -431,10 +403,10 @@ impl SyncService {
                 .context("Failed to cache user profiles to SQLite")?;
         }
 
-        // 13. Poll Supabase for picklists (user-generated data)
-        let picklists = match self.supabase.fetch_event_picklists(&self.current_event).await {
+        // 13. Poll Supabase for picklists (incremental)
+        let picklists = match self.supabase.fetch_event_picklists(&self.current_event, since_iso.as_deref()).await {
             Ok(data) => {
-                println!("[Sync] Supabase picklists fetched: {} picklists", data.len());
+                println!("[Sync] Supabase picklists fetched: {} (incremental)", data.len());
                 data
             },
             Err(e) => {
@@ -449,10 +421,10 @@ impl SyncService {
                 .context("Failed to cache picklists to SQLite")?;
         }
 
-        // 14. Poll Supabase for picklist entries
-        let picklist_entries = match self.supabase.fetch_event_picklist_entries(&self.current_event).await {
+        // 14. Poll Supabase for picklist entries (incremental)
+        let picklist_entries = match self.supabase.fetch_event_picklist_entries(&self.current_event, since_iso.as_deref()).await {
             Ok(data) => {
-                println!("[Sync] Supabase picklist entries fetched: {} entries", data.len());
+                println!("[Sync] Supabase picklist entries fetched: {} (incremental)", data.len());
                 data
             },
             Err(e) => {
@@ -467,10 +439,16 @@ impl SyncService {
                 .context("Failed to cache picklist entries to SQLite")?;
         }
 
-        // 15. Poll Supabase for match scouting data
-        let match_data = match self.supabase.fetch_event_match_data(&self.current_event).await {
+        // 15. Poll Supabase for match scouting data (INCREMENTAL — biggest egress driver)
+        // Each data_raw is 5-15 KB; fetching all submissions every cycle is very expensive.
+        // Incremental fetch: after first sync, only pull records modified in the last window.
+        let match_data = match self.supabase.fetch_event_match_data(&self.current_event, since_iso.as_deref()).await {
             Ok(data) => {
-                println!("[Sync] Supabase match data fetched: {} submissions", data.len());
+                if is_first_sync {
+                    println!("[Sync] Supabase match data full fetch: {} submissions", data.len());
+                } else {
+                    println!("[Sync] Supabase match data incremental: {} new/changed submissions", data.len());
+                }
                 data
             },
             Err(e) => {
@@ -485,10 +463,11 @@ impl SyncService {
                 .context("Failed to cache match data to SQLite")?;
         }
 
-        // 16. Poll Supabase for team data (includes TBA stats pushed by desktop + pit scouting)
-        let team_data = match self.supabase.fetch_event_team_data(&self.current_event).await {
+        // 16. Poll Supabase for team data — only changed rows (pit scouting from mobile scouts)
+        // TBA stats are already cached locally in step 5; this only picks up mobile pit scouting changes.
+        let team_data = match self.supabase.fetch_event_team_data(&self.current_event, since_iso.as_deref()).await {
             Ok(data) => {
-                println!("[Sync] Supabase team data fetched: {} teams", data.len());
+                println!("[Sync] Supabase team data fetched: {} changed rows", data.len());
                 data
             },
             Err(e) => {
@@ -503,10 +482,10 @@ impl SyncService {
                 .context("Failed to cache team data to SQLite")?;
         }
 
-        // 17. Poll Supabase for schedule (includes shift assignments)
-        let schedule_data = match self.supabase.fetch_event_schedule(&self.current_event).await {
+        // 17. Poll Supabase for schedule — only changed rows (shift assignments from mobile)
+        let schedule_data = match self.supabase.fetch_event_schedule(&self.current_event, since_iso.as_deref()).await {
             Ok(data) => {
-                println!("[Sync] Supabase schedule fetched: {} entries", data.len());
+                println!("[Sync] Supabase schedule fetched: {} changed rows", data.len());
                 data
             },
             Err(e) => {
@@ -521,6 +500,31 @@ impl SyncService {
                 .context("Failed to cache schedule to SQLite")?;
         }
 
+        // Update last_sync_time for next cycle's incremental filter
+        *self.last_sync_time.lock().unwrap() = Some(chrono::Utc::now());
+
+        Ok(())
+    }
+
+    /// Cache TBA climb data to local SQLite (desktop-only, not synced to Supabase)
+    async fn cache_climb_to_sqlite(&self, entries: &[crate::services::tba::MatchClimbEntry]) -> Result<()> {
+        for entry in entries {
+            sqlx::query(
+                "INSERT INTO tba_match_climb (event, match_key, team, auto_climb, teleop_climb)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(event, match_key, team) DO UPDATE SET
+                   auto_climb = excluded.auto_climb,
+                   teleop_climb = excluded.teleop_climb"
+            )
+            .bind(&self.current_event)
+            .bind(&entry.match_key)
+            .bind(&entry.team)
+            .bind(&entry.auto_climb)
+            .bind(&entry.teleop_climb)
+            .execute(&self.sqlx_pool)
+            .await
+            .context("Failed to cache TBA climb entry")?;
+        }
         Ok(())
     }
 
@@ -969,12 +973,10 @@ impl SyncService {
             .ok_or_else(|| anyhow::anyhow!("Missing uname"))?;
         let type_str = payload.get("type").and_then(|v| v.as_str()).unwrap_or("public");
         let timestamp = payload.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
-        let user_jwt = payload.get("user_jwt").and_then(|v| v.as_str());
         let entries = payload.get("entries").and_then(|v| v.as_array())
             .ok_or_else(|| anyhow::anyhow!("Missing entries"))?;
 
-        // Create picklist header (use user JWT for proper attribution)
-        self.supabase.create_picklist(id, event, title, uid, uname, type_str, timestamp, user_jwt).await?;
+        self.supabase.create_picklist(id, event, title, uid, uname, type_str, timestamp).await?;
 
         // Create picklist entries
         let entry_records: Vec<serde_json::Value> = entries.iter().map(|e| {
@@ -1071,12 +1073,11 @@ impl SyncService {
         let data_raw = payload.get("dataRaw").cloned().unwrap_or(json!({}));
         let name = payload.get("name").and_then(|v| v.as_str());
         let uid = payload.get("uid").and_then(|v| v.as_str());
-        let user_jwt = payload.get("user_jwt").and_then(|v| v.as_str());
 
-        println!("[SyncQueue] PUT_MATCH_DATA: event={}, match={}, team={}, alliance={}, has_jwt={}",
-            event, match_key, team, alliance, user_jwt.is_some());
+        println!("[SyncQueue] PUT_MATCH_DATA: event={}, match={}, team={}, alliance={}",
+            event, match_key, team, alliance);
 
-        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid, user_jwt).await?;
+        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid).await?;
 
         Ok(())
     }

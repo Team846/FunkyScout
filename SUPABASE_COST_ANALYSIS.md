@@ -357,19 +357,89 @@
 
 ---
 
+---
+
+## Root Cause Analysis — High Egress (2026-02-19)
+
+**Observed**: 0.21 GB egress within hours of plan reset, despite estimates of ~400MB/competition.
+
+**Causes found**:
+
+### 1. `event_match_data.data_raw` is large (PRIMARY CAUSE)
+- Each scouting record's `data_raw` field is 5–15 KB of JSON
+- 252 submissions at a regional = ~2.5 MB per full table fetch
+- At 60 cycles/hr: **~150 MB/hr** from match data alone
+- **Previous estimate was wrong** (used 2 KB/row average, ignored JSONB growth)
+
+### 2. Double-fetching of team data and schedule
+- `bulk_upsert_team_data` → SELECT `event_team_data` (change detection)
+- `fetch_event_team_data` → SELECT `event_team_data` again (step 16 cache)
+- Same for `event_schedule` (change detection + step 17 cache)
+- Each full table fetch twice per cycle adds ~47 MB/hr
+
+### 3. 60-second desktop interval (vs mobile's 2-4 min)
+- 2× higher poll frequency than needed for user-facing data
+
+**Combined**: ~200 MB/hr egress explained the 0.21 GB in 1-2 hours of testing.
+
+---
+
+## Fixes Applied (2026-02-19)
+
+### Fix 1: Incremental sync via `last_modified` filtering
+**File**: `sync.rs` + `supabase.rs`
+
+All fetch methods now accept `since: Option<&str>`:
+- **First sync** (startup): full table fetch (no filter)
+- **Subsequent syncs**: `WHERE last_modified > (last_sync_time - 5min buffer)`
+
+**Impact on match data**: from ~2.5 MB/fetch to ~120 KB/fetch (95% reduction)
+- Only 6-12 new records per 2-minute window at a competition
+- 5-minute buffer provides safety margin for clock skew
+
+**Impact on team data**: from ~180 KB/fetch to ~10 KB/fetch (94% reduction)
+- Only rows where pit scouting was updated by mobile scouts
+
+**Impact on schedule**: from ~210 KB/fetch to ~5 KB/fetch (97% reduction)
+- Only rows where shift assignments changed
+
+### Fix 2: Desktop sync interval 60s → 120s
+**File**: `sync.rs:41`
+- Halves all remaining polling overhead
+- Still provides near-instant UX (writes trigger immediate sync)
+
+### Revised Egress Estimates (Post-Fix)
+
+**Per sync cycle** (steady state, after first sync):
+- Match data: ~12 records × 10 KB = ~120 KB
+- Team data: ~2 records × 3 KB = ~6 KB
+- Schedule: ~2 records × 0.5 KB = ~1 KB
+- Picklists + entries: ~5 records = ~5 KB
+- TBA/Statbotics responses: unchanged (external APIs, not Supabase egress)
+- **Total per cycle**: ~132 KB (vs ~2.7 MB before = **95% reduction**)
+
+**Per hour** (30 cycles/hr with 120s interval):
+- 30 × 132 KB = ~4 MB/hr (vs ~200 MB/hr before)
+
+**Per competition** (2 days × 12 hr):
+- 4 MB/hr × 24 hr = ~96 MB (vs ~4.8 GB which would have blown the limit!)
+
+---
+
 ## Conclusion
 
-**Current Status**: ✅ **Extremely efficient and well-optimized**
+**Updated Status**: ✅ **Fixed — egress now well within free tier**
 
-- Total API requests: ~42k per competition (2 days)
-- Bandwidth: ~400 MB per competition
-- Free tier limits: Not even close to being challenged
-- Cost: **$0/month** with significant headroom
+| Metric | Before Fixes | After Fixes | Reduction |
+|--------|-------------|-------------|-----------|
+| Match data / cycle | ~2.5 MB | ~120 KB | 95% |
+| Team data / cycle | ~180 KB × 2 | ~6 KB | 97% |
+| Schedule / cycle | ~210 KB × 2 | ~1 KB | 99% |
+| Sync frequency | 60s | 120s | 50% |
+| **Total / cycle** | **~2.7 MB** | **~132 KB** | **95%** |
+| **Total / hour** | **~200 MB** | **~4 MB** | **98%** |
+| **Per competition** | **~4.8 GB** ❌ | **~96 MB** ✅ | **98%** |
 
-**Key Strengths**:
-1. Polling intervals are conservative (2-4 min, not sub-minute)
-2. Desktop does heavy lifting (TBA/Statbotics sync) so mobile doesn't have to
-3. Local caching minimizes redundant queries
-4. Write operations are batched (30s queue processing)
-
-**No urgent action needed** - system is cost-effective and scalable for current use case (1 team, 10-15 competitions/year).
+**Note on bootstrap**: The schedule bootstrap (initial event setup) still requires either:
+1. An RLS INSERT policy for admin JWT users on `event_schedule`, OR
+2. Temporarily restoring service role for the bootstrap call only

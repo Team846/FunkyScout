@@ -166,7 +166,7 @@ END;
 CREATE TABLE user_profiles (
     uid TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'lead')),
+    role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'admin')),
     settings TEXT NOT NULL DEFAULT '{}', -- JSON string
     last_modified INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
     deleted_at INTEGER,
@@ -183,7 +183,7 @@ END;
 -- Maps roles to permissions
 CREATE TABLE user_roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'lead')),
+    role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'admin')),
     permission TEXT NOT NULL
 );
 
@@ -195,6 +195,17 @@ CREATE TABLE invite_codes (
     expiry INTEGER NOT NULL, -- epoch milliseconds
     last_modified INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
     deleted_at INTEGER
+);
+
+-- tba_match_climb
+-- Caches TBA score breakdown climb data (desktop-only, not synced to Supabase)
+CREATE TABLE IF NOT EXISTS tba_match_climb (
+    event TEXT NOT NULL,
+    match_key TEXT NOT NULL,
+    team TEXT NOT NULL,
+    auto_climb TEXT,      -- "L1", "L2", "L3", or NULL
+    teleop_climb TEXT,    -- "L1", "L2", "L3", or NULL
+    PRIMARY KEY (event, match_key, team)
 );
 
 -- ============================================================================
