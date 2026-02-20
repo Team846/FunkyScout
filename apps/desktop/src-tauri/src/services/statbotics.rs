@@ -30,7 +30,7 @@ impl StatboticsService {
     /// GET /team_year/{team}/{year}
     /// Returns EPA breakdown: total_points, auto, teleop, endgame, norm
     pub async fn fetch_team_year(&self, team: i32, year: &str) -> Result<Option<Value>> {
-        let call_num = API_CALL_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+        API_CALL_COUNT.fetch_add(1, Ordering::SeqCst);
         let url = format!("{}/team_year/{}/{}", self.base_url, team, year);
 
         let response = self
@@ -61,25 +61,22 @@ impl StatboticsService {
         Ok(Some(data))
     }
 
-    /// Fetch EPA data for teams at an event for a specific year
-    /// GET /team_years?year={year}&limit=1000&offset={offset}
-    /// Returns EPA breakdown: total_points, auto, teleop, endgame, norm
-    /// Note: Statbotics limits to 1000 results per call - uses pagination to fetch more
-    /// Note: Event parameter is unreliable (only returns teams that played AT the event)
-    /// Instead, fetch all year data and filter by event team list in caller
-    pub async fn fetch_event_team_years(&self, event: &str, year: &str) -> Result<Vec<Value>> {
+    /// Fetch EPA data for all teams in a year, paginating until all results are retrieved.
+    /// Uses full-year pagination (1000/page) then caller filters for event teams.
+    /// The ?event= filter on this endpoint does not reliably return event-specific teams.
+    pub async fn fetch_event_team_years(&self, _event: &str, year: &str) -> Result<Vec<Value>> {
         let mut all_data = Vec::new();
         let mut offset = 0;
         let limit = 1000;
-        let max_pages = 5; // Fetch up to 5000 teams (3690 teams total as of 2025, with buffer)
+        let max_pages = 5; // up to 5000 teams (current FRC has ~4000)
 
         for page in 0..max_pages {
             let call_num = API_CALL_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
             let url = format!("{}/team_years?year={}&limit={}&offset={}",
                 self.base_url, year, limit, offset);
 
-            println!("[Statbotics] ⚡ API Call #{}: Fetching {} team EPAs (offset={}, page {}/{})",
-                call_num, year, offset, page + 1, max_pages);
+            println!("[Statbotics] ⚡ API Call #{}: Fetching {} team EPAs (page {}/{})",
+                call_num, year, page + 1, max_pages);
 
             let response = self
                 .client
@@ -104,20 +101,15 @@ impl StatboticsService {
             let fetched_count = data.len();
             all_data.extend(data);
 
-            println!("[Statbotics] Fetched {} teams from page {} (total: {})",
-                fetched_count, page + 1, all_data.len());
+            println!("[Statbotics] Page {}: {} teams (total so far: {})", page + 1, fetched_count, all_data.len());
 
-            // If we got less than the limit, we've reached the end
             if fetched_count < limit {
-                println!("[Statbotics] Reached end of results at page {}", page + 1);
                 break;
             }
-
             offset += limit;
         }
 
-        println!("[Statbotics] Total: {} team EPAs for year {}", all_data.len(), year);
-
+        println!("[Statbotics] ✓ Total: {} team EPAs for year {}", all_data.len(), year);
         Ok(all_data)
     }
 

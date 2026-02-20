@@ -424,9 +424,10 @@ function MatchEditStats() {
     if (!matchData) return;
 
     // For climb actions, check phase-specific state (auto and teleop climbs are independent).
+    // Use last-event-wins: get the final event for this type+phase, check if it's active.
     // For non-climb toggles (disable, defend), use cross-phase activeToggles.
     const currentlyActive = actionType.startsWith("climb_")
-      ? matchData.toggleActions.some((a) => a.type === actionType && a.active && a.phase === phase)
+      ? (matchData.toggleActions.filter((a) => a.type === actionType && a.phase === phase).at(-1)?.active ?? false)
       : activeToggles[actionType];
 
     // Handle climb exclusivity - only one climb level can be active at a time PER PHASE
@@ -441,10 +442,10 @@ function MatchEditStats() {
       ];
       climbTypes.forEach((climbType) => {
         if (climbType !== actionType) {
-          // Check if this climb type is active in the CURRENT phase
-          const isActiveInSamePhase = matchData?.toggleActions.some(
-            (a) => a.type === climbType && a.active && a.phase === phase
-          );
+          // Check if this climb type is active in the CURRENT phase (last-event-wins)
+          const isActiveInSamePhase = matchData?.toggleActions.filter(
+            (a) => a.type === climbType && a.phase === phase
+          ).at(-1)?.active ?? false;
           if (isActiveInSamePhase) {
             newActions.push({
               type: climbType,
@@ -500,22 +501,26 @@ function MatchEditStats() {
       (a) => a.type === "shoot" && a.phase === "teleop"
     ).length || 0;
 
-  // Use activeToggles for state (checks across all phases)
+  // Use last-event-wins for phase-specific climb state
   const hasAutoClimb =
-    matchData?.toggleActions.some(
-      (a) => a.type === "climb_L1" && a.active && a.phase === "auto"
-    ) || false;
+    matchData?.toggleActions.filter(
+      (a) => a.type === "climb_L1" && a.phase === "auto"
+    ).at(-1)?.active ?? false;
   const wasDisabled = activeToggles.disable;
   const didDefend = activeToggles.defend;
 
-  // For climb level, check which climb is active (L1, L2, or L3)
-  const climbLevel = activeToggles.climb_L3
-    ? "3"
-    : activeToggles.climb_L2
-      ? "2"
-      : activeToggles.climb_L1
-        ? "1"
-        : null;
+  // For climb level, check which endgame climb is active (L1, L2, or L3).
+  // Use last-event-wins per level: get final event for each type+phase=endgame.
+  const lastL3 = matchData?.toggleActions.filter(
+    (a) => a.type === "climb_L3" && a.phase === "endgame"
+  ).at(-1)?.active;
+  const lastL2 = matchData?.toggleActions.filter(
+    (a) => a.type === "climb_L2" && a.phase === "endgame"
+  ).at(-1)?.active;
+  const lastL1 = matchData?.toggleActions.filter(
+    (a) => a.type === "climb_L1" && a.phase === "endgame"
+  ).at(-1)?.active;
+  const climbLevel = lastL3 ? "3" : lastL2 ? "2" : lastL1 ? "1" : null;
 
   // Direct value setters for preset actions
   const setTeleopStocking = (value: number) => {

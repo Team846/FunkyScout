@@ -169,7 +169,7 @@ export async function cachePicklistEntries(entries: any[]): Promise<void> {
 export interface UserProfile {
   uid: string;
   name: string;
-  role: "user" | "scouter" | "lead";
+  role: "user" | "scouter" | "admin";
   settings: Record<string, unknown>;
   last_modified: number; // Epoch milliseconds in SQLite
 }

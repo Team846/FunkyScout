@@ -33,5 +33,8 @@ pub struct AppConfig {
 
     pub event_key: String,
     pub team_key: String,
+
+    #[serde(default)]
+    pub use_tba_climb: bool,
 }
 

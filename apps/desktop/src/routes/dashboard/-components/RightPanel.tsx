@@ -193,7 +193,7 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
   return (
     <>
       <Dialog open={showEditTeam} onOpenChange={setShowEditTeam}>
-        <DialogContent>
+        <DialogContent className="bg-muted border-border">
           <DialogHeader>
             <DialogTitle>Set Home Team</DialogTitle>
           </DialogHeader>

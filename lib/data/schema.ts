@@ -9,7 +9,7 @@
 // ============== ENUMS ==============
 
 export type Alliance = "red" | "blue";
-export type Role = "user" | "scouter" | "lead";
+export type Role = "user" | "scouter" | "admin";
 export type PickType = "public" | "default" | "private";
 export type InviteCodeType = "promote.scouter" | "promote.admin";
 export type Permission =

@@ -76,7 +76,7 @@ impl MigrationTrait for Migration {
             "CREATE TABLE user_profiles_new (
                 uid TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
-                role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'lead')),
+                role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'admin')),
                 settings TEXT NOT NULL DEFAULT '{}',
                 last_modified INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
                 deleted_at INTEGER,
@@ -104,7 +104,7 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             "CREATE TABLE user_roles_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'lead')),
+                role TEXT NOT NULL CHECK (role IN ('user', 'scouter', 'admin')),
                 permission TEXT NOT NULL
             )"
         ).await?;

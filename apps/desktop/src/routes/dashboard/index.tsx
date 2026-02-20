@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import supabase from "@lib/supabase/supabase";
-import { useEffect, useState, useMemo } from "react";
-import { Search, SlidersHorizontal, ArrowUpDown } from "lucide-react";
+import { useEffect, useState, useMemo, useRef } from "react";
+import { Search, ArrowDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shadcn/ui/components/tabs.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { useDesktopTeamData } from "../../contexts/DesktopTeamDataContext";
@@ -11,7 +11,7 @@ import { getUserProfiles } from "@lib/data/scouterRatings";
 import { getMatchScoutingData } from "../../lib/db";
 import type { MatchScoutingData } from "../../lib/db";
 import { LeftPanel } from "./-components/LeftPanel";
-import { ScheduleTable } from "./-components/ScheduleTable";
+import { ScheduleTable, type ScheduleTableHandle } from "./-components/ScheduleTable";
 import { RankingsTable } from "./-components/RankingsTable";
 import { RightPanel } from "./-components/RightPanel";
 
@@ -35,9 +35,10 @@ interface UserProfile {
 
 function DashboardPage() {
   const { tbaTeams } = useDesktopTeamData();
-  const { schedule, tbaSchedule } = useDesktopCompetitionData();
-  const { currentEvent, homeTeam } = useDesktopEvent();
+  const { schedule, tbaSchedule, tbaClimbData } = useDesktopCompetitionData();
+  const { currentEvent, homeTeam, useTbaClimb } = useDesktopEvent();
 
+  const scheduleTableRef = useRef<ScheduleTableHandle>(null);
   const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -108,18 +109,22 @@ function DashboardPage() {
               />
             </div>
 
-            {/* Sort & Filter (placeholder icons, non-functional) */}
-            <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors">
-              <ArrowUpDown className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors">
-              <SlidersHorizontal className="w-4 h-4" />
-            </button>
+            {/* Jump to last completed match */}
+            {activeTab === "schedule" && (
+              <button
+                onClick={() => scheduleTableRef.current?.scrollToLastCompleted()}
+                className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors"
+                title="Jump to last completed match"
+              >
+                <ArrowDown className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* Schedule tab */}
           <TabsContent value="schedule" className="flex-1 m-0 data-[state=active]:flex data-[state=active]:flex-col overflow-hidden">
             <ScheduleTable
+              ref={scheduleTableRef}
               schedule={schedule}
               tbaSchedule={tbaSchedule}
               tbaTeams={tbaTeams}
@@ -134,6 +139,9 @@ function DashboardPage() {
               tbaTeams={tbaTeams}
               matchData={matchData}
               searchQuery={searchQuery}
+              tbaClimbData={tbaClimbData}
+              useTbaClimb={useTbaClimb}
+              homeTeamKey={homeTeamKey}
             />
           </TabsContent>
         </Tabs>

@@ -8,6 +8,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useDesktopEvent } from "./DesktopEventContext";
 import { useDesktopRealtime } from "./DesktopRealtimeContext";
 import {
@@ -48,6 +49,14 @@ export interface TBAMatchData {
   predicted_blue_score?: number | null;
 }
 
+export interface TbaClimbEntry {
+  event: string;
+  match_key: string;
+  team: string;
+  auto_climb: "L1" | "L2" | "L3" | null;
+  teleop_climb: "L1" | "L2" | "L3" | null;
+}
+
 export interface Picklist {
   event: string;
   id: string;
@@ -73,6 +82,7 @@ interface DesktopCompetitionDataContextType {
   tbaSchedule: Record<string, TBAMatchData>;
   picklists: Picklist[];
   picklistEntries: PicklistEntry[];
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   loading: boolean;
   refresh: () => Promise<void>;
   refreshFromCache: () => Promise<void>;
@@ -96,6 +106,7 @@ export function DesktopCompetitionDataProvider({
   );
   const [picklists, setPicklists] = useState<Picklist[]>([]);
   const [picklistEntries, setPicklistEntries] = useState<PicklistEntry[]>([]);
+  const [tbaClimbData, setTbaClimbData] = useState<Record<string, Record<string, TbaClimbEntry>>>({});
   const [loading, setLoading] = useState(false);
 
   // Refs for stable access in callbacks
@@ -206,6 +217,19 @@ export function DesktopCompetitionDataProvider({
       // Update both states together to prevent intermediate renders
       setPicklists(newPicklists);
       setPicklistEntries(newEntries);
+
+      // Fetch TBA climb data from local SQLite cache (populated by desktop sync service)
+      try {
+        const climbEntries = await invoke<TbaClimbEntry[]>("get_tba_climb_data", { event: currentEvent });
+        const climbMap: Record<string, Record<string, TbaClimbEntry>> = {};
+        for (const entry of climbEntries) {
+          if (!climbMap[entry.match_key]) climbMap[entry.match_key] = {};
+          climbMap[entry.match_key][entry.team] = entry;
+        }
+        setTbaClimbData(climbMap);
+      } catch {
+        // Non-fatal: TBA climb data not available yet
+      }
     } catch (error) {
       console.error("[DesktopCompetitionData] Fetch failed:", error);
     } finally {
@@ -344,6 +368,7 @@ export function DesktopCompetitionDataProvider({
       setTbaSchedule({});
       setPicklists([]);
       setPicklistEntries([]);
+      setTbaClimbData({});
       hasLoadedDataRef.current = false;
       return;
     }
@@ -411,11 +436,12 @@ export function DesktopCompetitionDataProvider({
       tbaSchedule,
       picklists,
       picklistEntries,
+      tbaClimbData,
       loading,
       refresh,
       refreshFromCache,
     }),
-    [schedule, tbaSchedule, picklists, picklistEntries, loading, refresh, refreshFromCache]
+    [schedule, tbaSchedule, picklists, picklistEntries, tbaClimbData, loading, refresh, refreshFromCache]
   );
 
   return (

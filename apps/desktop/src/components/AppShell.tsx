@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import {
   LayoutDashboard,
   Calendar,
@@ -13,6 +14,8 @@ import {
   LogOut,
   User,
   Ticket,
+  Settings,
+  RefreshCw,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -32,6 +35,8 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Label } from "@shadcn/ui/components/label.tsx";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "@shadcn/ui/components/popover.tsx";
+import { Switch } from "@shadcn/ui/components/switch.tsx";
 import { useTabContext } from "../contexts/TabContext";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
@@ -58,12 +63,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const currentPath = routerState.location.pathname;
 
   const { tabs, activeTabId, closeTab, setActiveTab } = useTabContext();
-  const { currentEvent, setCurrentEvent } = useDesktopEvent();
+  const { currentEvent, setCurrentEvent, useTbaClimb, setUseTbaClimb } = useDesktopEvent();
   const { teams } = useDesktopTeamData();
   const { forceSyncNow } = useDesktopSync();
 
   const [events, setEvents] = useState<EventListEntry[]>([]);
   const [userName, setUserName] = useState("");
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Name change dialog
@@ -76,9 +82,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [inviteCode, setInviteCode] = useState("");
   const [applyingInvite, setApplyingInvite] = useState(false);
 
+  // Bootstrap
+  const [showBootstrapDialog, setShowBootstrapDialog] = useState(false);
+  const [bootstrapEventKey, setBootstrapEventKey] = useState("");
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
+
+
   useEffect(() => {
     const userData = getLocalUserData();
     setUserName(userData.name || userData.email || "User");
+
+    // Read user_role from JWT claims (what Supabase RLS actually uses)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const claims = session?.access_token
+        ? JSON.parse(atob(session.access_token.split(".")[1]))
+        : null;
+      setUserRole(claims?.user_role ?? claims?.role ?? "no JWT");
+    });
 
     fetchEvents();
   }, []);
@@ -135,6 +156,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
+  const handleBootstrap = async () => {
+    if (!bootstrapEventKey.trim()) return;
+    setBootstrapping(true);
+    setBootstrapMsg(null);
+    try {
+      const count = await invoke<number>("bootstrap_event_schedule", { event: bootstrapEventKey.trim() });
+      setBootstrapMsg(`Bootstrapped ${count} rows for ${bootstrapEventKey.trim()}`);
+      setBootstrapEventKey("");
+      setShowBootstrapDialog(false);
+      fetchEvents();
+    } catch (e) {
+      setBootstrapMsg(`Error: ${e}`);
+    } finally {
+      setBootstrapping(false);
+    }
+  };
+
   const currentEventAlias =
     events.find((e) => e.event === currentEvent)?.alias ||
     currentEvent ||
@@ -151,7 +189,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <TooltipProvider delayDuration={300}>
       {/* Change Name Dialog */}
       <Dialog open={showNameDialog} onOpenChange={setShowNameDialog}>
-        <DialogContent>
+        <DialogContent className="bg-muted border-border">
           <DialogHeader>
             <DialogTitle>Change Name</DialogTitle>
           </DialogHeader>
@@ -174,10 +212,44 @@ export function AppShell({ children }: { children: ReactNode }) {
         </DialogContent>
       </Dialog>
 
+      {/* Bootstrap Event Dialog */}
+      <Dialog open={showBootstrapDialog} onOpenChange={(open) => { setShowBootstrapDialog(open); if (!open) setBootstrapMsg(null); }}>
+        <DialogContent className="bg-muted border-border">
+          <DialogHeader>
+            <DialogTitle>Bootstrap Event</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-4">
+            <p className="text-sm text-muted-foreground">
+              Seeds event teams and match schedule from TBA into Supabase. Run once when setting up a new event.
+            </p>
+            <Label htmlFor="bootstrap-event-key">Event Key</Label>
+            <Input
+              id="bootstrap-event-key"
+              value={bootstrapEventKey}
+              onChange={(e) => setBootstrapEventKey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleBootstrap()}
+              placeholder="e.g. 2026cada"
+            />
+            {bootstrapMsg && (
+              <p className={`text-sm ${bootstrapMsg.startsWith("Error") ? "text-destructive" : "text-chart-2"}`}>
+                {bootstrapMsg}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBootstrapDialog(false)}>Cancel</Button>
+            <Button onClick={handleBootstrap} disabled={bootstrapping || !bootstrapEventKey.trim()}>
+              {bootstrapping ? "Bootstrapping..." : "Bootstrap"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Invite Code Dialog */}
       <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="bg-muted border-border ">
+          <DialogHeader >
             <DialogTitle>Apply Invite Code</DialogTitle>
           </DialogHeader>
           <div className="grid gap-2 py-4">
@@ -233,7 +305,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <Icon className="w-5 h-5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="right">
+                  <TooltipContent side="right" className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
                     {isDisabled ? `${label} (coming soon)` : label}
                   </TooltipContent>
                 </Tooltip>
@@ -292,7 +364,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>
+                <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
                   {isSyncing ? "Syncing..." : teams.length > 0 ? "Synced — click to sync now" : "Not synced"}
                 </TooltipContent>
               </Tooltip>
@@ -304,28 +376,85 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <Moon className="w-4 h-4" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Toggle theme (coming soon)</TooltipContent>
+                <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">Toggle theme (coming soon)</TooltipContent>
               </Tooltip>
+
+              {/* Settings popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+                    <Settings className="w-4 h-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 bg-muted border-border">
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold text-foreground">Data Settings</h4>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">Use TBA Climb Data</p>
+                        <p className="text-xs text-muted-foreground">
+                          Override scouted climb levels with TBA's official results
+                        </p>
+                      </div>
+                      <Switch
+                        checked={useTbaClimb}
+                        onCheckedChange={setUseTbaClimb}
+                      />
+                    </div>
+
+                    <div className="border-t border-border pt-3 space-y-2">
+                      <h4 className="text-sm font-semibold text-foreground">Event Management</h4>
+
+                      {/* Bootstrap */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">Bootstrap Event</p>
+                          <p className="text-xs text-muted-foreground truncate">Seed teams + schedule from TBA for a new event</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowBootstrapDialog(true)}
+                          className="flex-shrink-0"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                        </Button>
+                      </div>
+
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
 
               {/* Name dropdown */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-secondary text-sm text-foreground transition-colors">
                     <span className="max-w-[100px] truncate">{userName}</span>
+                    {userRole && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                        userRole === "admin" ? "bg-primary/20 text-primary" :
+                        userRole === "scouter" ? "bg-chart-2/20 text-chart-2" :
+                        userRole === "no JWT" ? "bg-destructive/20 text-destructive" :
+                        "bg-secondary text-muted-foreground"
+                      }`}>
+                        {userRole}
+                      </span>
+                    )}
                     <ChevronDown className="w-3 h-3 text-muted-foreground" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem onClick={() => { setNewName(userName); setShowNameDialog(true); }}>
+                <DropdownMenuContent align="end" className="w-44 bg-muted border-border">
+                  <DropdownMenuItem onClick={() => { setNewName(userName); setShowNameDialog(true); }} className="text-muted-foreground hover:text-foreground">
                     <User className="w-4 h-4 mr-2" />
                     Change Name
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowInviteDialog(true)}>
+                  <DropdownMenuItem onClick={() => setShowInviteDialog(true)} className="text-muted-foreground hover:text-foreground">
                     <Ticket className="w-4 h-4 mr-2" />
                     Apply Invite Code
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+                  <DropdownMenuItem onClick={handleLogout} className="text-destructive hover:text-destructive">
                     <LogOut className="w-4 h-4 mr-2" />
                     Sign Out
                   </DropdownMenuItem>
@@ -340,18 +469,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64 max-h-72 overflow-y-auto">
+                <DropdownMenuContent align="end" className="w-64 max-h-72 overflow-y-auto bg-muted border-border">
                   {events.map((event) => (
                     <DropdownMenuItem
                       key={event.event}
                       onClick={() => setCurrentEvent(event.event)}
-                      className={currentEvent === event.event ? "bg-primary/10 text-primary" : ""}
+                      className={currentEvent === event.event ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}
                     >
                       <span className="truncate">{event.alias || event.event}</span>
                     </DropdownMenuItem>
                   ))}
                   {events.length === 0 && (
-                    <DropdownMenuItem disabled>No events found</DropdownMenuItem>
+                    <DropdownMenuItem disabled className="text-muted-foreground">No events found</DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>

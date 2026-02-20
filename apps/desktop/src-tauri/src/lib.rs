@@ -3,7 +3,7 @@ use crate::{
     services::{StatboticsService, SupabaseService, SyncService, TbaService},
     store::LocalStore,
 };
-use std::{process::Command, sync::Mutex};
+use std::{process::Command, sync::{Arc, Mutex, RwLock}};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 
@@ -83,6 +83,9 @@ pub fn run() {
                     (tba, sb_url, sb_key, evt, pool)
                 };
 
+                // Clone the JWT Arc before state moves into the Mutex
+                let jwt_arc = Arc::clone(&state.user_jwt_shared);
+
                 let app_state = Mutex::new(state);
                 handle.manage(app_state);
 
@@ -92,7 +95,7 @@ pub fn run() {
                         !tba_key.is_empty(), !supabase_url.is_empty(), event_key);
 
                     let tba_service = TbaService::new(tba_key);
-                    let supabase_service = SupabaseService::new(supabase_url, supabase_key);
+                    let supabase_service = SupabaseService::new(supabase_url, supabase_key, Arc::clone(&jwt_arc));
                     let statbotics_service = StatboticsService::new();
 
                     let sync_service = SyncService::new(
@@ -122,6 +125,7 @@ pub fn run() {
             commands::tba::fetch_tba_event_teams,
             commands::tba::fetch_tba_team_statuses,
             commands::tba::fetch_tba_match_schedule,
+            commands::tba::bootstrap_event_schedule,
             commands::config::save_config,
             commands::config::get_config,
             commands::config::set_user_jwt,
@@ -138,6 +142,8 @@ pub fn run() {
             commands::db::cache_pit_scouting_data,
             commands::db::get_match_scouting_data,
             commands::db::cache_match_scouting_data,
+            commands::db::get_tba_climb_data,
+            commands::db::cache_tba_climb_data,
             commands::sync_queue::add_to_sync_queue,
             commands::sync_queue::get_sync_queue_status,
             commands::sync_queue::clear_failed_sync_queue,
@@ -155,7 +161,8 @@ pub struct AppState {
     pub tba_service: TbaService,
     pub supabase_service: SupabaseService,
     pub sync_trigger: Option<tokio::sync::mpsc::Sender<()>>,
-    pub user_jwt: Option<String>, // User's JWT token for Supabase auth
+    /// Shared with SupabaseService — updated when user logs in via set_user_jwt command
+    pub user_jwt_shared: Arc<RwLock<Option<String>>>,
 }
 
 impl AppState {
@@ -167,11 +174,39 @@ impl AppState {
         // Read config from store
         let config = store.get_config();
 
+        // JWT Arc shared between AppState (written by set_user_jwt command) and SupabaseService (read on every write)
+        let user_jwt_shared: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+
+        // Resolve TBA key: store value first, then env var fallback (same as sync service setup)
+        let tba_key = if !config.tba_key.is_empty() {
+            config.tba_key.clone()
+        } else {
+            get_env("X_TBA_AUTH_KEY")
+                .or_else(|| get_env("TBA_API_KEY"))
+                .unwrap_or_default()
+        };
+
+        // Resolve Supabase key with env var fallback
+        let supabase_url = if !config.supabase_url.is_empty() {
+            config.supabase_url.clone()
+        } else {
+            get_env("SUPABASE_URL").unwrap_or_default()
+        };
+        let supabase_key = if !config.supabase_key.is_empty() {
+            config.supabase_key.clone()
+        } else {
+            get_env("SUPABASE_SERVICE_ROLE_KEY")
+                .or_else(|| get_env("SUPABASE_KEY"))
+                .or_else(|| get_env("SUPABASE_ANON_KEY"))
+                .unwrap_or_default()
+        };
+
         // Initialize services with config from store (or empty defaults)
-        let tba_service = TbaService::new(config.tba_key.clone());
+        let tba_service = TbaService::new(tba_key);
         let supabase_service = SupabaseService::new(
-            config.supabase_url.clone(),
-            config.supabase_key.clone(),
+            supabase_url,
+            supabase_key,
+            Arc::clone(&user_jwt_shared),
         );
 
         Ok(Self {
@@ -181,7 +216,7 @@ impl AppState {
             tba_service,
             supabase_service,
             sync_trigger: None, // Set later when channel is created
-            user_jwt: None, // Set when user logs in
+            user_jwt_shared,
         })
     }
 

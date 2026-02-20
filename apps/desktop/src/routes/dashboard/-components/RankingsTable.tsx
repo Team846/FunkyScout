@@ -1,17 +1,21 @@
 import { useMemo, useState } from "react";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
 import type { MatchScoutingData } from "../../../lib/db";
 import { calculateAllTeamStats } from "@lib/data/matchStats";
 import type { EventMatchData } from "@lib/db";
+import type { TbaClimbEntry } from "../../../contexts/DesktopCompetitionDataContext";
+import { computeClimbWithTba } from "../../../utils/climbOverride";
 
-type SortColumn = "team" | "name" | "rank" | "epa" | "rating" | "climb";
-type SortDir = "asc" | "desc";
+type SortColumn = "rank" | "epa" | "rating" | "climb";
 
 interface RankingsTableProps {
   tbaTeams: TBATeam[];
   matchData: MatchScoutingData[];
   searchQuery: string;
+  tbaClimbData?: Record<string, Record<string, TbaClimbEntry>>;
+  useTbaClimb?: boolean;
+  homeTeamKey?: string;
 }
 
 interface TeamRow {
@@ -39,16 +43,8 @@ function useEpaColors(tbaTeams: TBATeam[]) {
   }, [tbaTeams]);
 }
 
-function SortIcon({ column, sortCol, sortDir }: { column: SortColumn; sortCol: SortColumn; sortDir: SortDir }) {
-  if (column !== sortCol) return <ArrowUpDown className="w-3 h-3 ml-1 text-muted-foreground/50" />;
-  return sortDir === "asc"
-    ? <ArrowUp className="w-3 h-3 ml-1 text-primary" />
-    : <ArrowDown className="w-3 h-3 ml-1 text-primary" />;
-}
-
-export function RankingsTable({ tbaTeams, matchData, searchQuery }: RankingsTableProps) {
+export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, useTbaClimb, homeTeamKey }: RankingsTableProps) {
   const [sortCol, setSortCol] = useState<SortColumn>("rank");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const { q25, q75 } = useEpaColors(tbaTeams);
 
@@ -61,8 +57,22 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery }: RankingsTabl
 
   // Build table rows
   const rows: TeamRow[] = useMemo(() => {
+    const castMatchData = matchData as unknown as EventMatchData[];
     return tbaTeams.map((t) => {
       const stats = allTeamStats[t.key];
+
+      // Determine climb percentage: use TBA override if enabled and data available
+      let climbPct: number | null = null;
+      if (stats) {
+        if (useTbaClimb && tbaClimbData && Object.keys(tbaClimbData).length > 0) {
+          const tbaClimb = computeClimbWithTba(t.key, castMatchData, tbaClimbData);
+          climbPct = Math.round(tbaClimb.L2Percentage + tbaClimb.L3Percentage);
+        } else {
+          // Bug fix: values are already 0-100, do NOT multiply by 100
+          climbPct = Math.round(stats.climb.L2Percentage + stats.climb.L3Percentage);
+        }
+      }
+
       return {
         key: t.key,
         team: t.team,
@@ -71,12 +81,10 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery }: RankingsTabl
         epa: t.epa?.total_points?.mean ?? null,
         opr: t.opr ?? null,
         rating: stats?.ratings?.overall ?? null,
-        climbPct: stats
-          ? Math.round((stats.climb.L2Percentage + stats.climb.L3Percentage) * 100)
-          : null,
+        climbPct,
       };
     });
-  }, [tbaTeams, allTeamStats]);
+  }, [tbaTeams, allTeamStats, matchData, useTbaClimb, tbaClimbData]);
 
   // Search filter
   const filteredRows = useMemo(() => {
@@ -89,66 +97,48 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery }: RankingsTabl
     );
   }, [rows, searchQuery]);
 
-  // Sort
+  // Sort - rank is ascending (1 is best), others are descending (higher is better)
   const sortedRows = useMemo(() => {
     const sorted = [...filteredRows].sort((a, b) => {
       let valA: number;
       let valB: number;
 
       switch (sortCol) {
-        case "team":
-          valA = a.team;
-          valB = b.team;
-          break;
-        case "name":
-          return sortDir === "asc"
-            ? a.name.localeCompare(b.name)
-            : b.name.localeCompare(a.name);
         case "rank":
           valA = a.rank === 0 ? 9999 : a.rank;
           valB = b.rank === 0 ? 9999 : b.rank;
-          break;
+          return valA - valB; // Ascending - lower rank is better
         case "epa":
           valA = a.epa ?? -1;
           valB = b.epa ?? -1;
-          break;
+          return valB - valA; // Descending - higher EPA is better
         case "rating":
           valA = a.rating ?? -1;
           valB = b.rating ?? -1;
-          break;
+          return valB - valA; // Descending - higher rating is better
         case "climb":
           valA = a.climbPct ?? -1;
           valB = b.climbPct ?? -1;
-          break;
+          return valB - valA; // Descending - higher climb % is better
         default:
-          valA = 0;
-          valB = 0;
+          return 0;
       }
-
-      return sortDir === "asc" ? valA - valB : valB - valA;
     });
     return sorted;
-  }, [filteredRows, sortCol, sortDir]);
+  }, [filteredRows, sortCol]);
 
   const handleSort = (col: SortColumn) => {
-    if (sortCol === col) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortCol(col);
-      setSortDir(col === "rank" ? "asc" : "desc");
-    }
+    setSortCol(col);
   };
 
   const getEpaClass = (epa: number | null) => {
-    if (epa == null) return "";
+    if (epa == null) return "text-muted-foreground";
     if (epa >= q75) return "text-chart-2 font-semibold";
     if (epa <= q25) return "text-chart-5 font-semibold";
     return "text-foreground";
   };
 
-  const COLS: { key: SortColumn; label: string; className?: string }[] = [
-    { key: "team", label: "Team" },
-    { key: "name", label: "Name", className: "flex-1" },
+  const SORTABLE_COLS: { key: SortColumn; label: string }[] = [
     { key: "rank", label: "Rank" },
     { key: "epa", label: "EPA" },
     { key: "rating", label: "Avg Rating" },
@@ -158,28 +148,27 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery }: RankingsTabl
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="grid grid-cols-[80px_1fr_60px_80px_90px_80px] gap-0 px-3 py-2 border-b border-border bg-card/50 flex-shrink-0">
-        {COLS.map((col) => (
+      <div className="grid grid-cols-[100px_1fr_80px_80px_100px_90px] gap-0 px-8 py-3 border-b border-border bg-card/50 flex-shrink-0">
+        {/* Team - not sortable */}
+        <span className="flex items-center justify-center text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          Team
+        </span>
+        {/* Name - not sortable */}
+        <span className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wide pl-6">
+          Name
+        </span>
+        {/* Sortable columns */}
+        {SORTABLE_COLS.map((col) => (
           <button
             key={col.key}
             onClick={() => handleSort(col.key)}
             className={[
-              "flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors",
-              col.key === "name" ? "" : "justify-end",
-              sortCol === col.key ? "text-primary" : "",
+              "flex items-center justify-center gap-1 text-xs font-semibold uppercase tracking-wide hover:text-foreground transition-colors",
+              sortCol === col.key ? "text-primary" : "text-muted-foreground",
             ].join(" ")}
           >
-            {col.key === "name" ? (
-              <>
-                {col.label}
-                <SortIcon column={col.key} sortCol={sortCol} sortDir={sortDir} />
-              </>
-            ) : (
-              <>
-                <SortIcon column={col.key} sortCol={sortCol} sortDir={sortDir} />
-                {col.label}
-              </>
-            )}
+            {col.label}
+            {sortCol === col.key && <ChevronDown className="w-3 h-3" />}
           </button>
         ))}
       </div>
@@ -191,46 +180,47 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery }: RankingsTabl
             {searchQuery ? "No teams found" : "No team data"}
           </div>
         ) : (
-          sortedRows.map((row) => (
-            <div
-              key={row.key}
-              className="grid grid-cols-[80px_1fr_60px_80px_90px_80px] gap-0 items-center px-3 py-2 border-b border-border/50 hover:bg-secondary/20 transition-colors"
-            >
-              {/* Team chip */}
-              <div>
-                <span
-                  className={[
-                    "inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-secondary/60 text-foreground",
-                  ].join(" ")}
-                >
-                  {row.team}
+          sortedRows.map((row) => {
+            const isHomeTeam = row.key === homeTeamKey;
+            return (
+              <div
+                key={row.key}
+                className="grid grid-cols-[100px_1fr_80px_80px_100px_90px] gap-0 items-center px-8 py-3 border-b border-border/50 hover:bg-secondary/20 transition-colors"
+              >
+                {/* Team chip */}
+                <div className="flex justify-center">
+                  <span className="inline-flex items-center justify-center min-w-[48px] px-2.5 py-1 rounded text-sm font-bold bg-background text-primary tabular-nums">
+                    {row.team}
+                  </span>
+                </div>
+
+                {/* Name */}
+                <span className={`text-sm truncate pl-6 pr-4 ${isHomeTeam ? "text-primary font-semibold" : "text-foreground"}`}>
+                  {row.name}
+                </span>
+
+                {/* Rank */}
+                <span className="text-sm text-center text-muted-foreground">
+                  {row.rank > 0 ? `#${row.rank}` : "—"}
+                </span>
+
+                {/* EPA */}
+                <span className={`text-sm text-center ${getEpaClass(row.epa)}`}>
+                  {row.epa != null ? row.epa.toFixed(1) : "—"}
+                </span>
+
+                {/* Avg Rating */}
+                <span className="text-sm text-center text-muted-foreground">
+                  {row.rating != null ? row.rating.toFixed(1) : "—"}
+                </span>
+
+                {/* Climb % */}
+                <span className="text-sm text-center text-muted-foreground">
+                  {row.climbPct != null ? `${row.climbPct}%` : "—"}
                 </span>
               </div>
-
-              {/* Name */}
-              <span className="text-xs text-foreground truncate pr-4">{row.name}</span>
-
-              {/* Rank */}
-              <span className="text-xs text-right text-muted-foreground">
-                {row.rank > 0 ? `#${row.rank}` : "—"}
-              </span>
-
-              {/* EPA */}
-              <span className={`text-xs text-right ${getEpaClass(row.epa)}`}>
-                {row.epa != null ? row.epa.toFixed(1) : "—"}
-              </span>
-
-              {/* Avg Rating */}
-              <span className="text-xs text-right text-muted-foreground">
-                {row.rating != null ? row.rating.toFixed(1) : "—"}
-              </span>
-
-              {/* Climb % */}
-              <span className="text-xs text-right text-muted-foreground">
-                {row.climbPct != null ? `${row.climbPct}%` : "—"}
-              </span>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

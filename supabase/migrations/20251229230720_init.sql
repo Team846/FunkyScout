@@ -8,7 +8,7 @@ begin
       create type public.alliance as enum ('red', 'blue');
    end if;
    if not exists (select 1 from pg_type where typname = 'role') then
-      create type public.role as enum ('user', 'scouter', 'lead');
+      create type public.role as enum ('user', 'scouter', 'admin');
    end if;
    if not exists (select 1 from pg_type where typname = 'perm') then
       create type public.perm as enum ('data.view', 'data.write', 'schedule.view', 'schedule.write', 'event.write', 'profiles.view', 'profiles.write', 'picklist.write', 'picklist.view');
@@ -480,15 +480,15 @@ create policy "Invite codes: Enable insert for users based on permissions"
       authorize('profiles.write')
    );
 
-insert into user_roles (role, permission) values ('lead', 'data.view');
-insert into user_roles (role, permission) values ('lead', 'data.write');
-insert into user_roles (role, permission) values ('lead', 'schedule.view');
-insert into user_roles (role, permission) values ('lead', 'schedule.write');
-insert into user_roles (role, permission) values ('lead', 'event.write');
-insert into user_roles (role, permission) values ('lead', 'profiles.view');
-insert into user_roles (role, permission) values ('lead', 'profiles.write');
-insert into user_roles (role, permission) values ('lead', 'picklist.view');
-insert into user_roles (role, permission) values ('lead', 'picklist.write');
+insert into user_roles (role, permission) values ('admin', 'data.view');
+insert into user_roles (role, permission) values ('admin', 'data.write');
+insert into user_roles (role, permission) values ('admin', 'schedule.view');
+insert into user_roles (role, permission) values ('admin', 'schedule.write');
+insert into user_roles (role, permission) values ('admin', 'event.write');
+insert into user_roles (role, permission) values ('admin', 'profiles.view');
+insert into user_roles (role, permission) values ('admin', 'profiles.write');
+insert into user_roles (role, permission) values ('admin', 'picklist.view');
+insert into user_roles (role, permission) values ('admin', 'picklist.write');
 
 insert into user_roles (role, permission) values ('scouter', 'data.view');
 insert into user_roles (role, permission) values ('scouter', 'data.write');

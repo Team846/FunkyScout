@@ -8,6 +8,25 @@ use std::collections::HashMap;
 
 const TBA_BASE_URL: &str = "https://www.thebluealliance.com/api/v3";
 
+/// Per-team climb data extracted from TBA score breakdowns
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchClimbEntry {
+    pub match_key: String,
+    pub team: String,
+    pub auto_climb: Option<String>,   // "L1", "L2", "L3", or None
+    pub teleop_climb: Option<String>, // "L1", "L2", "L3", or None
+}
+
+/// Parse TBA climb level string into our L1/L2/L3 notation
+fn parse_climb_level(level: Option<&str>) -> Option<String> {
+    match level {
+        Some("Level1") => Some("L1".to_string()),
+        Some("Level2") => Some("L2".to_string()),
+        Some("Level3") => Some("L3".to_string()),
+        _ => None,
+    }
+}
+
 /// Team ranking information (mirrors lib/tba/event.ts TeamRank)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamRank {
@@ -53,6 +72,22 @@ impl TbaService {
             client: reqwest::Client::new(),
             api_key,
         }
+    }
+
+    /// Fetch basic event metadata from TBA (name, start date)
+    /// Returns (short_name, start_date) — used for bootstrapping event_list entry.
+    pub async fn fetch_event_info(&self, event: &str) -> Result<(String, String)> {
+        let data: serde_json::Value = self.fetch_json(&format!("/event/{}", event)).await?;
+        let short_name = data["short_name"]
+            .as_str()
+            .or_else(|| data["name"].as_str())
+            .unwrap_or(event)
+            .to_string();
+        let start_date = data["start_date"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        Ok((short_name, start_date))
     }
 
     /// Fetch event teams with rankings (mirrors fetchTBAEventTeams)
@@ -190,6 +225,66 @@ impl TbaService {
     pub async fn fetch_oprs(&self, event: &str) -> Result<serde_json::Value> {
         self.fetch_json(&format!("/event/{}/oprs", event))
             .await
+    }
+
+    /// Fetch match score breakdowns to extract climb data per robot
+    /// GET /event/{event}/matches (full endpoint, NOT /matches/simple)
+    /// Parses autoTowerRobot1/2/3 and endGameTowerRobot1/2/3 from score_breakdown
+    pub async fn fetch_match_breakdowns(&self, event: &str) -> Result<Vec<MatchClimbEntry>> {
+        let matches: Vec<serde_json::Value> = self
+            .fetch_json(&format!("/event/{}/matches", event))
+            .await?;
+
+        let mut entries = Vec::new();
+
+        for m in &matches {
+            let key = match m["key"].as_str() {
+                Some(k) => k.to_string(),
+                None => continue,
+            };
+
+            // Only process played matches (score != -1)
+            let red_score = m["alliances"]["red"]["score"].as_i64().unwrap_or(-1);
+            if red_score == -1 {
+                continue;
+            }
+
+            // Parse climb data for both alliances
+            for alliance in &["red", "blue"] {
+                let team_keys = match m["alliances"][alliance]["team_keys"].as_array() {
+                    Some(arr) => arr.clone(),
+                    None => continue,
+                };
+
+                for (robot_idx, team_key_val) in team_keys.iter().enumerate() {
+                    let team_key = match team_key_val.as_str() {
+                        Some(k) => k.to_string(),
+                        None => continue,
+                    };
+
+                    let robot_num = robot_idx + 1; // 1, 2, or 3
+
+                    let auto_key = format!("autoTowerRobot{}", robot_num);
+                    let teleop_key = format!("endGameTowerRobot{}", robot_num);
+
+                    let auto_climb = parse_climb_level(
+                        m["score_breakdown"][alliance][&auto_key].as_str()
+                    );
+                    let teleop_climb = parse_climb_level(
+                        m["score_breakdown"][alliance][&teleop_key].as_str()
+                    );
+
+                    entries.push(MatchClimbEntry {
+                        match_key: key.clone(),
+                        team: team_key,
+                        auto_climb,
+                        teleop_climb,
+                    });
+                }
+            }
+        }
+
+        Ok(entries)
     }
 
     /// Generic fetch with TBA API key auth

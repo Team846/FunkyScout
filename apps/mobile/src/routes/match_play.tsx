@@ -228,7 +228,7 @@ function MatchPlay() {
     setMatchData(prev => ({
       ...prev,
       toggleActions: [...prev.toggleActions, newAction],
-      postMatch: { ...prev.postMatch, autoClimbOrientation: undefined },
+      postMatch: { ...prev.postMatch, autoClimbOrientation: undefined, autoClimbFailed: true },
     }));
     setUndoStack([]);
     vibrateTap();

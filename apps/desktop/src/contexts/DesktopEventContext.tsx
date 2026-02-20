@@ -13,6 +13,8 @@ interface DesktopEventContextType {
   setCurrentEvent: (event: string | null) => Promise<void>;
   homeTeam: number;
   setHomeTeam: (team: number) => Promise<void>;
+  useTbaClimb: boolean;
+  setUseTbaClimb: (value: boolean) => Promise<void>;
 }
 
 const DesktopEventContext = createContext<DesktopEventContextType | undefined>(
@@ -22,9 +24,10 @@ const DesktopEventContext = createContext<DesktopEventContextType | undefined>(
 export function DesktopEventProvider({ children }: { children: ReactNode }) {
   const [currentEvent, _setCurrentEvent] = useState<string | null>(null);
   const [homeTeam, _setHomeTeam] = useState<number>(846);
+  const [useTbaClimb, _setUseTbaClimb] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
-  // Load current event and home team from Tauri store on mount
+  // Load current event, home team, and settings from Tauri store on mount
   useEffect(() => {
     const loadConfig = async () => {
       try {
@@ -32,6 +35,7 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
         _setCurrentEvent(config.event_key || null);
         const parsedTeam = parseInt(config.team_key || "846", 10);
         _setHomeTeam(isNaN(parsedTeam) ? 846 : parsedTeam);
+        _setUseTbaClimb(config.use_tba_climb ?? false);
       } catch (error) {
         console.error(
           "[DesktopEvent] Failed to load config from Tauri store:",
@@ -77,13 +81,29 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setUseTbaClimb = useCallback(async (value: boolean) => {
+    try {
+      const config = await invoke<any>("get_config");
+      config.use_tba_climb = value;
+      await invoke("save_config", { config });
+      _setUseTbaClimb(value);
+      console.log("[DesktopEvent] Use TBA climb changed to:", value);
+    } catch (error) {
+      console.error(
+        "[DesktopEvent] Failed to save use_tba_climb to Tauri store:",
+        error
+      );
+      throw error;
+    }
+  }, []);
+
   // Don't render children until we've loaded the initial config
   if (loading) {
     return null;
   }
 
   return (
-    <DesktopEventContext.Provider value={{ currentEvent, setCurrentEvent, homeTeam, setHomeTeam }}>
+    <DesktopEventContext.Provider value={{ currentEvent, setCurrentEvent, homeTeam, setHomeTeam, useTbaClimb, setUseTbaClimb }}>
       {children}
     </DesktopEventContext.Provider>
   );
