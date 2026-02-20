@@ -102,7 +102,43 @@ interface Verifications {
     orientation: VerificationItem;
   };
 }
+function VerificationBadge({ item }: { item: VerificationItem }) {
+  if (item.matchObserved === null && item.pitClaimed === false) return null;
+  
+  if (item.matchObserved === null || item.matchObserved === false) {
+    // Not yet observed in matches — neutral
+    return (
+      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3ZM6.34277 11C5.79066 11.0002 5.34277 11.4478 5.34277 12C5.34277 12.5522 5.79066 12.9998 6.34277 13H17.6562C18.2085 13 18.6562 12.5523 18.6562 12C18.6562 11.4477 18.2085 11 17.6562 11H6.34277Z" fill="#F5864A"/>
+        </svg>
 
+
+      </span>
+    );
+  }
+  
+  if (item.verified) {
+    return (
+      <span className="text-xs text-chart-2 bg-chart-2/10 px-2 py-0.5 rounded-full">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="9" fill="#64BA58" strokeWidth="1.2"/>
+        <path d="M8 12L11 15L16 9" stroke="#222" strokeWidth="1.2"/>
+        </svg>
+
+      </span>
+    );
+  }
+  
+  return (
+    <span className="text-xs text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3ZM16.707 7.29297C16.3166 6.9025 15.6835 6.90261 15.293 7.29297L12 10.5859L8.70703 7.29297C8.31649 6.90261 7.68344 6.9025 7.29297 7.29297C6.9025 7.68344 6.90261 8.31649 7.29297 8.70703L10.5859 12L7.29297 15.293C6.90244 15.6835 6.90244 16.3165 7.29297 16.707C7.68349 17.0976 8.31651 17.0976 8.70703 16.707L12 13.4141L15.293 16.707C15.6835 17.0976 16.3165 17.0976 16.707 16.707C17.0976 16.3165 17.0976 15.6835 16.707 15.293L13.4141 12L16.707 8.70703C17.0974 8.31649 17.0975 7.68344 16.707 7.29297Z" fill="#EF4444"/>
+      </svg>
+
+    </span>
+  );
+}
 function TeamInfoPage() {
   const navigate = useNavigate();
   const { teamKey } = Route.useSearch();
@@ -244,21 +280,12 @@ function TeamInfoPage() {
 
   
   useEffect(() => {
-    if (!currentEvent || !teamKey) return;
-
-    Promise.all([
-      getEventMatchData(currentEvent, undefined, teamKey),
-      getEventTeamData(currentEvent),
-    ]).then(([matchDataResult, teamDataResult]) => {
-      const validData = matchDataResult.filter((d) => !d.deleted_at && d.name);
-      setMatchData(validData);
-
-      
-      if (pitData && validData.length > 0) {
-        setVerifications(computeVerifications(pitData, matchData));
-      }
-    });
-  }, [currentEvent, teamKey]);
+  if (pitData && matchData.length > 0) {
+    setVerifications(computeVerifications(pitData, matchData));
+  } else {
+    setVerifications(null);
+  }
+  }, [pitData, matchData]);
 
   
  
@@ -626,91 +653,92 @@ function TeamInfoPage() {
 
               {/* GENERATED:DISPLAY:START */}
 
-              {/* Movement Section */}
+                            {/* Movement Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  MOVEMENT
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">MOVEMENT</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Bump</p>
-                    <p
-                      className={`font-semibold ${pitData.movement?.bump ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.movement?.bump ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.movement?.bump ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.movement?.bump ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.movement.bump} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Trough</p>
-                    <p
-                      className={`font-semibold ${pitData.movement?.trough ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.movement?.trough ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.movement?.trough ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.movement?.trough ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.movement.trough} />}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Intake Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  INTAKE
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">INTAKE</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Ground</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.ground ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.ground ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.intake?.ground ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.ground ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.intake.ground} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Station</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.station ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.station ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.intake.station} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Stocking</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.stocking ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.stocking ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.intake.stocking} />}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Fuel Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  FUEL
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">FUEL</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Shoot Moving</p>
-                    <p
-                      className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.fuel?.shootMoving ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.fuel?.shootMoving ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.fuel.shootMoving} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Passing</p>
-                    <p
-                      className={`font-semibold ${pitData.fuel?.passing ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.fuel?.passing ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.fuel?.passing ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.fuel?.passing ? "Yes" : "No"}
+                        
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.fuel.passing} />}
+                    </div>
                   </div>
-                  <div className="h-px bg-border my-2" />
                   {(pitData.fuel?.bps || pitData.fuel?.capacity) && (
                     <>
                       <div className="h-px bg-border my-2" />
@@ -718,17 +746,13 @@ function TeamInfoPage() {
                         {pitData.fuel?.bps && (
                           <div>
                             <p className="text-foreground text-sm mb-1">Balls Per Sec</p>
-                            <p className="font-semibold text-foreground">
-                              {pitData.fuel.bps}
-                            </p>
+                            <p className="font-semibold text-foreground">{pitData.fuel.bps}</p>
                           </div>
                         )}
                         {pitData.fuel?.capacity && (
                           <div>
                             <p className="text-foreground text-sm mb-1">Ball Capacity</p>
-                            <p className="font-semibold text-foreground">
-                              {pitData.fuel.capacity}
-                            </p>
+                            <p className="font-semibold text-foreground">{pitData.fuel.capacity}</p>
                           </div>
                         )}
                       </div>
@@ -739,60 +763,57 @@ function TeamInfoPage() {
 
               {/* Auto Climb Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  AUTO CLIMB
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">AUTO CLIMB</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
-                  {(pitData.autoClimb?.declimbTime) && (
+                  {pitData.autoClimb?.declimbTime && (
                     <>
                       <div className="h-px bg-border my-2" />
                       <div className="grid grid-cols-2 gap-4 py-2">
-                        {pitData.autoClimb?.declimbTime && (
-                          <div>
-                            <p className="text-foreground text-sm mb-1">Declimb Time (s)</p>
-                            <p className="font-semibold text-foreground">
-                              {pitData.autoClimb.declimbTime}
-                            </p>
-                          </div>
-                        )}
+                        <div>
+                          <p className="text-foreground text-sm mb-1">Declimb Time (s)</p>
+                          <p className="font-semibold text-foreground">{pitData.autoClimb.declimbTime}</p>
+                        </div>
                       </div>
                     </>
                   )}
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Auto Climb</p>
-                    <p className="font-semibold text-foreground">
-                      {pitData.autoClimb?.level || "None"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.autoClimb?.level || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.autoClimb.level} />}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Orientation</p>
-                    <p className="font-semibold text-foreground">
-                      {pitData.autoClimb?.orientation || "None"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.autoClimb?.orientation || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.autoClimb.orientation} />}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Teleop Climb Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  TELEOP CLIMB
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">TELEOP CLIMB</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Climb Level</p>
-                    <p className="font-semibold text-foreground">
-                      {pitData.teleopClimb?.level || "None"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.teleopClimb?.level || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.teleopClimb.level} />}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Orientation</p>
-                    <p className="font-semibold text-foreground">
-                      {pitData.teleopClimb?.orientation || "None"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.teleopClimb?.orientation || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.teleopClimb.orientation} />}
+                    </div>
                   </div>
                 </div>
               </div>
+
         {/* GENERATED:END */}
 
               {/* Autos Section */}
