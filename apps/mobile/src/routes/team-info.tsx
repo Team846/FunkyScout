@@ -6,7 +6,7 @@ import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { toast } from "sonner";
 import { useEvent } from "@lib/context/EventContext";
-import { getEventTeamData, cacheEventTeamData } from "@lib/db";
+import { getEventMatchData, getEventTeamData, getEventSchedule, cacheEventTeamData, type EventMatchData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
 import { putTeamData } from "@lib/data/writes";
 import { getSession } from "@lib/supabase/auth";
@@ -15,6 +15,8 @@ import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import { MatchScoutingTab } from "../components/MatchScoutingTab";
 import type { DrawingData } from "../components/auto-path-drawer/types";
 import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
+import { calculateSingleMatchStats } from "@lib/data/matchStats"
+
 
 type TeamInfoSearch = {
   teamKey?: string;
@@ -71,6 +73,36 @@ interface PitData {
   };
 }
 
+interface VerificationItem {
+  pitClaimed: boolean | string | null;
+  matchObserved: boolean | string | null;
+  verified: boolean; // true = matches
+}
+
+interface Verifications {
+  movement: {
+    bump: VerificationItem;
+    trough: VerificationItem;
+  };
+  intake: {
+    ground: VerificationItem;
+    station: VerificationItem;
+    stocking: VerificationItem;
+  };
+  fuel: {
+    shootMoving: VerificationItem;
+    passing: VerificationItem;
+  };
+  autoClimb: {
+    level: VerificationItem;
+    orientation: VerificationItem;
+  };
+  teleopClimb: {
+    level: VerificationItem;
+    orientation: VerificationItem;
+  };
+}
+
 function TeamInfoPage() {
   const navigate = useNavigate();
   const { teamKey } = Route.useSearch();
@@ -91,7 +123,10 @@ function TeamInfoPage() {
   const [mouseX, setMouseX] = useState<number>(50);
   const [mouseY, setMouseY] = useState<number>(50);
   const [isZoomed, setIsZoomed] = useState(false);
+  
 
+  const [matchData, setMatchData] = useState<EventMatchData[]>([]);
+  
   useEffect(() => {
     if (!currentEvent || !teamKey) {
       setLoading(false);
@@ -115,6 +150,119 @@ function TeamInfoPage() {
     });
   }, [currentEvent, teamKey]);
 
+
+  useEffect(() => {
+    if (!currentEvent || !teamKey) return;
+
+    Promise.all([
+      getEventMatchData(currentEvent, undefined, teamKey),
+      getEventTeamData(currentEvent),
+      getEventSchedule(currentEvent),
+    ]).then(([matchDataResult, teamDataResult, scheduleResult]) => {
+      console.log("Raw match data count:", matchDataResult.length);
+      console.log("Sample record:", matchDataResult[0]);
+      console.log("teamKey filter:", teamKey);
+      
+      const validData = matchDataResult.filter((d) => !d.deleted_at && d.name);
+      console.log("After filter:", validData.length);
+      console.log(validData)
+
+      console.log(pitData)
+      
+      setMatchData(validData);
+      console.log(matchData)
+    });
+  }, [currentEvent, teamKey]);
+
+  const computeVerifications = (
+  pit: PitData,
+  matches: EventMatchData[]
+): Verifications => {
+  // Aggregate match observations across all scouted matches
+  const observed = {
+    bump:         matches.some(m => m.data_raw?.postMatch?.bump),
+    trough:       matches.some(m => m.data_raw?.postMatch?.trough),
+    ground:       matches.some(m => m.data_raw?.postMatch?.canGround),
+    station:      matches.some(m => m.data_raw?.postMatch?.canStation),
+    stocking:     matches.some(m => m.data_raw?.postMatch?.canStocking),
+    shootMoving:  matches.some(m => m.data_raw?.postMatch?.shootMoving),
+    passing:      matches.some(m => m.data_raw?.postMatch?.canPass),
+    autoClimbLevel:       matches.some(m => !!m.data_raw?.auto?.climbLevel),
+    autoClimbOrientation: matches
+      .map(m => m.data_raw?.postMatch?.autoClimbOrientation)
+      .find(v => v != null) ?? null,
+    teleopClimbLevel: matches
+      .map(m => calculateSingleMatchStats(m)?.climb?.level)
+      .find(v => v != null) ?? null,
+    teleopClimbOrientation: matches
+      .map(m => m.data_raw?.postMatch?.teleopClimbOrientation)
+      .find(v => v != null) ?? null,
+  };
+
+  const boolItem = (pitVal: boolean, obsVal: boolean): VerificationItem => ({
+    pitClaimed: pitVal,
+    matchObserved: obsVal,
+    // Only flag discrepancy if pit said YES but match never showed it
+    // (pit said NO but match showed YES is also notable)
+    verified: pitVal === obsVal || (!pitVal && obsVal), // lenient: gives benefit of doubt if not observed
+  });
+
+  const strItem = (
+    pitVal: string | null,
+    obsVal: string | null
+  ): VerificationItem => ({
+    pitClaimed: pitVal,
+    matchObserved: obsVal,
+    verified: obsVal == null || pitVal === obsVal,
+  });
+
+  return {
+    movement: {
+      bump:   boolItem(pit.movement?.bump ?? false, observed.bump),
+      trough: boolItem(pit.movement?.trough ?? false, observed.trough),
+    },
+    intake: {
+      ground:   boolItem(pit.intake?.ground ?? false, observed.ground),
+      station:  boolItem(pit.intake?.station ?? false, observed.station),
+      stocking: boolItem(pit.intake?.stocking ?? false, observed.stocking),
+    },
+    fuel: {
+      shootMoving: boolItem(pit.fuel?.shootMoving ?? false, observed.shootMoving),
+      passing:     boolItem(pit.fuel?.passing ?? false, observed.passing),
+    },
+    autoClimb: {
+      level:       boolItem(pit.autoClimb?.level != null, observed.autoClimbLevel),
+      orientation: strItem(pit.autoClimb?.orientation ?? null, observed.autoClimbOrientation),
+    },
+    teleopClimb: {
+      level:       strItem(pit.teleopClimb?.level ?? null, observed.teleopClimbLevel),
+      orientation: strItem(pit.teleopClimb?.orientation ?? null, observed.teleopClimbOrientation),
+    },
+  };
+  };
+  const [verifications, setVerifications] = useState<Verifications | null>(null);
+
+  
+  useEffect(() => {
+    if (!currentEvent || !teamKey) return;
+
+    Promise.all([
+      getEventMatchData(currentEvent, undefined, teamKey),
+      getEventTeamData(currentEvent),
+    ]).then(([matchDataResult, teamDataResult]) => {
+      const validData = matchDataResult.filter((d) => !d.deleted_at && d.name);
+      setMatchData(validData);
+
+      
+      if (pitData && validData.length > 0) {
+        setVerifications(computeVerifications(pitData, matchData));
+      }
+    });
+  }, [currentEvent, teamKey]);
+
+  
+ 
+    
   const handleEditAuto = (index: number) => {
     setEditingAutoIndex(index);
     setDrawerOpen(true);
