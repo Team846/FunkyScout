@@ -247,9 +247,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
             
             Object.entries(intakeCounts).map(([type, count]) => (
               
-              <p key={type} className="text-sm text-foreground">
+              <p key={type} className="flex text-sm text-foreground">
 
-                {type}: <span className="font-bold text-primary">{(count/((intakeCounts['Ground'] + intakeCounts['Station']) == 0 ? 100 : intakeCounts['Ground'] + intakeCounts['Station'])).toFixed(0)}%</span>
+                {type.substring(0,1)}: <span className="font-bold text-primary">{(100 * count/((intakeCounts['Ground'] + intakeCounts['Station']) == 0 ? 100 : intakeCounts['Ground'] + intakeCounts['Station'])).toFixed(0)}%</span>
               </p>
             ))}
           </div>
@@ -371,7 +371,7 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
 
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col rounded-lg bg-background p-3">
-          <p className="text-s text-muted-foreground mb-1">Auto Actions: <span className="text-lg font-semibold text-primary">{autoScore}</span></p>
+          <p className="text-sm text-muted-foreground mb-1">Auto Actions: <span className="text-lg font-semibold text-primary">{autoScore}</span></p>
 
           
             
@@ -386,7 +386,7 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
         
         <div className="flex flex-col rounded-lg bg-background p-3">
 
-          <p className="text-s text-muted-foreground mb-1">
+          <p className="text-sm text-muted-foreground mb-1">
             Teleop Actions: <span className="text-lg font-semibold text-primary">{teleopScore}</span>
           </p>
           <p className="text-xs text-muted-foreground mb-1">Teleop Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
