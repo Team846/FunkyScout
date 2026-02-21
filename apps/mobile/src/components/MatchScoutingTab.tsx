@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
 import { getMatchLabel } from "@lib/utils/match";
-import { calculateSingleMatchStats } from "@lib/data/matchStats";
+import { calculateSingleMatchStats, calculateTeamStats, type TeamStats } from "@lib/data/matchStats";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
@@ -180,7 +180,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const selectedMatchData = matchData.filter((d) => d.match === selectedMatch);
 
 
-  
+  /* 
+  ts is already done in matchStats... js spent like 40 mins on it
+
   const allStats = matchData
   .map(d => calculateSingleMatchStats(d))
   .filter((s): s is NonNullable<typeof s> => s !== null);
@@ -201,7 +203,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
     return acc; 
   }, {} as Record<string, number>);
   
-
+  */
+  
+  const aggregateStats: TeamStats | null = calculateTeamStats(teamKey, matchData);
   
   return (
     <div className="flex flex-col gap-10 p-2.5">
@@ -227,34 +231,41 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         </div>
       )}
       
-
+      {aggregateStats && (<div className="rounded-2xl bg-muted px-5 py-4">
+        <p className="text-s font-semibold text-primary mb-3">CLIMB</p>
+        <div className="flex text-sm flex-col gap-3 rounded-lg ">
+          {<p >Auto Climb: <span className="font-bold text-primary">{(aggregateStats.climb.autoClimbPercentage).toFixed(0)}%</span></p>}
+          <div className="flex gap-3 justify-between items-center">
+            {<p>L1: <span className="font-bold text-primary">{(aggregateStats.climb.L1Percentage).toFixed(0)}%</span></p>}
+            {<p>L2: <span className="font-bold text-primary">{aggregateStats.climb.L2Percentage.toFixed(0)}%</span></p>}
+            {<p>L3: <span className="font-bold text-primary">{aggregateStats.climb.L3Percentage.toFixed(0)}%</span></p>}
+          </div>
+        </div>
+        
+        
+      </div>)}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl bg-muted p-4">
-          <p className="text-xs text-muted-foreground mb-2">Climb Frequency</p>
-          <div className="flex gap-3">
+        <div className="rounded-2xl bg-muted px-5 py-4">
+          <p className="text-s font-semibold text-primary mb-3">AUTO</p>
+          <div className="flex flex-col gap-3 gap-3">
             
-            {Object.entries(climbCounts).map(([level, count]) => (
-              <p key={level} className="text-sm text-foreground">
-                {level}: <span className="font-bold text-primary">{(100*count/(matchCount == 0 ? 100 : matchCount)).toFixed(0)}%</span>
-              </p>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-xl bg-muted p-4">
-          <p className="text-xs text-muted-foreground mb-2">Intake</p>
-          <div className="flex gap-3">
-            { 
             
-            Object.entries(intakeCounts).map(([type, count]) => (
+            <p className="text-xs">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.auto.shoots.toFixed(1)}</span></p>
+            <p className="text-xs">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.auto.groundIntakes + aggregateStats.averages.auto.stationIntakes).toFixed(1)}</span></p>
               
-              <p key={type} className="flex text-sm text-foreground">
-
-                {type.substring(0,1)}: <span className="font-bold text-primary">{(100 * count/((intakeCounts['Ground'] + intakeCounts['Station']) == 0 ? 100 : intakeCounts['Ground'] + intakeCounts['Station'])).toFixed(0)}%</span>
-              </p>
-            ))}
-          </div>
+            </div>
         </div>
+          <div className="rounded-2xl bg-muted px-5 py-4">
+          <p className="text-s font-semibold text-primary mb-3">TELEOP</p>
+          <div className="flex flex-col gap-3">
+              <p className="text-xs">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.shoots.toFixed(1)}</span></p>
+              <p className="text-xs">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.teleop.groundIntakes + aggregateStats.averages.teleop.stationIntakes).toFixed(1)}</span></p>
+            </div>
+          </div>
       </div>
+      
+      
+      
 
       {/* Match Selector */}
       <div className="space-y-2">

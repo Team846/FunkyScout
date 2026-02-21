@@ -218,7 +218,7 @@ function TeamInfoPage() {
     matchObserved: obsVal,
     // Only flag discrepancy if pit said YES but match never showed it
     // (pit said NO but match showed YES is also notable)
-    verified: pitVal === obsVal || (!pitVal && obsVal), // lenient: gives benefit of doubt if not observed
+    verified: pitVal === obsVal || (!pitVal && obsVal), 
   });
 
   const strItem = (
