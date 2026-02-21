@@ -470,7 +470,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
-                  Toggle theme (coming soon)
+                  Toggle {isDark ? "Light" : "Dark"}
                 </TooltipContent>
               </Tooltip>
 
