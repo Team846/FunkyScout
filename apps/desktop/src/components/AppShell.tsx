@@ -16,6 +16,7 @@ import {
   Ticket,
   Settings,
   RefreshCw,
+  Sun,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -34,8 +35,17 @@ import {
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Label } from "@shadcn/ui/components/label.tsx";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
-import { Popover, PopoverContent, PopoverTrigger } from "@shadcn/ui/components/popover.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@shadcn/ui/components/tooltip.tsx";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@shadcn/ui/components/popover.tsx";
 import { Switch } from "@shadcn/ui/components/switch.tsx";
 import { useTabContext } from "../contexts/TabContext";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
@@ -43,7 +53,11 @@ import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopSync } from "../contexts/DesktopSyncContext";
 import supabase from "@lib/supabase/supabase";
-import { getLocalUserData, changeName, useInviteCode } from "@lib/supabase/user";
+import {
+  getLocalUserData,
+  changeName,
+  useInviteCode,
+} from "@lib/supabase/user";
 
 interface EventListEntry {
   event: string;
@@ -64,7 +78,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const currentPath = routerState.location.pathname;
 
   const { tabs, activeTabId, closeTab, setActiveTab } = useTabContext();
-  const { currentEvent, setCurrentEvent, useTbaClimb, setUseTbaClimb } = useDesktopEvent();
+  const { currentEvent, setCurrentEvent, useTbaClimb, setUseTbaClimb } =
+    useDesktopEvent();
   const { teams, refresh: refreshTeams } = useDesktopTeamData();
   const { refresh: refreshCompetitionData } = useDesktopCompetitionData();
   const { forceSyncNow } = useDesktopSync();
@@ -90,6 +105,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
 
+  const [isDark, setIsDark] = useState(() => {
+    return localStorage.getItem("theme") !== "light";
+  });
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+    localStorage.setItem("theme", isDark ? "dark" : "light");
+  }, [isDark]);
 
   useEffect(() => {
     const userData = getLocalUserData();
@@ -178,8 +205,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     setBootstrapping(true);
     setBootstrapMsg(null);
     try {
-      const count = await invoke<number>("bootstrap_event_schedule", { event: bootstrapEventKey.trim() });
-      setBootstrapMsg(`Bootstrapped ${count} rows for ${bootstrapEventKey.trim()}`);
+      const count = await invoke<number>("bootstrap_event_schedule", {
+        event: bootstrapEventKey.trim(),
+      });
+      setBootstrapMsg(
+        `Bootstrapped ${count} rows for ${bootstrapEventKey.trim()}`,
+      );
       setBootstrapEventKey("");
       setShowBootstrapDialog(false);
       fetchEvents();
@@ -221,8 +252,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNameDialog(false)}>Cancel</Button>
-            <Button onClick={handleChangeName} disabled={savingName || !newName.trim()}>
+            <Button variant="outline" onClick={() => setShowNameDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleChangeName}
+              disabled={savingName || !newName.trim()}
+            >
               {savingName ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -230,14 +266,21 @@ export function AppShell({ children }: { children: ReactNode }) {
       </Dialog>
 
       {/* Bootstrap Event Dialog */}
-      <Dialog open={showBootstrapDialog} onOpenChange={(open) => { setShowBootstrapDialog(open); if (!open) setBootstrapMsg(null); }}>
+      <Dialog
+        open={showBootstrapDialog}
+        onOpenChange={(open) => {
+          setShowBootstrapDialog(open);
+          if (!open) setBootstrapMsg(null);
+        }}
+      >
         <DialogContent className="bg-muted border-border">
           <DialogHeader>
             <DialogTitle>Bootstrap Event</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 py-4">
             <p className="text-sm text-muted-foreground">
-              Seeds event teams and match schedule from TBA into Supabase. Run once when setting up a new event.
+              Seeds event teams and match schedule from TBA into Supabase. Run
+              once when setting up a new event.
             </p>
             <Label htmlFor="bootstrap-event-key">Event Key</Label>
             <Input
@@ -248,25 +291,34 @@ export function AppShell({ children }: { children: ReactNode }) {
               placeholder="e.g. 2026cada"
             />
             {bootstrapMsg && (
-              <p className={`text-sm ${bootstrapMsg.startsWith("Error") ? "text-destructive" : "text-chart-2"}`}>
+              <p
+                className={`text-sm ${bootstrapMsg.startsWith("Error") ? "text-destructive" : "text-chart-2"}`}
+              >
                 {bootstrapMsg}
               </p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBootstrapDialog(false)}>Cancel</Button>
-            <Button onClick={handleBootstrap} disabled={bootstrapping || !bootstrapEventKey.trim()}>
+            <Button
+              variant="outline"
+              onClick={() => setShowBootstrapDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBootstrap}
+              disabled={bootstrapping || !bootstrapEventKey.trim()}
+            >
               {bootstrapping ? "Bootstrapping..." : "Bootstrap"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-
       {/* Invite Code Dialog */}
       <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
         <DialogContent className="bg-muted border-border ">
-          <DialogHeader >
+          <DialogHeader>
             <DialogTitle>Apply Invite Code</DialogTitle>
           </DialogHeader>
           <div className="grid gap-2 py-4">
@@ -280,8 +332,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInviteDialog(false)}>Cancel</Button>
-            <Button onClick={handleApplyInvite} disabled={applyingInvite || !inviteCode.trim()}>
+            <Button
+              variant="outline"
+              onClick={() => setShowInviteDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplyInvite}
+              disabled={applyingInvite || !inviteCode.trim()}
+            >
               {applyingInvite ? "Applying..." : "Apply"}
             </Button>
           </DialogFooter>
@@ -293,7 +353,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <aside className="w-[60px] flex-shrink-0 bg-sidebar border-r border-border flex flex-col items-center py-3 gap-1">
           {/* Logo */}
           <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center mb-4 flex-shrink-0">
-            <span className="text-primary-foreground font-black text-sm">FS</span>
+            <span className="text-primary-foreground font-black text-sm">
+              FS
+            </span>
           </div>
 
           {/* Nav items */}
@@ -315,14 +377,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                         isActive
                           ? "bg-primary/15 text-primary"
                           : isDisabled
-                          ? "text-muted-foreground/30 cursor-not-allowed"
-                          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                            ? "text-muted-foreground/30 cursor-not-allowed"
+                            : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                       ].join(" ")}
                     >
                       <Icon className="w-5 h-5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="right" className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
+                  <TooltipContent
+                    side="right"
+                    className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted"
+                  >
                     {isDisabled ? `${label} (coming soon)` : label}
                   </TooltipContent>
                 </Tooltip>
@@ -382,18 +447,31 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
-                  {isSyncing ? "Syncing..." : teams.length > 0 ? "Synced — click to sync now" : "Not synced"}
+                  {isSyncing
+                    ? "Syncing..."
+                    : teams.length > 0
+                      ? "Synced — click to sync now"
+                      : "Not synced"}
                 </TooltipContent>
               </Tooltip>
 
               {/* Moon (placeholder) */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors">
-                    <Moon className="w-4 h-4" />
+                  <button
+                    onClick={() => setIsDark(!isDark)}
+                    className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors"
+                  >
+                    {isDark ? (
+                      <Moon className="w-4 h-4" />
+                    ) : (
+                      <Sun className="w-4 h-4" />
+                    )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">Toggle theme (coming soon)</TooltipContent>
+                <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
+                  Toggle theme (coming soon)
+                </TooltipContent>
               </Tooltip>
 
               {/* Settings popover */}
@@ -403,14 +481,22 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <Settings className="w-4 h-4" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 bg-muted border-border">
+                <PopoverContent
+                  align="end"
+                  className="w-72 bg-muted border-border"
+                >
                   <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-foreground">Data Settings</h4>
+                    <h4 className="text-sm font-semibold text-foreground">
+                      Data Settings
+                    </h4>
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">Use TBA Climb Data</p>
+                        <p className="text-sm font-medium text-foreground">
+                          Use TBA Climb Data
+                        </p>
                         <p className="text-xs text-muted-foreground">
-                          Override scouted climb levels with TBA's official results
+                          Override scouted climb levels with TBA's official
+                          results
                         </p>
                       </div>
                       <Switch
@@ -420,13 +506,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                     </div>
 
                     <div className="border-t border-border pt-3 space-y-2">
-                      <h4 className="text-sm font-semibold text-foreground">Event Management</h4>
+                      <h4 className="text-sm font-semibold text-foreground">
+                        Event Management
+                      </h4>
 
                       {/* Bootstrap */}
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground">Bootstrap Event</p>
-                          <p className="text-xs text-muted-foreground truncate">Seed teams + schedule from TBA for a new event</p>
+                          <p className="text-sm font-medium text-foreground">
+                            Bootstrap Event
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            Seed teams + schedule from TBA for a new event
+                          </p>
                         </div>
                         <Button
                           size="sm"
@@ -437,7 +529,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                           <RefreshCw className="w-3 h-3" />
                         </Button>
                       </div>
-
                     </div>
                   </div>
                 </PopoverContent>
@@ -449,29 +540,49 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-secondary text-sm text-foreground transition-colors">
                     <span className="max-w-[100px] truncate">{userName}</span>
                     {userRole && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                        userRole === "admin" ? "bg-primary/20 text-primary" :
-                        userRole === "scouter" ? "bg-chart-2/20 text-chart-2" :
-                        userRole === "no JWT" ? "bg-destructive/20 text-destructive" :
-                        "bg-secondary text-muted-foreground"
-                      }`}>
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                          userRole === "admin"
+                            ? "bg-primary/20 text-primary"
+                            : userRole === "scouter"
+                              ? "bg-chart-2/20 text-chart-2"
+                              : userRole === "no JWT"
+                                ? "bg-destructive/20 text-destructive"
+                                : "bg-secondary text-muted-foreground"
+                        }`}
+                      >
                         {userRole}
                       </span>
                     )}
                     <ChevronDown className="w-3 h-3 text-muted-foreground" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44 bg-muted border-border">
-                  <DropdownMenuItem onClick={() => { setNewName(userName); setShowNameDialog(true); }} className="text-muted-foreground hover:text-foreground">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-44 bg-muted border-border"
+                >
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setNewName(userName);
+                      setShowNameDialog(true);
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     <User className="w-4 h-4 mr-2" />
                     Change Name
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowInviteDialog(true)} className="text-muted-foreground hover:text-foreground">
+                  <DropdownMenuItem
+                    onClick={() => setShowInviteDialog(true)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     <Ticket className="w-4 h-4 mr-2" />
                     Apply Invite Code
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="text-destructive hover:text-destructive">
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="text-destructive hover:text-destructive"
+                  >
                     <LogOut className="w-4 h-4 mr-2" />
                     Sign Out
                   </DropdownMenuItem>
@@ -482,22 +593,38 @@ export function AppShell({ children }: { children: ReactNode }) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-1 px-2 py-1 rounded hover:bg-secondary text-sm text-foreground transition-colors border border-border">
-                    <span className="max-w-[160px] truncate">{currentEventAlias}</span>
+                    <span className="max-w-[160px] truncate">
+                      {currentEventAlias}
+                    </span>
                     <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64 max-h-72 overflow-y-auto bg-muted border-border">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-64 max-h-72 overflow-y-auto bg-muted border-border"
+                >
                   {events.map((event) => (
                     <DropdownMenuItem
                       key={event.event}
                       onClick={() => setCurrentEvent(event.event)}
-                      className={currentEvent === event.event ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}
+                      className={
+                        currentEvent === event.event
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      }
                     >
-                      <span className="truncate">{event.alias || event.event}</span>
+                      <span className="truncate">
+                        {event.alias || event.event}
+                      </span>
                     </DropdownMenuItem>
                   ))}
                   {events.length === 0 && (
-                    <DropdownMenuItem disabled className="text-muted-foreground">No events found</DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled
+                      className="text-muted-foreground"
+                    >
+                      No events found
+                    </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -505,9 +632,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </header>
 
           {/* Page content */}
-          <main className="flex-1 overflow-hidden">
-            {children}
-          </main>
+          <main className="flex-1 overflow-hidden">{children}</main>
         </div>
       </div>
     </TooltipProvider>

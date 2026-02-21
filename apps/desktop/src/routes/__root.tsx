@@ -1,4 +1,8 @@
-import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { Toaster } from "@shadcn/ui/components/sonner.tsx";
 import { useEffect } from "react";
@@ -14,7 +18,7 @@ const RootLayout = () => {
   const pathname = routerState.location.pathname;
 
   useEffect(() => {
-    document.documentElement.classList.add("dark");
+    // document.documentElement.classList.add("dark");
   }, []);
 
   // Forward the Supabase JWT to the Rust backend so auth_client() can
@@ -37,9 +41,13 @@ const RootLayout = () => {
     });
 
     // Keep JWT fresh on token refresh / re-login
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.access_token) {
-        invoke("set_user_jwt", { jwt: session.access_token }).catch(console.error);
+        invoke("set_user_jwt", { jwt: session.access_token }).catch(
+          console.error,
+        );
         console.log("[Auth] Sent refreshed JWT to Rust backend");
       }
     });

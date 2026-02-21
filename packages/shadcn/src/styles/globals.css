@@ -13,10 +13,11 @@
   --foreground: oklch(14.5% 0 0);
   --card: oklch(100% 0 0);
   --card-foreground: oklch(14.5% 0 0);
-  --popover: oklch(0 0 0);
+  --popover: oklch(100% 0 0);
+  --popover-foreground: oklch(14.5% 0 0);
+  --primary-foreground: oklch(14.5% 0 0);
   --popover-foreground: oklch(100% 0 0);
   --primary: oklch(79.5% 0.184 86.047);
-  --primary-foreground: oklch(98.5% 0 0);
   --secondary: oklch(97% 0 0);
   --secondary-foreground: oklch(20.5% 0 0);
   --muted: oklch(97% 0 0);
@@ -146,11 +147,12 @@
 }
 
 @keyframes flash-yellow {
-  0%, 100% {
+  0%,
+  100% {
     background-color: inherit;
   }
   50% {
-    background-color: #FDE047; /* yellow-300 */
+    background-color: #fde047; /* yellow-300 */
   }
 }
 
