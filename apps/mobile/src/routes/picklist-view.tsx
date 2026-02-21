@@ -10,7 +10,8 @@ import { getPicklistById } from "@lib/db";
 import { updatePicklist, deletePicklist } from "@lib/data/writes";
 import { canEditPicklist, canViewPicklist } from "@lib/utils/permissions";
 import { getLocalUserData } from "@lib/supabase/user";
-import type { EventPicklist, EventPicklistEntry } from "@lib/db";
+import type { EventPicklist } from "@lib/db";
+import type { PicklistEntry } from "@lib/data/schema";
 import { toast } from "sonner";
 import {
   DndContext,
@@ -51,7 +52,7 @@ function PicklistViewPage() {
   const { teams } = useTeamData();
   const { refresh: refreshCompetition } = useCompetition();
   const [picklist, setPicklist] = useState<EventPicklist | null>(null);
-  const [entries, setEntries] = useState<EventPicklistEntry[]>([]);
+  const [entries, setEntries] = useState<PicklistEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [excludedToBottom, setExcludedToBottom] = useState(false);
@@ -67,29 +68,23 @@ function PicklistViewPage() {
     })
   );
 
-  // Load picklist data (triggers context refresh, then reads from cache)
+  // Load picklist data from local cache only — background polling keeps it fresh
   const loadPicklistData = async () => {
     if (!currentEvent || !id) return;
 
-    // Only show full-screen loader on initial load, not on refreshes
     const isInitialLoad = initialLoading;
     if (isInitialLoad) {
       setLoading(true);
     }
 
     try {
-      console.log("[picklist-view] Triggering competition data refresh");
-
-      // Step 1: Trigger CompetitionDataContext to refresh cache from Supabase
-      await refreshCompetition();
-
-      // Step 2: Read from freshly updated cache
-      const { picklist, entries } = await getPicklistById(currentEvent, id);
-      console.log("[picklist-view] Loaded picklist from cache:", picklist);
-      setPicklist(picklist);
-      setEntries(entries);
-      setHasUnsavedChanges(false); // Clear unsaved changes on fresh load
-      setLastLoadedTimestamp(picklist?.last_modified || Date.now()); // Track when we loaded this
+      // Read directly from local cache — no Supabase call on open
+      const result = await getPicklistById(currentEvent, id);
+      console.log("[picklist-view] Loaded picklist from cache:", result);
+      setPicklist(result);
+      setEntries((result?.picklist as PicklistEntry[]) ?? []);
+      setHasUnsavedChanges(false);
+      setLastLoadedTimestamp(picklist?.last_modified || Date.now());
     } catch (error) {
       console.error("Failed to load picklist:", error);
       if (isInitialLoad) {
@@ -118,8 +113,7 @@ function PicklistViewPage() {
         }
 
         // Check cache (CompetitionDataContext polls Supabase every 2-4 min and updates cache)
-        const { picklist: cachedPicklist, entries: cachedEntries } =
-          await getPicklistById(currentEvent, id);
+        const cachedPicklist = await getPicklistById(currentEvent, id);
 
         const cachedTimestamp = cachedPicklist?.last_modified || 0;
         const timeDiff = cachedTimestamp - lastLoadedTimestamp;
@@ -128,7 +122,7 @@ function PicklistViewPage() {
         console.log("[picklist-view] 15s conflict check:", {
           cachedLastModified: cachedTimestamp,
           cachedTitle: cachedPicklist?.title,
-          cachedEntryCount: cachedEntries?.length || 0,
+          cachedEntryCount: (cachedPicklist?.picklist as PicklistEntry[])?.length || 0,
           localLastLoadedTimestamp: lastLoadedTimestamp,
           localTitle: picklist?.title,
           localEntryCount: entries.length,
@@ -224,12 +218,17 @@ function PicklistViewPage() {
 
   const isAdmin = userData.role === "admin";
 
+  useEffect(() => {
+    if (!canView && !initialLoading) {
+      navigate({ to: "/home" });
+    }
+  }, [canView, initialLoading, navigate]);
+
   if (!canView && !initialLoading) {
-    navigate({ to: "/home" });
     return null;
   }
 
-  const partitionExcluded = (list: EventPicklistEntry[]) => {
+  const partitionExcluded = (list: PicklistEntry[]) => {
     const included = list.filter((e) => !e.flags?.excluded);
     const excluded = list.filter((e) => e.flags?.excluded);
     return [...included, ...excluded];
@@ -670,7 +669,7 @@ function SortableTeamRow({
   canEdit,
   onNavigateToTeam,
 }: {
-  entry: EventPicklistEntry;
+  entry: PicklistEntry;
   teamName: string;
   teamRank?: number;
   onToggleExclude: (team: string) => void;
@@ -814,7 +813,7 @@ function TeamRow({
   teamRank,
   onNavigateToTeam,
 }: {
-  entry: EventPicklistEntry;
+  entry: PicklistEntry;
   teamName: string;
   teamRank?: number;
   onNavigateToTeam: (team: string) => void;

@@ -20,20 +20,18 @@ import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
 import type {
   EventPicklist as SupabaseEventPicklist,
-  EventPicklistEntry as SupabaseEventPicklistEntry,
 } from "../data/schema";
 import {
   getEventSchedule,
   getTbaMatches,
   cacheTbaMatches,
   cacheEventPicklists,
-  cacheEventPicklistEntries,
   type TbaMatch,
 } from "@lib/db";
 import {
   PollingController,
-  DEFAULT_POLLING_CONFIG,
   LIVE_POLLING_CONFIG,
+  BACKUP_API_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
 import supabase from "@lib/supabase/supabase";
 
@@ -288,13 +286,19 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       try {
         const data = await getPicklists(currentEvent);
 
-        if (data) {
-          console.log(`[CompetitionData] Received ${data.picklists.length} picklists from Supabase`);
+        if (data && data.picklists.length > 0) {
+          console.log(`[CompetitionData] Received ${data.picklists.length} picklists (isIncremental=${data.isIncremental})`);
 
-          // Convert Supabase schema (string timestamps) to local SQLite schema (number timestamps)
-          const localPicklists = data.picklists.map(
-            (p: SupabaseEventPicklist) => {
-              const converted = {
+          if (data.isIncremental) {
+            // Incremental sync: getPicklists already called upsertEventPicklistsRows internally
+            // with correctly-converted timestamps. Nothing more to do here — do NOT call
+            // cacheEventPicklists (DELETE-all + INSERT) with a partial list.
+            console.log("[CompetitionData] ✅ Incremental: cache already updated by getPicklists");
+          } else {
+            // Full load: replace all local picklists with the complete Supabase result.
+            // Convert Supabase ISO timestamps → epoch ms for WASM SQLite INTEGER columns.
+            const localPicklists = data.picklists.map(
+              (p: SupabaseEventPicklist) => ({
                 ...p,
                 timestamp: p.timestamp
                   ? new Date(p.timestamp).getTime()
@@ -305,33 +309,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
                 deleted_at: p.deleted_at
                   ? new Date(p.deleted_at).getTime()
                   : undefined,
-              };
-              console.log(`[CompetitionData] Picklist ${p.id} (${p.title}): Supabase last_modified=${p.last_modified} → local=${converted.last_modified}`);
-              return converted;
-            }
-          );
-
-          const localEntries = data.entries.map(
-            (e: SupabaseEventPicklistEntry) => ({
-              ...e,
-              last_modified: e.last_modified
-                ? new Date(e.last_modified).getTime()
-                : undefined,
-              deleted_at: e.deleted_at
-                ? new Date(e.deleted_at).getTime()
-                : undefined,
-            })
-          );
-
-          // Cache picklists to local SQLite (always cache, even if empty - handles deletions)
-          await cacheEventPicklists(currentEvent, localPicklists);
-
-          // Cache picklist entries to local SQLite (always cache, even if empty - handles deletions)
-          await cacheEventPicklistEntries(currentEvent, localEntries);
-
-          console.log(
-            `[CompetitionData] ✅ Cached ${data.picklists.length} picklists with ${data.entries.length} entries`
-          );
+              })
+            );
+            await cacheEventPicklists(currentEvent, localPicklists);
+            console.log(
+              `[CompetitionData] ✅ Full load: cached ${localPicklists.length} picklists`
+            );
+          }
         }
       } catch (error) {
         console.error("[CompetitionData] Failed to fetch picklists:", error);
@@ -395,7 +379,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       nexusPolling.current = new PollingController(
         "Nexus",
         fetchNexusStable,
-        LIVE_POLLING_CONFIG // 2min dev, 4min prod polling for live match data
+        BACKUP_API_POLLING_CONFIG // 2min — no rate limits, more realtime than Supabase polls
       );
       nexusPolling.current.start();
     }

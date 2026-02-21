@@ -1,13 +1,9 @@
 /**
  * DesktopSyncContext - Manages refresh triggers for desktop app
  *
- * Desktop doesn't need a write queue (backend writes directly to Supabase)
- * But we DO need to trigger data context refreshes on:
- * - Event switching
- * - Route changes (page navigation)
- * - Online/offline transitions
- *
- * Data contexts register their refresh functions here
+ * Provides a callback registry for data refresh functions.
+ * Used by AppShell's manual sync button to re-read SQLite after a Rust sync.
+ * Data contexts (TeamData, CompetitionData) have their own 120s polling loops.
  */
 
 import {
@@ -31,10 +27,8 @@ const DesktopSyncContext = createContext<DesktopSyncContextType | undefined>(
 
 export function DesktopSyncProvider({
   children,
-  router,
 }: {
   children: ReactNode;
-  router: any; // Router instance from createRouter
 }) {
   const { currentEvent } = useDesktopEvent();
   const prevEventRef = useRef<string | null>(null);
@@ -85,22 +79,10 @@ export function DesktopSyncProvider({
   }, [currentEvent, forceSyncNow]);
 
   /**
-   * Trigger 2: Route changes (page navigation)
-   * Refresh data when navigating between pages
-   */
-  useEffect(() => {
-    const unsubscribe = router.subscribe(
-      "onBeforeLoad",
-      () => {
-        forceSyncNow();
-      }
-    );
-
-    return unsubscribe;
-  }, [router, forceSyncNow]);
-
-  /**
-   * Note: Desktop is always online (native app), so no online/offline trigger needed
+   * Note: Desktop is always online (native app), so no online/offline trigger needed.
+   * Route changes do NOT trigger a sync — data contexts have their own periodic
+   * polls (120s Rust sync + post-sync SQLite re-reads). Syncing on every page
+   * navigation would cause unnecessary Supabase egress.
    */
 
   return (

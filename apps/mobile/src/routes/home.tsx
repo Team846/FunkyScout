@@ -20,6 +20,7 @@ import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { useAnalytics } from "@lib/context/AnalyticsDataContext";
+import { useSync } from "@lib/context/SyncContext";
 import { DashboardPage } from "../pages/home/DashboardPage";
 import { ShiftsPage } from "../pages/home/ShiftsPage";
 import { DataPage } from "../pages/home/DataPage";
@@ -56,10 +57,7 @@ function HomePage() {
     navigate({ to: "/home", search: { tab: page }, replace: true });
   };
 
-  // Context refresh functions
-  const { refresh: refreshTeams } = useTeamData();
-  const { refresh: refreshCompetition } = useCompetition();
-  const { refresh: refreshAnalytics } = useAnalytics();
+  const { forceSyncNow, lastSyncedAt } = useSync();
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -132,16 +130,21 @@ function HomePage() {
     }
   };
 
+  const REFRESH_THROTTLE_MS = 10 * 60 * 1000; // 10 minutes
+
   const handleRefresh = async () => {
     if (refreshing) return;
 
+    const timeSinceLast = lastSyncedAt ? Date.now() - lastSyncedAt : Infinity;
+    if (timeSinceLast < REFRESH_THROTTLE_MS) {
+      const minsAgo = Math.floor(timeSinceLast / 60_000);
+      toast.info(`Data is up to date (synced ${minsAgo}m ago)`);
+      return;
+    }
+
     setRefreshing(true);
     try {
-      await Promise.all([
-        refreshTeams(),
-        refreshCompetition(),
-        refreshAnalytics(),
-      ]);
+      await forceSyncNow();
       toast.success("Data refreshed successfully!");
     } catch (error) {
       console.error("Refresh failed:", error);

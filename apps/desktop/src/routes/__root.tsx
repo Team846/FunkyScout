@@ -22,10 +22,16 @@ const RootLayout = () => {
   useEffect(() => {
     if (!isTauri()) return;
 
-    // Send existing session JWT immediately on mount
+    // Send existing session JWT immediately on mount, then trigger a sync.
+    // trigger_sync_now MUST come after set_user_jwt resolves — the Rust sync
+    // uses the JWT for all Supabase API calls, and child component effects
+    // (DesktopCompetitionDataContext) fire trigger_sync_now before this
+    // parent effect runs (React: children effects before parent effects).
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.access_token) {
-        invoke("set_user_jwt", { jwt: session.access_token }).catch(console.error);
+        invoke("set_user_jwt", { jwt: session.access_token })
+          .then(() => invoke("trigger_sync_now"))
+          .catch(console.error);
         console.log("[Auth] Sent JWT to Rust backend on mount");
       }
     });

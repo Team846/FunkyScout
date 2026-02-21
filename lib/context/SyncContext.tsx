@@ -26,6 +26,7 @@ interface SyncContextType {
   syncManager: SyncManager | null;
   forceSyncNow: () => Promise<void>;
   isSyncing: boolean;
+  lastSyncedAt: number | null; // epoch ms of last successful full sync
   registerRefreshCallback: (callback: () => void) => () => void;
 }
 
@@ -41,6 +42,7 @@ export function SyncProvider({
   const { currentEvent, isOnline, dbInitialized } = useEvent();
   const syncManagerRef = useRef<SyncManager | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const prevEventRef = useRef<string | null>(null);
   const prevOnlineRef = useRef<boolean>(isOnline);
 
@@ -92,6 +94,7 @@ export function SyncProvider({
       console.log(
         `[SyncContext] Triggered ${refreshCallbacks.current.size} refresh callbacks`,
       );
+      setLastSyncedAt(Date.now());
     } catch (error) {
       console.error("[SyncContext] Sync failed:", error);
       throw error;
@@ -147,17 +150,19 @@ export function SyncProvider({
     prevOnlineRef.current = isOnline;
   }, [isOnline, dbInitialized, forceSyncNow]);
 
-  // Trigger 3: Route changes
+  // Trigger 3: Route changes — push-only (flush pending writes, no data refresh)
+  // Data contexts have their own 5min polling timers; refreshing on every navigation
+  // would cause 4 Supabase reads + 2 external API calls per page change.
   useEffect(() => {
     if (!syncManagerRef.current) return;
 
     const unsubscribe = router.subscribe("onBeforeLoad", ({ toLocation }: any) => {
       console.log(
-        `[SyncContext] Route changing to ${toLocation.pathname}, triggering sync`,
+        `[SyncContext] Route changing to ${toLocation.pathname}, flushing writes`,
       );
-      // Note: This is fire-and-forget - we don't block navigation
-      forceSyncNow().catch((error) => {
-        console.error("[SyncContext] Route change sync failed:", error);
+      // Push-only: drain the local write queue without triggering data context refreshes
+      syncManagerRef.current?.forceSyncNow().catch((error) => {
+        console.error("[SyncContext] Route change push failed:", error);
       });
     });
 
@@ -166,7 +171,7 @@ export function SyncProvider({
         unsubscribe();
       }
     };
-  }, [router, forceSyncNow]);
+  }, [router]);
 
   // Trigger 4: Auth changes (login/logout)
   useEffect(() => {
@@ -230,6 +235,7 @@ export function SyncProvider({
         syncManager: syncManagerRef.current,
         forceSyncNow,
         isSyncing,
+        lastSyncedAt,
         registerRefreshCallback,
       }}
     >

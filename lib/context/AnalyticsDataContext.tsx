@@ -25,7 +25,7 @@ import {
 } from "@lib/db";
 import {
   PollingController,
-  DEFAULT_POLLING_CONFIG,
+  LIVE_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
 
 interface AnalyticsDataContextType {
@@ -155,7 +155,7 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
       pollingController.current = new PollingController(
         "Analytics",
         fetchAnalyticsStable,
-        DEFAULT_POLLING_CONFIG,
+        LIVE_POLLING_CONFIG, // 5min — Statbotics EPA/match predictions change slowly
       );
       pollingController.current.start();
     }

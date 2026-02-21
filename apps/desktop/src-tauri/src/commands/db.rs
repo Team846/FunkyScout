@@ -36,7 +36,7 @@ pub struct ScheduleEntry {
     pub last_modified: i64,
 }
 
-/// Picklist from SQLite cache
+/// Picklist from SQLite cache (entries embedded as JSON array in `picklist` field)
 #[derive(Debug, serde::Serialize)]
 pub struct Picklist {
     pub event: String,
@@ -46,19 +46,8 @@ pub struct Picklist {
     pub uid: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
+    pub picklist: serde_json::Value,  // JSON array of embedded entries
     pub timestamp: i64,
-    pub last_modified: i64,
-}
-
-/// Picklist entry from SQLite cache
-#[derive(Debug, serde::Serialize)]
-pub struct PicklistEntry {
-    pub event: String,
-    pub id: String,
-    pub team: String,
-    pub rank: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flags: Option<serde_json::Value>,
     pub last_modified: i64,
 }
 
@@ -167,7 +156,7 @@ pub async fn get_picklists(
     }; // MutexGuard dropped here
 
     let rows = sqlx::query(
-        "SELECT event, id, title, uname, uid, type, timestamp, last_modified
+        "SELECT event, id, title, picklist, uname, uid, type, timestamp, last_modified
          FROM event_picklist
          WHERE event = ? AND deleted_at IS NULL
          ORDER BY timestamp DESC"
@@ -179,61 +168,20 @@ pub async fn get_picklists(
 
     Ok(rows
         .into_iter()
-        .map(|row| Picklist {
-            event: row.try_get("event").unwrap_or_default(),
-            id: row.try_get("id").unwrap_or_default(),
-            title: row.try_get("title").unwrap_or_default(),
-            r#type: row.try_get("type").ok(),
-            uname: row.try_get("uname").unwrap_or_default(),
-            uid: row.try_get("uid").unwrap_or_default(),
-            timestamp: row.try_get("timestamp").unwrap_or(0),
-            last_modified: row.try_get("last_modified").unwrap_or(0),
-        })
-        .collect())
-}
-
-#[tauri::command]
-pub async fn get_picklist_entries(
-    state: State<'_, Mutex<AppState>>,
-    event: String,
-) -> Result<Vec<PicklistEntry>, String> {
-    let pool = {
-        let app_state = state.lock().unwrap();
-        app_state
-            .database
-            .as_ref()
-            .ok_or("Database not initialized")?
-            .get_sqlx_pool()
-            .clone()
-    }; // MutexGuard dropped here
-
-    let rows = sqlx::query(
-        "SELECT event, id, team, rank, flags, last_modified
-         FROM event_picklist_entries
-         WHERE event = ? AND deleted_at IS NULL
-         ORDER BY rank"
-    )
-    .bind(&event)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| format!("Failed to query picklist entries: {}", e))?;
-
-    Ok(rows
-        .into_iter()
         .map(|row| {
-            // Parse flags from JSON TEXT to serde_json::Value
-            let flags: Option<serde_json::Value> = row
-                .try_get::<Option<String>, _>("flags")
-                .ok()
-                .flatten()
-                .and_then(|s| serde_json::from_str(&s).ok());
-
-            PicklistEntry {
+            let picklist_str: Option<String> = row.try_get("picklist").ok();
+            let picklist = picklist_str
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::json!([]));
+            Picklist {
                 event: row.try_get("event").unwrap_or_default(),
                 id: row.try_get("id").unwrap_or_default(),
-                team: row.try_get("team").unwrap_or_default(),
-                rank: row.try_get("rank").unwrap_or(0),
-                flags,
+                title: row.try_get("title").unwrap_or_default(),
+                r#type: row.try_get("type").ok(),
+                picklist,
+                uname: row.try_get("uname").unwrap_or_default(),
+                uid: row.try_get("uid").unwrap_or_default(),
+                timestamp: row.try_get("timestamp").unwrap_or(0),
                 last_modified: row.try_get("last_modified").unwrap_or(0),
             }
         })
@@ -368,26 +316,32 @@ pub async fn cache_picklists(
         let uname = record.get("uname").and_then(|v| v.as_str()).unwrap_or("");
         let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
         let picklist_type = record.get("type").and_then(|v| v.as_str()).unwrap_or("public");
+        // Serialize embedded entries array to TEXT for SQLite storage
+        let picklist_json = record.get("picklist")
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "[]".to_string());
         let timestamp = record.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
 
         sqlx::query(
-            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified, deleted_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO event_picklist (id, event, title, picklist, uname, uid, type, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                event = excluded.event,
                title = excluded.title,
-               uname = excluded.uname,
-               uid = excluded.uid,
+               picklist = excluded.picklist,
+               uname = CASE WHEN excluded.uname != '' THEN excluded.uname ELSE event_picklist.uname END,
+               uid = CASE WHEN excluded.uid != '' THEN excluded.uid ELSE event_picklist.uid END,
                type = excluded.type,
-               timestamp = excluded.timestamp,
+               timestamp = CASE WHEN excluded.timestamp != 0 THEN excluded.timestamp ELSE event_picklist.timestamp END,
                last_modified = excluded.last_modified,
                deleted_at = excluded.deleted_at"
         )
         .bind(id)
         .bind(event)
         .bind(title)
+        .bind(&picklist_json)
         .bind(uname)
         .bind(uid)
         .bind(picklist_type)
@@ -397,110 +351,6 @@ pub async fn cache_picklists(
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to cache picklist {}: {}", id, e))?;
-    }
-
-    Ok(())
-}
-
-/// Cache picklist entries to SQLite (called by frontend after Supabase fetch)
-#[tauri::command]
-pub async fn cache_picklist_entries(
-    state: State<'_, Mutex<AppState>>,
-    entries: Vec<serde_json::Value>,
-) -> Result<(), String> {
-    let pool = {
-        let app_state = state.lock().unwrap();
-        app_state
-            .database
-            .as_ref()
-            .ok_or("Database not initialized")?
-            .get_sqlx_pool()
-            .clone()
-    };
-
-    // CRITICAL: Ensure all events exist in event_list first (for foreign key constraint)
-    // Extract unique events from entries
-    let mut events: Vec<String> = entries
-        .iter()
-        .filter_map(|e| e.get("event").and_then(|v| v.as_str()).map(|s| s.to_string()))
-        .collect();
-    events.sort();
-    events.dedup();
-
-    for event in events {
-        sqlx::query(
-            "INSERT INTO event_list (event, alias, date, last_modified)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
-        )
-        .bind(&event)
-        .bind(&event)
-        .bind("")
-        .bind(chrono::Utc::now().timestamp_millis())
-        .execute(&pool)
-        .await
-        .map_err(|e| format!("Failed to ensure event {} exists: {}", event, e))?;
-    }
-
-    // CRITICAL: Ensure all parent picklists exist (for foreign key constraint)
-    // Extract unique picklist IDs from entries
-    let mut picklist_ids: Vec<(String, String)> = entries
-        .iter()
-        .filter_map(|e| {
-            let id = e.get("id").and_then(|v| v.as_str())?;
-            let event = e.get("event").and_then(|v| v.as_str())?;
-            Some((id.to_string(), event.to_string()))
-        })
-        .collect();
-    picklist_ids.sort();
-    picklist_ids.dedup();
-
-    for (id, event) in picklist_ids {
-        // Create stub picklist if it doesn't exist
-        // This will be updated when cache_picklists is called with full data
-        sqlx::query(
-            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO NOTHING"
-        )
-        .bind(&id)
-        .bind(&event)
-        .bind("Loading...") // Placeholder title
-        .bind("") // Placeholder uname
-        .bind("") // Placeholder uid
-        .bind("public") // Default type
-        .bind(chrono::Utc::now().timestamp_millis())
-        .bind(chrono::Utc::now().timestamp_millis())
-        .execute(&pool)
-        .await
-        .map_err(|e| format!("Failed to ensure picklist {} exists: {}", id, e))?;
-    }
-
-    for record in entries {
-        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
-        let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
-        let rank = record.get("rank").and_then(|v| v.as_i64()).unwrap_or(0);
-        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
-
-        sqlx::query(
-            "INSERT INTO event_picklist_entries (event, id, team, rank, last_modified, deleted_at)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(event, id, team) DO UPDATE SET
-               rank = excluded.rank,
-               last_modified = excluded.last_modified,
-               deleted_at = excluded.deleted_at"
-        )
-        .bind(event)
-        .bind(id)
-        .bind(team)
-        .bind(rank)
-        .bind(last_modified)
-        .bind(deleted_at)
-        .execute(&pool)
-        .await
-        .map_err(|e| format!("Failed to cache picklist entry: {}", e))?;
     }
 
     Ok(())

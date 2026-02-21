@@ -83,8 +83,9 @@ pub fn run() {
                     (tba, sb_url, sb_key, evt, pool)
                 };
 
-                // Clone the JWT Arc before state moves into the Mutex
+                // Clone Arcs before state moves into the Mutex
                 let jwt_arc = Arc::clone(&state.user_jwt_shared);
+                let event_arc = Arc::clone(&state.current_event_shared);
 
                 let app_state = Mutex::new(state);
                 handle.manage(app_state);
@@ -103,6 +104,7 @@ pub fn run() {
                         supabase_service,
                         statbotics_service,
                         event_key,
+                        event_arc,
                         sqlx_pool,
                     );
 
@@ -132,11 +134,9 @@ pub fn run() {
             commands::db::get_teams,
             commands::db::get_schedule,
             commands::db::get_picklists,
-            commands::db::get_picklist_entries,
             commands::db::get_user_profiles,
             commands::db::cache_schedule,
             commands::db::cache_picklists,
-            commands::db::cache_picklist_entries,
             commands::db::cache_user_profiles,
             commands::db::get_pit_scouting_data,
             commands::db::cache_pit_scouting_data,
@@ -163,6 +163,8 @@ pub struct AppState {
     pub sync_trigger: Option<tokio::sync::mpsc::Sender<()>>,
     /// Shared with SupabaseService — updated when user logs in via set_user_jwt command
     pub user_jwt_shared: Arc<RwLock<Option<String>>>,
+    /// Shared with SyncService — updated by save_config when user changes events
+    pub current_event_shared: Arc<RwLock<String>>,
 }
 
 impl AppState {
@@ -176,6 +178,14 @@ impl AppState {
 
         // JWT Arc shared between AppState (written by set_user_jwt command) and SupabaseService (read on every write)
         let user_jwt_shared: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+
+        // Current event Arc shared between AppState (written by save_config) and SyncService (read per sync cycle)
+        let initial_event = if config.event_key.is_empty() {
+            get_env("EVENT_KEY").unwrap_or_default()
+        } else {
+            config.event_key.clone()
+        };
+        let current_event_shared: Arc<RwLock<String>> = Arc::new(RwLock::new(initial_event));
 
         // Resolve TBA key: store value first, then env var fallback (same as sync service setup)
         let tba_key = if !config.tba_key.is_empty() {
@@ -217,6 +227,7 @@ impl AppState {
             supabase_service,
             sync_trigger: None, // Set later when channel is created
             user_jwt_shared,
+            current_event_shared,
         })
     }
 

@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import type { DragEndEvent } from "@dnd-kit/core";
-import type { EventPicklistEntry } from "@lib/db";
+import type { PicklistEntry as EventPicklistEntry } from "@lib/data/schema";
 import { updatePicklist } from "@lib/data/writes";
 
 export interface PicklistEditorState {
@@ -189,29 +189,52 @@ export function usePicklistEditor(
   /**
    * Handle drag-and-drop reordering
    * DEBOUNCED: Marks as dirty, doesn't save immediately (call saveChanges() to persist)
+   *
+   * When excludedToBottom=true, dragging only reorders within the same section
+   * (included-only or excluded-only). Ranks of the other section are NOT affected.
    */
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const displayEntries = excludedToBottom ? partitionExcluded(entries) : entries;
-    const oldIndex = displayEntries.findIndex((e) => e.team === active.id);
-    const newIndex = displayEntries.findIndex((e) => e.team === over.id);
-
-    let reordered = arrayMove(displayEntries, oldIndex, newIndex).map((e, idx) => ({
-      ...e,
-      rank: idx + 1,
-    }));
-
-    // If partitioning, re-partition and update ranks
     if (excludedToBottom) {
-      reordered = partitionExcluded(reordered).map((e, idx) => ({
+      const included = entries.filter((e) => !e.flags?.excluded);
+      const excluded = entries.filter((e) => e.flags?.excluded);
+
+      const activeInIncluded = included.some((e) => e.team === active.id);
+      const overInIncluded = included.some((e) => e.team === over.id);
+
+      if (activeInIncluded && overInIncluded) {
+        // Drag within included section only — excluded ranks are NOT touched
+        const oldIndex = included.findIndex((e) => e.team === active.id);
+        const newIndex = included.findIndex((e) => e.team === over.id);
+        const reorderedIncluded = arrayMove(included, oldIndex, newIndex).map((e, idx) => ({
+          ...e,
+          rank: idx + 1,
+        }));
+        // excluded keeps original ranks — excludedToBottom is UI-only
+        setEntries([...reorderedIncluded, ...excluded]);
+      } else if (!activeInIncluded && !overInIncluded) {
+        // Drag within excluded section only
+        const oldIndex = excluded.findIndex((e) => e.team === active.id);
+        const newIndex = excluded.findIndex((e) => e.team === over.id);
+        const reorderedExcluded = arrayMove(excluded, oldIndex, newIndex).map((e, idx) => ({
+          ...e,
+          rank: included.length + idx + 1,
+        }));
+        setEntries([...included, ...reorderedExcluded]);
+      }
+      // Cross-section drag: ignore (can't drop included into excluded section or vice versa)
+    } else {
+      const oldIndex = entries.findIndex((e) => e.team === active.id);
+      const newIndex = entries.findIndex((e) => e.team === over.id);
+      const reordered = arrayMove(entries, oldIndex, newIndex).map((e, idx) => ({
         ...e,
         rank: idx + 1,
       }));
+      setEntries(reordered);
     }
 
-    setEntries(reordered);
     // DON'T update originalEntries - this marks hasChanges = true
     console.log("[usePicklistEditor] Reordered (unsaved)");
   };
@@ -223,19 +246,12 @@ export function usePicklistEditor(
   const toggleExclude = async (teamKey: string) => {
     const beforeExcluded = entries.find(e => e.team === teamKey)?.flags?.excluded;
 
-    let updated = entries.map((e) =>
+    // Only toggle the flag — excludedToBottom is UI-only, ranks are preserved
+    const updated = entries.map((e) =>
       e.team === teamKey
         ? { ...e, flags: { ...e.flags, excluded: !e.flags?.excluded } }
         : e
     );
-
-    // If partitioning excluded to bottom, re-partition and update ranks
-    if (excludedToBottom) {
-      updated = partitionExcluded(updated).map((e, idx) => ({
-        ...e,
-        rank: idx + 1,
-      }));
-    }
 
     console.log("[usePicklistEditor] Toggling exclude:", {
       team: teamKey,

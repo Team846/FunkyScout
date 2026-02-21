@@ -397,7 +397,7 @@ export class SyncManager {
     const { error } = await this.supabaseClient
       .from("event_match_data")
       .update({
-        deleted_at: Date.now(),
+        deleted_at: new Date().toISOString(),
       })
       .eq("event", event)
       .eq("match", match)
@@ -421,7 +421,7 @@ export class SyncManager {
       .update({
         uid,
         name,
-        last_modified: Date.now(),
+        last_modified: new Date().toISOString(),
       })
       .eq("event", event)
       .eq("team", team);
@@ -439,14 +439,14 @@ export class SyncManager {
   ): Promise<void> {
     const { id, event, title, entries, uid, uname, type, timestamp } = payload;
 
-    // Insert picklist header
+    // Insert picklist with embedded entries in picklist JSONB column
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .upsert({
         id,
         event,
         title,
-        picklist: [], // deprecated field - send empty array
+        picklist: entries, // entries embedded in JSONB column
         uname,
         uid,
         type,
@@ -457,27 +457,6 @@ export class SyncManager {
     if (picklistError) {
       console.error("[SyncManager] Picklist creation error:", picklistError);
       throw picklistError;
-    }
-
-    // Insert picklist entries
-    if (entries.length > 0) {
-      const { error: entriesError } = await this.supabaseClient
-        .from("event_picklist_entries")
-        .upsert(
-          entries.map((entry) => ({
-            event,
-            id,
-            team: entry.team,
-            rank: entry.rank,
-            flags: entry.flags,
-            last_modified: new Date().toISOString(),
-          }))
-        );
-
-      if (entriesError) {
-        console.error("[SyncManager] Picklist entries error:", entriesError);
-        throw entriesError;
-      }
     }
   }
 
@@ -493,53 +472,19 @@ export class SyncManager {
 
     console.log(`[SyncManager] Updating picklist ${id} in Supabase with timestamp:`, now);
 
-    // Update picklist header
-    const { error: picklistError, data: headerData } = await this.supabaseClient
+    // Update picklist with embedded entries in picklist JSONB column
+    const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
         title,
+        picklist: entries, // entries embedded in JSONB column
         ...(type ? { type } : {}),
         last_modified: now,
       })
-      .eq("id", id)
-      .select();
+      .eq("id", id);
 
     if (picklistError) {
       throw picklistError;
-    }
-
-    console.log(`[SyncManager] Picklist header updated:`, headerData);
-
-    // Delete existing entries
-    const { error: deleteError } = await this.supabaseClient
-      .from("event_picklist_entries")
-      .delete()
-      .eq("id", id);
-
-    if (deleteError) {
-      throw deleteError;
-    }
-
-    // Insert new entries
-    if (entries.length > 0) {
-      const { error: entriesError } = await this.supabaseClient
-        .from("event_picklist_entries")
-        .upsert(
-          entries.map((entry) => ({
-            event,
-            id,
-            team: entry.team,
-            rank: entry.rank,
-            flags: entry.flags,
-            last_modified: now,
-          }))
-        );
-
-      if (entriesError) {
-        throw entriesError;
-      }
-
-      console.log(`[SyncManager] Upserted ${entries.length} picklist entries`);
     }
   }
 
@@ -551,7 +496,7 @@ export class SyncManager {
   ): Promise<void> {
     const { id } = payload;
 
-    // Soft delete picklist
+    // Soft delete picklist (entries are embedded — no separate entries operation needed)
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
@@ -561,18 +506,6 @@ export class SyncManager {
 
     if (picklistError) {
       throw picklistError;
-    }
-
-    // Soft delete entries
-    const { error: entriesError } = await this.supabaseClient
-      .from("event_picklist_entries")
-      .update({
-        deleted_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (entriesError) {
-      throw entriesError;
     }
   }
 }

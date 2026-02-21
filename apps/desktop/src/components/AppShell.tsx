@@ -40,6 +40,7 @@ import { Switch } from "@shadcn/ui/components/switch.tsx";
 import { useTabContext } from "../contexts/TabContext";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
+import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopSync } from "../contexts/DesktopSyncContext";
 import supabase from "@lib/supabase/supabase";
 import { getLocalUserData, changeName, useInviteCode } from "@lib/supabase/user";
@@ -64,7 +65,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const { tabs, activeTabId, closeTab, setActiveTab } = useTabContext();
   const { currentEvent, setCurrentEvent, useTbaClimb, setUseTbaClimb } = useDesktopEvent();
-  const { teams } = useDesktopTeamData();
+  const { teams, refresh: refreshTeams } = useDesktopTeamData();
+  const { refresh: refreshCompetitionData } = useDesktopCompetitionData();
   const { forceSyncNow } = useDesktopSync();
 
   const [events, setEvents] = useState<EventListEntry[]>([]);
@@ -117,9 +119,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const handleSync = async () => {
+    if (isSyncing) return;
     setIsSyncing(true);
-    forceSyncNow();
-    setTimeout(() => setIsSyncing(false), 2000);
+    try {
+      // 1. Kick the Rust sync to pull fresh data from Supabase into SQLite
+      await invoke("trigger_sync_now");
+      // 2. Re-read SQLite after Rust has had time to write (~5s)
+      setTimeout(() => {
+        forceSyncNow(); // calls any registered DesktopSyncContext callbacks
+        refreshTeams(); // re-reads event_team_data from SQLite
+        refreshCompetitionData(); // re-reads schedule, picklists from SQLite
+        setIsSyncing(false);
+      }, 5000);
+    } catch (e) {
+      console.warn("[AppShell] trigger_sync_now failed:", e);
+      refreshTeams();
+      refreshCompetitionData();
+      setIsSyncing(false);
+    }
   };
 
   const handleLogout = async () => {

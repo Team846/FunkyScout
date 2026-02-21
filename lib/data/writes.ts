@@ -18,17 +18,16 @@ import {
   cacheEventTeamData,
   cacheEventMatchData,
   cacheEventSchedule,
-  cacheEventPicklists,
-  cacheEventPicklistEntries,
+  insertPicklistToCache,
+  updatePicklistCache,
+  softDeletePicklistCache,
   getEventSchedule,
   getEventMatchData,
-  getEventPicklistEntries,
   getTbaTeams,
   type EventTeamData,
   type EventMatchData,
   type EventScheduleEntry,
   type EventPicklist,
-  type EventPicklistEntry,
 } from "@lib/db";
 import { addToImageQueue } from "@lib/storage/imageQueue";
 import { compressImage } from "@lib/utils/imageCompression";
@@ -471,7 +470,7 @@ export async function createPicklist(
         id,
         event: eventKey,
         title,
-        picklist: null,
+        picklist: entries,
         uname,
         uid,
         type,
@@ -479,18 +478,8 @@ export async function createPicklist(
         last_modified: now,
       };
 
-      const picklistEntries = entries.map((e) => ({
-        event: eventKey,
-        id,
-        team: e.team,
-        rank: e.rank,
-        flags: e.flags,
-        last_modified: now,
-      }));
-
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
-      await invoke("cache_picklist_entries", { entries: picklistEntries });
 
       // Get user JWT for proper authentication
       const user_jwt = await getUserJWT();
@@ -530,7 +519,7 @@ export async function createPicklist(
     id,
     event: eventKey,
     title,
-    picklist: null, // deprecated field
+    picklist: entries,
     uname,
     uid,
     type,
@@ -539,19 +528,9 @@ export async function createPicklist(
     deleted_at: undefined,
   };
 
-  await cacheEventPicklists(eventKey, [picklist]);
-
-  const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
-    event: eventKey,
-    id,
-    team: e.team,
-    rank: e.rank,
-    flags: e.flags,
-    last_modified: now,
-    deleted_at: undefined,
-  }));
-
-  await cacheEventPicklistEntries(eventKey, picklistEntries);
+  // Use insertPicklistToCache (upsert) instead of cacheEventPicklists (DELETE-all + INSERT)
+  // so we don't wipe other picklists from the local cache
+  await insertPicklistToCache(picklist);
 
   // Get user JWT for proper authentication
   const user_jwt = await getUserJWT();
@@ -599,31 +578,13 @@ export async function updatePicklist(
         event: eventKey,
         title,
         ...(type ? { type } : {}),
-        picklist: null,
+        picklist: entries,
         last_modified: now,
       };
 
-      const picklistEntries = entries.map((e) => ({
-        event: eventKey,
-        id,
-        team: e.team,
-        rank: e.rank,
-        flags: e.flags,
-        last_modified: now,
-      }));
-
-      console.log("[Writes] Desktop: Caching locally - picklist entries:", {
-        count: picklistEntries.length,
-        firstEntryExcluded: picklistEntries[0]?.flags?.excluded,
-        firstEntryTeam: picklistEntries[0]?.team,
-      });
-
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
-      console.log("[Writes] Desktop: ✓ Cached picklist header");
-
-      await invoke("cache_picklist_entries", { entries: picklistEntries });
-      console.log("[Writes] Desktop: ✓ Cached picklist entries");
+      console.log("[Writes] Desktop: ✓ Cached picklist with entries");
 
       // Get user JWT for proper authentication
       const user_jwt = await getUserJWT();
@@ -663,30 +624,9 @@ export async function updatePicklist(
   }
 
   // MOBILE: Use WASM SQLite + IndexedDB queue
-  // Update picklist header locally (just the title and last_modified)
-  const picklist: Partial<EventPicklist> & { id: string; event: string } = {
-    id,
-    event: eventKey,
-    title,
-    ...(type ? { type } : {}),
-    picklist: null,
-    last_modified: now,
-  };
-
-  await cacheEventPicklists(eventKey, [picklist as EventPicklist]);
-
-  // Delete old entries and cache new ones
-  const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
-    event: eventKey,
-    id,
-    team: e.team,
-    rank: e.rank,
-    flags: e.flags,
-    last_modified: now,
-    deleted_at: undefined,
-  }));
-
-  await cacheEventPicklistEntries(eventKey, picklistEntries);
+  // Use updatePicklistCache (targeted UPDATE) instead of cacheEventPicklists (DELETE-all + INSERT)
+  // to avoid wiping uid, uname, timestamp, and other fields we're not changing
+  await updatePicklistCache(eventKey, id, title, entries, type);
 
   // Queue for sync
   await addToSyncQueue("UPDATE_PICKLIST", {
@@ -720,7 +660,7 @@ export async function deletePicklist(
       // DESKTOP: Use Tauri invoke directly
       const { invoke } = await import("@tauri-apps/api/core");
 
-      // Soft delete picklist locally
+      // Soft delete picklist locally (entries are embedded, no separate entries table)
       const picklist: Partial<EventPicklist> & { id: string; event: string } = {
         id,
         event: eventKey,
@@ -728,18 +668,8 @@ export async function deletePicklist(
         last_modified: now,
       };
 
-      // Soft delete entries locally - get entries using Tauri invoke
-      const allEntries = await invoke<EventPicklistEntry[]>("get_picklist_entries", { event: eventKey });
-      const existingEntries = allEntries.filter(e => e.id === id);
-      const deletedEntries = existingEntries.map((e: EventPicklistEntry) => ({
-        ...e,
-        deleted_at: now,
-        last_modified: now,
-      }));
-
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
-      await invoke("cache_picklist_entries", { entries: deletedEntries });
 
       // Get user JWT for proper authentication
       const user_jwt = await getUserJWT();
@@ -770,25 +700,9 @@ export async function deletePicklist(
   }
 
   // MOBILE: Use WASM SQLite + IndexedDB queue
-  // Soft delete picklist locally
-  const picklist: Partial<EventPicklist> & { id: string; event: string } = {
-    id,
-    event: eventKey,
-    deleted_at: now,
-    last_modified: now,
-  };
-
-  await cacheEventPicklists(eventKey, [picklist as EventPicklist]);
-
-  // Soft delete entries locally
-  const existingEntries = await getEventPicklistEntries(eventKey, id);
-  const deletedEntries = existingEntries.map((e: EventPicklistEntry) => ({
-    ...e,
-    deleted_at: now,
-    last_modified: now,
-  }));
-
-  await cacheEventPicklistEntries(eventKey, deletedEntries);
+  // Use softDeletePicklistCache (targeted UPDATE) instead of cacheEventPicklists (DELETE-all + INSERT)
+  // to avoid wiping other picklists from the local cache
+  await softDeletePicklistCache(eventKey, id);
 
   // Queue for sync
   await addToSyncQueue("DELETE_PICKLIST", {

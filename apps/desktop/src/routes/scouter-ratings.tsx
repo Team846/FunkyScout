@@ -24,8 +24,7 @@ import {
   type ScouterRating,
 } from "@lib/data/scouterRatings";
 import type { EventMatchData } from "@lib/db";
-import { getMatchScoutingData, cacheMatchScoutingData, type MatchScoutingData } from "../lib/db";
-import supabase from "@lib/supabase/supabase";
+import { getMatchScoutingData } from "../lib/db";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/scouter-ratings")({
@@ -49,100 +48,25 @@ function ScouterRatingsPage() {
     try {
       console.log("[ScouterRatings] Fetching user profiles and match data");
 
-      // Fetch user profiles from local cache (falls back to Supabase)
+      // Fetch user profiles from local SQLite cache (Rust sync keeps it fresh)
       const userProfiles = await getUserProfiles();
 
-      // Try local cache first, fallback to Supabase if empty
-      let fetchedMatchData: EventMatchData[] = [];
-
-      try {
-        const cachedData = await getMatchScoutingData(currentEvent);
-        if (cachedData && cachedData.length > 0) {
-          console.log(`[ScouterRatings] Using ${cachedData.length} match records from local cache`);
-          fetchedMatchData = cachedData.map((m) => ({
-            event: m.event,
-            match: m.match,
-            team: m.team,
-            alliance: m.alliance as "red" | "blue",
-            data_raw: m.data_raw || {},
-            data: m.data || {},
-            name: m.name ?? undefined,
-            uid: m.uid ?? undefined,
-            timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
-            last_modified: m.last_modified,
-            deleted_at: undefined,
-          }));
-        } else {
-          // Cache empty - fetch from Supabase and cache
-          console.log("[ScouterRatings] Cache empty, fetching from Supabase");
-          const { data: matchDataResult, error: matchError } = await supabase
-            .from("event_match_data")
-            .select("*")
-            .eq("event", currentEvent)
-            .is("deleted_at", null);
-
-          if (matchError) {
-            console.error("[ScouterRatings] Error fetching match data:", matchError);
-            throw matchError;
-          }
-
-          fetchedMatchData = (matchDataResult || []).map((m: any) => ({
-            event: m.event,
-            match: m.match,
-            team: m.team,
-            alliance: m.alliance,
-            data_raw: m.data_raw || {},
-            data: m.data || {},
-            name: m.name ?? undefined,
-            uid: m.uid ?? undefined,
-            timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
-            last_modified: m.last_modified ? new Date(m.last_modified).getTime() : undefined,
-            deleted_at: m.deleted_at ? new Date(m.deleted_at).getTime() : undefined,
-          }));
-
-          // Cache to local DB
-          if (fetchedMatchData.length > 0) {
-            const cacheData: MatchScoutingData[] = fetchedMatchData.map((m) => ({
-              event: m.event,
-              match: m.match,
-              team: m.team,
-              alliance: m.alliance as "red" | "blue",
-              data_raw: m.data_raw,
-              data: m.data,
-              name: m.name ?? null,
-              uid: m.uid ?? null,
-              timestamp: m.timestamp ? new Date(m.timestamp).toISOString() : null,
-              last_modified: m.last_modified ?? Date.now(),
-            }));
-            await cacheMatchScoutingData(cacheData);
-            console.log(`[ScouterRatings] Cached ${fetchedMatchData.length} match records to local DB`);
-          }
-        }
-      } catch (error) {
-        console.error("[ScouterRatings] Error with local cache, falling back to Supabase:", error);
-        // Fallback to direct Supabase query
-        const { data: matchDataResult, error: matchError } = await supabase
-          .from("event_match_data")
-          .select("*")
-          .eq("event", currentEvent)
-          .is("deleted_at", null);
-
-        if (!matchError && matchDataResult) {
-          fetchedMatchData = (matchDataResult || []).map((m: any) => ({
-            event: m.event,
-            match: m.match,
-            team: m.team,
-            alliance: m.alliance,
-            data_raw: m.data_raw || {},
-            data: m.data || {},
-            name: m.name ?? undefined,
-            uid: m.uid ?? undefined,
-            timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
-            last_modified: m.last_modified ? new Date(m.last_modified).getTime() : undefined,
-            deleted_at: m.deleted_at ? new Date(m.deleted_at).getTime() : undefined,
-          }));
-        }
-      }
+      // Fetch match data from local SQLite cache (Rust sync keeps it fresh)
+      const cachedData = await getMatchScoutingData(currentEvent);
+      console.log(`[ScouterRatings] Using ${cachedData.length} match records from local cache`);
+      const fetchedMatchData: EventMatchData[] = cachedData.map((m) => ({
+        event: m.event,
+        match: m.match,
+        team: m.team,
+        alliance: m.alliance as "red" | "blue",
+        data_raw: m.data_raw || {},
+        data: m.data || {},
+        name: m.name ?? undefined,
+        uid: m.uid ?? undefined,
+        timestamp: m.timestamp ? new Date(m.timestamp).getTime() : undefined,
+        last_modified: m.last_modified,
+        deleted_at: undefined,
+      }));
 
       // Calculate ratings for each scouter
       // Schedule comes from context, convert to expected format
@@ -204,9 +128,6 @@ function ScouterRatingsPage() {
       );
 
       toast.success("Rating updated successfully");
-
-      // Refresh to ensure consistency
-      await fetchData();
     } catch (error) {
       console.error("[ScouterRatings] Error setting rating:", error);
       toast.error("Failed to update rating");

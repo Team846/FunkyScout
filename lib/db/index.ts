@@ -102,16 +102,6 @@ export interface EventPicklist {
   deleted_at?: number;
 }
 
-export interface EventPicklistEntry {
-  event: string;
-  id: string;
-  team: string;
-  rank?: number;
-  flags?: any; // JSON
-  last_modified?: number;
-  deleted_at?: number;
-}
-
 export interface LocalEvent {
   event: string;
   alias: string;
@@ -280,23 +270,10 @@ export async function cacheEventTeamData(
 export async function getEventSchedule(
   event: string,
 ): Promise<EventScheduleEntry[]> {
-  // Tauri: fetch directly from Supabase instead of local SQLite
+  // Tauri: read from local SQLite cache (Rust sync keeps it fresh every 120s)
   if (isTauri()) {
-    console.log("[getEventSchedule] Tauri: Fetching from Supabase for event:", event);
-    const { default: supabase } = await import("@lib/supabase/supabase");
-    const { data, error } = await supabase
-      .from("event_schedule")
-      .select("*")
-      .eq("event", event)
-      .is("deleted_at", null);
-
-    if (error) {
-      console.error("[getEventSchedule] Supabase error:", error);
-      throw error;
-    }
-
-    console.log("[getEventSchedule] Tauri: Fetched", data?.length || 0, "schedule entries");
-    return (data || []) as EventScheduleEntry[];
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<EventScheduleEntry[]>("get_schedule", { event });
   }
 
   // Mobile: use WASM SQLite
@@ -312,22 +289,11 @@ export async function getUserEventScheduleAssignments(
   event: string,
   userName: string,
 ): Promise<EventScheduleEntry[]> {
-  // Tauri: fetch directly from Supabase instead of local SQLite
+  // Tauri: read from local SQLite cache and filter by userName
   if (isTauri()) {
-    const { default: supabase } = await import("@lib/supabase/supabase");
-    const { data, error } = await supabase
-      .from("event_schedule")
-      .select("*")
-      .eq("event", event)
-      .eq("name", userName)
-      .is("deleted_at", null);
-
-    if (error) {
-      console.error("[getUserEventScheduleAssignments] Supabase error:", error);
-      throw error;
-    }
-
-    return (data || []) as EventScheduleEntry[];
+    const { invoke } = await import("@tauri-apps/api/core");
+    const all = await invoke<EventScheduleEntry[]>("get_schedule", { event });
+    return all.filter((s) => s.name === userName);
   }
 
   // Mobile: use WASM SQLite
@@ -394,30 +360,13 @@ export async function getEventMatchData(
   match?: string,
   team?: string,
 ): Promise<EventMatchData[]> {
-  // Tauri: fetch directly from Supabase instead of local SQLite
+  // Tauri: read from local SQLite cache (Rust sync keeps it fresh every 120s)
   if (isTauri()) {
-    const { default: supabase } = await import("@lib/supabase/supabase");
-    let query = supabase
-      .from("event_match_data")
-      .select("*")
-      .eq("event", event)
-      .is("deleted_at", null);
-
-    if (match) {
-      query = query.eq("match", match);
-    }
-    if (team) {
-      query = query.eq("team", team);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("[getEventMatchData] Supabase error:", error);
-      throw error;
-    }
-
-    return (data || []) as EventMatchData[];
+    const { invoke } = await import("@tauri-apps/api/core");
+    const all = await invoke<EventMatchData[]>("get_match_scouting_data", { event });
+    return all.filter(
+      (m) => (!match || m.match === match) && (!team || m.team === team),
+    );
   }
 
   // Mobile: use WASM SQLite
@@ -541,90 +490,98 @@ export async function cacheEventPicklists(
   });
 }
 
-export async function getEventPicklistEntries(
-  event: string,
-  id: string,
-): Promise<EventPicklistEntry[]> {
-  await initDatabase();
-  const rows = await execWorker(
-    "SELECT * FROM event_picklist_entries WHERE event = ? AND id = ? AND deleted_at IS NULL ORDER BY rank ASC",
-    [event, id],
-  );
-  return (rows as any[]).map((row) => ({
-    ...row,
-    flags: row.flags ? JSON.parse(row.flags) : null,
-  }));
-}
-
 export async function getPicklistById(
   eventKey: string,
   picklistId: string,
-): Promise<{
-  picklist: EventPicklist | null;
-  entries: EventPicklistEntry[];
-}> {
+): Promise<EventPicklist | null> {
   await initDatabase();
 
-  // Get picklist metadata
   const picklistRows = await execWorker(
     "SELECT * FROM event_picklist WHERE event = ? AND id = ? AND deleted_at IS NULL",
     [eventKey, picklistId],
   );
 
-  const picklist = picklistRows.length > 0
-    ? {
-        ...(picklistRows[0] as any),
-        picklist: (picklistRows[0] as any).picklist
-          ? JSON.parse((picklistRows[0] as any).picklist)
-          : null,
-      }
-    : null;
+  if (picklistRows.length === 0) return null;
 
-  // Get picklist entries sorted by rank
-  const entries = await getEventPicklistEntries(eventKey, picklistId);
-
-  return { picklist, entries };
+  return {
+    ...(picklistRows[0] as any),
+    picklist: (picklistRows[0] as any).picklist
+      ? JSON.parse((picklistRows[0] as any).picklist)
+      : [],
+  };
 }
 
-export async function cacheEventPicklistEntries(
+/**
+ * Insert a single new picklist into the local cache WITHOUT deleting existing rows.
+ * Use this instead of cacheEventPicklists when adding/creating one picklist.
+ */
+export async function insertPicklistToCache(picklist: EventPicklist): Promise<void> {
+  return await withWriteLock(async () => {
+    await initDatabase();
+    await execWorker(
+      `INSERT INTO event_picklist
+       (id, event, title, picklist, uname, uid, type, timestamp, last_modified, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+       event=excluded.event, title=excluded.title, picklist=excluded.picklist,
+       uname=excluded.uname, uid=excluded.uid, type=excluded.type,
+       timestamp=excluded.timestamp, last_modified=excluded.last_modified,
+       deleted_at=excluded.deleted_at`,
+      [
+        picklist.id,
+        picklist.event,
+        picklist.title,
+        JSON.stringify(picklist.picklist),
+        picklist.uname,
+        picklist.uid,
+        picklist.type,
+        picklist.timestamp,
+        picklist.last_modified,
+        picklist.deleted_at ?? null,
+      ],
+    );
+  });
+}
+
+/**
+ * Update only the mutable fields (title, entries, type, last_modified) of a cached picklist.
+ * Does NOT overwrite uid, uname, timestamp, or deleted_at.
+ */
+export async function updatePicklistCache(
   eventKey: string,
-  entries: EventPicklistEntry[],
+  id: string,
+  title: string,
+  entries: any,
+  type?: string,
 ): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
-    await execWorker("BEGIN TRANSACTION");
-    try {
-      // Always clear old entries (even if new data is empty - handles deletions)
+    const now = Date.now();
+    if (type) {
       await execWorker(
-        "DELETE FROM event_picklist_entries WHERE event = ?",
-        [eventKey],
+        "UPDATE event_picklist SET title=?, picklist=?, type=?, last_modified=? WHERE id=? AND event=?",
+        [title, JSON.stringify(entries), type, now, id, eventKey],
       );
-
-      // Insert fresh data (with UPSERT to handle duplicates)
-      for (const entry of entries) {
-        await execWorker(
-          `INSERT INTO event_picklist_entries
-           (event, id, team, rank, flags, last_modified, deleted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(event, id, team) DO UPDATE SET
-           rank=excluded.rank, flags=excluded.flags,
-           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
-          [
-            entry.event,
-            entry.id,
-            entry.team,
-            entry.rank,
-            JSON.stringify(entry.flags),
-            entry.last_modified,
-            entry.deleted_at,
-          ],
-        );
-      }
-      await execWorker("COMMIT");
-    } catch (e) {
-      await execWorker("ROLLBACK");
-      throw e;
+    } else {
+      await execWorker(
+        "UPDATE event_picklist SET title=?, picklist=?, last_modified=? WHERE id=? AND event=?",
+        [title, JSON.stringify(entries), now, id, eventKey],
+      );
     }
+  });
+}
+
+/**
+ * Soft-delete a picklist in the local cache (sets deleted_at, does NOT wipe other fields).
+ */
+export async function softDeletePicklistCache(eventKey: string, id: string): Promise<void> {
+  return await withWriteLock(async () => {
+    await initDatabase();
+    const now = Date.now();
+    await execWorker(
+      "UPDATE event_picklist SET deleted_at=?, last_modified=? WHERE id=? AND event=?",
+      [now, now, id, eventKey],
+    );
   });
 }
 
@@ -720,6 +677,46 @@ export async function upsertEventScheduleRows(
   });
 }
 
+export async function upsertEventTeamDataRows(
+  _eventKey: string,
+  data: EventTeamData[],
+): Promise<void> {
+  if (data.length === 0) return;
+  return await withWriteLock(async () => {
+    await initDatabase();
+    await execWorker("BEGIN TRANSACTION");
+    try {
+      for (const item of data) {
+        await execWorker(
+          `INSERT INTO event_team_data
+           (event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(event, team) DO UPDATE SET
+           data=excluded.data, team_name=excluded.team_name, name=excluded.name,
+           uid=excluded.uid, assigned=excluded.assigned, timestamp=excluded.timestamp,
+           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
+          [
+            item.event,
+            item.team,
+            JSON.stringify(item.data),
+            item.team_name,
+            item.name,
+            item.uid,
+            item.assigned,
+            item.timestamp,
+            item.last_modified,
+            item.deleted_at,
+          ],
+        );
+      }
+      await execWorker("COMMIT");
+    } catch (e) {
+      await execWorker("ROLLBACK");
+      throw e;
+    }
+  });
+}
+
 export async function upsertEventPicklistsRows(
   _eventKey: string,
   picklists: EventPicklist[],
@@ -750,42 +747,6 @@ export async function upsertEventPicklistsRows(
             list.timestamp,
             list.last_modified,
             list.deleted_at,
-          ],
-        );
-      }
-      await execWorker("COMMIT");
-    } catch (e) {
-      await execWorker("ROLLBACK");
-      throw e;
-    }
-  });
-}
-
-export async function upsertEventPicklistEntriesRows(
-  _eventKey: string,
-  entries: EventPicklistEntry[],
-): Promise<void> {
-  if (entries.length === 0) return;
-  return await withWriteLock(async () => {
-    await initDatabase();
-    await execWorker("BEGIN TRANSACTION");
-    try {
-      for (const entry of entries) {
-        await execWorker(
-          `INSERT INTO event_picklist_entries
-           (event, id, team, rank, flags, last_modified, deleted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(event, id, team) DO UPDATE SET
-           rank=excluded.rank, flags=excluded.flags,
-           last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
-          [
-            entry.event,
-            entry.id,
-            entry.team,
-            entry.rank,
-            JSON.stringify(entry.flags),
-            entry.last_modified,
-            entry.deleted_at,
           ],
         );
       }
@@ -1031,9 +992,6 @@ export async function clearEventData(event: string): Promise<void> {
       await execWorker("DELETE FROM event_schedule WHERE event = ?", [event]);
       await execWorker("DELETE FROM event_match_data WHERE event = ?", [event]);
       await execWorker("DELETE FROM event_picklist WHERE event = ?", [event]);
-      await execWorker("DELETE FROM event_picklist_entries WHERE event = ?", [
-        event,
-      ]);
       await execWorker("DELETE FROM tba_event_teams WHERE event = ?", [event]);
       await execWorker("DELETE FROM tba_event_matches WHERE event = ?", [
         event,

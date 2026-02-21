@@ -14,13 +14,8 @@ import { useDesktopRealtime } from "./DesktopRealtimeContext";
 import {
   getSchedule as getSQLiteSchedule,
   getPicklists as getSQLitePicklists,
-  getPicklistEntries as getSQLitePicklistEntries,
-  cacheSchedule,
-  cachePicklists,
-  cachePicklistEntries,
   type EventScheduleEntry,
 } from "../lib/db";
-import supabase from "@lib/supabase/supabase";
 
 export interface ScheduleEntry {
   match: string;
@@ -57,10 +52,17 @@ export interface TbaClimbEntry {
   teleop_climb: "L1" | "L2" | "L3" | null;
 }
 
+export interface PicklistEntry {
+  team: string;
+  rank: number;
+  flags: Record<string, unknown> | null;
+}
+
 export interface Picklist {
   event: string;
   id: string;
   title: string;
+  picklist: PicklistEntry[];
   uname: string;
   uid: string;
   type?: string; // "public" | "private" | "default"
@@ -68,20 +70,10 @@ export interface Picklist {
   last_modified: number;
 }
 
-export interface PicklistEntry {
-  event: string;
-  id: string;
-  team: string;
-  rank: number;
-  flags?: any; // JSON flags like { excluded: boolean }
-  last_modified: number;
-}
-
 interface DesktopCompetitionDataContextType {
   schedule: ScheduleEntry[];
   tbaSchedule: Record<string, TBAMatchData>;
   picklists: Picklist[];
-  picklistEntries: PicklistEntry[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   loading: boolean;
   refresh: () => Promise<void>;
@@ -105,218 +97,16 @@ export function DesktopCompetitionDataProvider({
     {}
   );
   const [picklists, setPicklists] = useState<Picklist[]>([]);
-  const [picklistEntries, setPicklistEntries] = useState<PicklistEntry[]>([]);
   const [tbaClimbData, setTbaClimbData] = useState<Record<string, Record<string, TbaClimbEntry>>>({});
   const [loading, setLoading] = useState(false);
 
-  // Refs for stable access in callbacks
-  const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
   const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
-
-  /**
-   * Three-step fetch pattern for schedule and picklists
-   */
-  const fetchData = useCallback(async () => {
-    if (!currentEvent) return;
-
-    const shouldSkipCache = skipCacheOnceRef.current && true;
-    if (shouldSkipCache) {
-      skipCacheOnceRef.current = false;
-    }
-
-    try {
-      // Step 1: Read from SQLite cache (unless skipping)
-      if (!shouldSkipCache) {
-        const [cachedSchedule, cachedPicklists, cachedEntries] =
-          await Promise.all([
-            getSQLiteSchedule(currentEvent),
-            getSQLitePicklists(currentEvent),
-            getSQLitePicklistEntries(currentEvent),
-          ]);
-
-        console.log(`[DesktopCompetitionData] Cache read: ${cachedPicklists.length} picklists, ${cachedEntries.length} entries`);
-
-        if (cachedSchedule.length > 0) {
-          processScheduleData(cachedSchedule);
-          hasLoadedDataRef.current = true;
-        }
-
-        // Always set picklists from cache (even if empty, to show loading state correctly)
-        setPicklists(cachedPicklists);
-        setPicklistEntries(cachedEntries);
-      }
-
-      // Step 2: Refresh from Supabase
-      // Only show loading on initial load or event change (prevents flickering on background refreshes)
-      const isInitialLoad = !hasLoadedDataRef.current;
-      if (isInitialLoad || shouldSkipCache) {
-        setLoading(true);
-      }
-
-      const [supabaseSchedule, supabasePicklists, supabaseEntries] =
-        await Promise.all([
-          fetchScheduleFromSupabase(currentEvent),
-          fetchPicklistsFromSupabase(currentEvent),
-          fetchPicklistEntriesFromSupabase(currentEvent),
-        ]);
-
-      if (supabaseSchedule && supabaseSchedule.length > 0) {
-        // Cache to SQLite for offline access (like mobile does)
-        await cacheSchedule(
-          currentEvent,
-          supabaseSchedule.map((d: any) => ({
-            match: d.match,
-            team: d.team,
-            alliance: d.alliance,
-            name: d.name,
-            uid: d.uid,
-            est_time: d.est_time,
-            red_score: d.red_score,
-            blue_score: d.blue_score,
-            red_win_prob: d.red_win_prob,
-            predicted_red_score: d.predicted_red_score,
-            predicted_blue_score: d.predicted_blue_score,
-            last_modified: d.last_modified
-              ? new Date(d.last_modified).getTime()
-              : Date.now(),
-          }))
-        );
-
-        processScheduleData(supabaseSchedule);
-        hasLoadedDataRef.current = true;
-      }
-
-      // Always cache and update picklists from Supabase (even if empty)
-      console.log(`[DesktopCompetitionData] Supabase fetch: ${supabasePicklists?.length || 0} picklists, ${supabaseEntries?.length || 0} entries`);
-
-      if (supabasePicklists && supabasePicklists.length > 0) {
-        await cachePicklists(
-          supabasePicklists.map((p: any) => ({
-            ...p,
-            event: currentEvent,
-          }))
-        );
-      }
-
-      if (supabaseEntries && supabaseEntries.length > 0) {
-        console.log(`[DesktopCompetitionData] Caching ${supabaseEntries.length} entries:`, supabaseEntries.slice(0, 3).map(e => ({ id: e.id, team: e.team, flags: e.flags })));
-        await cachePicklistEntries(
-          supabaseEntries.map((e: any) => ({
-            ...e,
-            event: currentEvent,
-          }))
-        );
-      }
-
-      // Batch state updates to prevent UI flashing during refresh
-      // Use React 18's automatic batching or manual batch for consistency
-      const newPicklists = supabasePicklists || [];
-      const newEntries = supabaseEntries || [];
-
-      // Update both states together to prevent intermediate renders
-      setPicklists(newPicklists);
-      setPicklistEntries(newEntries);
-
-      // Fetch TBA climb data from local SQLite cache (populated by desktop sync service)
-      try {
-        const climbEntries = await invoke<TbaClimbEntry[]>("get_tba_climb_data", { event: currentEvent });
-        const climbMap: Record<string, Record<string, TbaClimbEntry>> = {};
-        for (const entry of climbEntries) {
-          if (!climbMap[entry.match_key]) climbMap[entry.match_key] = {};
-          climbMap[entry.match_key][entry.team] = entry;
-        }
-        setTbaClimbData(climbMap);
-      } catch {
-        // Non-fatal: TBA climb data not available yet
-      }
-    } catch (error) {
-      console.error("[DesktopCompetitionData] Fetch failed:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentEvent]);
-
-  /**
-   * Fetch schedule from Supabase
-   */
-  const fetchScheduleFromSupabase = async (eventKey: string) => {
-    const { data, error } = await supabase
-      .from("event_schedule")
-      .select(
-        `
-        event,
-        match,
-        team,
-        alliance,
-        name,
-        uid,
-        est_time,
-        red_score,
-        blue_score,
-        red_win_prob,
-        predicted_red_score,
-        predicted_blue_score,
-        last_modified
-      `
-      )
-      .eq("event", eventKey)
-      .is("deleted_at", null);
-
-    if (error) throw error;
-    return data as EventScheduleEntry[];
-  };
-
-  /**
-   * Fetch picklists from Supabase
-   */
-  const fetchPicklistsFromSupabase = async (eventKey: string) => {
-    const { data, error } = await supabase
-      .from("event_picklist")
-      .select("*")
-      .eq("event", eventKey)
-      .is("deleted_at", null)
-      .order("timestamp", { ascending: false });
-
-    if (error) throw error;
-    return (data as any[]).map((p) => ({
-      ...p,
-      timestamp: p.timestamp ? new Date(p.timestamp).getTime() : 0,
-      last_modified: p.last_modified
-        ? new Date(p.last_modified).getTime()
-        : 0,
-    })) as Picklist[];
-  };
-
-  /**
-   * Fetch picklist entries from Supabase
-   */
-  const fetchPicklistEntriesFromSupabase = async (eventKey: string) => {
-    const { data, error } = await supabase
-      .from("event_picklist_entries")
-      .select("event, id, team, rank, flags, last_modified")
-      .eq("event", eventKey)
-      .is("deleted_at", null)
-      .order("rank", { ascending: true });
-
-    if (error) throw error;
-    return (data as any[]).map((e) => ({
-      event: e.event,
-      id: e.id,
-      team: e.team,
-      rank: e.rank,
-      flags: e.flags || {},
-      last_modified: e.last_modified
-        ? new Date(e.last_modified).getTime()
-        : 0,
-    })) as PicklistEntry[];
-  };
 
   /**
    * Process schedule data into display format
    */
   const processScheduleData = (scheduleData: EventScheduleEntry[]) => {
-    // Convert to schedule entries
     const entries: ScheduleEntry[] = scheduleData.map((s) => ({
       match: s.match,
       team: s.team,
@@ -332,7 +122,6 @@ export function DesktopCompetitionDataProvider({
     }));
     setSchedule(entries);
 
-    // Build TBA schedule map (grouped by match)
     const matchData: Record<string, TBAMatchData> = {};
     entries.forEach((entry) => {
       if (!matchData[entry.match]) {
@@ -356,7 +145,50 @@ export function DesktopCompetitionDataProvider({
     setTbaSchedule(matchData);
   };
 
-  // Keep ref in sync
+  /**
+   * Read schedule, picklists, and climb data from local SQLite cache.
+   * Rust sync service (120s, incremental) is the sole Supabase reader —
+   * the frontend never calls Supabase directly for these tables.
+   *
+   * Shows whatever SQLite has immediately (offline-safe). Rust sync updates
+   * SQLite in the background; subsequent polls pick up fresh data silently.
+   */
+  const fetchData = useCallback(async () => {
+    if (!currentEvent) return;
+
+    try {
+      const [cachedSchedule, cachedPicklists] = await Promise.all([
+        getSQLiteSchedule(currentEvent),
+        getSQLitePicklists(currentEvent),
+      ]);
+
+      if (cachedSchedule.length > 0) {
+        processScheduleData(cachedSchedule);
+        hasLoadedDataRef.current = true;
+      }
+
+      setPicklists(cachedPicklists);
+
+      // TBA climb data (populated by Rust sync service)
+      try {
+        const climbEntries = await invoke<TbaClimbEntry[]>("get_tba_climb_data", { event: currentEvent });
+        const climbMap: Record<string, Record<string, TbaClimbEntry>> = {};
+        for (const entry of climbEntries) {
+          if (!climbMap[entry.match_key]) climbMap[entry.match_key] = {};
+          climbMap[entry.match_key][entry.team] = entry;
+        }
+        setTbaClimbData(climbMap);
+      } catch {
+        // Non-fatal: TBA climb data not available yet
+      }
+    } catch (error) {
+      console.error("[DesktopCompetitionData] Failed to read from SQLite:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentEvent]);
+
+  // Keep fetchDataRef in sync with latest callback
   useEffect(() => {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
@@ -367,29 +199,65 @@ export function DesktopCompetitionDataProvider({
       setSchedule([]);
       setTbaSchedule({});
       setPicklists([]);
-      setPicklistEntries([]);
       setTbaClimbData({});
       hasLoadedDataRef.current = false;
       return;
     }
 
-    // Skip cache when switching events (if online and has prior data)
-    if (true && hasLoadedDataRef.current) {
-      skipCacheOnceRef.current = true;
+    // Show loading when switching events (if we had data from a prior event)
+    if (hasLoadedDataRef.current) {
+      setLoading(true);
+      hasLoadedDataRef.current = false;
     }
 
+    // 1. Read SQLite immediately — shows cached/stale data (offline-safe)
     fetchData();
-  }, [currentEvent, fetchData, true]);
 
-  // Register refresh callback for realtime updates
+    // 2. Trigger Rust sync to pull fresh Supabase data into SQLite
+    invoke("trigger_sync_now").catch((e) =>
+      console.warn("[DesktopCompetitionData] trigger_sync_now failed:", e)
+    );
+
+    // 3. Re-read SQLite after sync has had time to write. Multiple reads
+    //    because cold-start sync time varies (5-20s across all tables).
+    //    Stale data from step 1 stays visible until a poll finds fresh data.
+    const pollDelays = [5_000, 10_000, 20_000];
+    const timers = pollDelays.map((delay) =>
+      setTimeout(() => {
+        console.log(`[DesktopCompetitionData] Post-sync poll at ${delay / 1000}s`);
+        fetchDataRef.current?.();
+      }, delay)
+    );
+
+    return () => timers.forEach(clearTimeout);
+  }, [currentEvent, fetchData]);
+
+  // Every 120s: trigger a Rust sync then re-read SQLite once the sync has had time to write.
+  // This ensures Supabase changes (picklist edits, new scouting data) are visible within ~135s.
+  useEffect(() => {
+    if (!currentEvent) return;
+
+    const timer = setInterval(() => {
+      console.log("[DesktopCompetitionData] Triggering sync + SQLite refresh (120s)");
+      invoke("trigger_sync_now").catch(console.error);
+      // Re-read SQLite after the sync has had time to complete (~15s for TBA + Supabase pulls)
+      setTimeout(() => {
+        console.log("[DesktopCompetitionData] Post-sync SQLite refresh (120s+15s)");
+        fetchDataRef.current?.();
+      }, 15_000);
+    }, 120_000);
+
+    return () => clearInterval(timer);
+  }, [currentEvent]);
+
+  // Register refresh callback for realtime updates (when realtime is re-enabled)
   useEffect(() => {
     if (!currentEvent) return;
 
     const unregister = registerRefreshCallback(() => {
-      skipCacheOnceRef.current = true; // Skip cache, fetch from Supabase
-      if (fetchDataRef.current) {
-        fetchDataRef.current();
-      }
+      // Realtime change detected: trigger Rust sync, then re-read SQLite
+      invoke("trigger_sync_now").catch(console.error);
+      setTimeout(() => fetchDataRef.current?.(), 3_000);
     });
 
     return unregister;
@@ -401,47 +269,20 @@ export function DesktopCompetitionDataProvider({
     }
   }, []);
 
-  /**
-   * Refresh data from local cache only (no Supabase fetch)
-   * Used after write operations to immediately reflect local changes in UI
-   */
-  const refreshFromCache = useCallback(async () => {
-    if (!currentEvent) return;
+  // refreshFromCache is an alias for fetchData (both read SQLite only now)
+  const refreshFromCache = fetchData;
 
-    try {
-      const [cachedSchedule, cachedPicklists, cachedEntries] =
-        await Promise.all([
-          getSQLiteSchedule(currentEvent),
-          getSQLitePicklists(currentEvent),
-          getSQLitePicklistEntries(currentEvent),
-        ]);
-
-      console.log(`[DesktopCompetitionData] Refreshed from cache: ${cachedPicklists.length} picklists, ${cachedEntries.length} entries`);
-
-      if (cachedSchedule.length > 0) {
-        processScheduleData(cachedSchedule);
-      }
-
-      setPicklists(cachedPicklists);
-      setPicklistEntries(cachedEntries);
-    } catch (error) {
-      console.error("[DesktopCompetitionData] Failed to refresh from cache:", error);
-    }
-  }, [currentEvent]);
-
-  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
     () => ({
       schedule,
       tbaSchedule,
       picklists,
-      picklistEntries,
       tbaClimbData,
       loading,
       refresh,
       refreshFromCache,
     }),
-    [schedule, tbaSchedule, picklists, picklistEntries, tbaClimbData, loading, refresh, refreshFromCache]
+    [schedule, tbaSchedule, picklists, tbaClimbData, loading, refresh, refreshFromCache]
   );
 
   return (

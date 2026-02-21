@@ -27,7 +27,7 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <DesktopEventProvider>
-        <DesktopSyncProvider router={router}>
+        <DesktopSyncProvider>
           <DesktopRealtimeProvider>
             <DesktopTeamDataProvider>
               <DesktopCompetitionDataProvider>

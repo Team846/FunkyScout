@@ -104,15 +104,13 @@ function SortableItem({ team, rank, excluded, onToggleExclude }: SortableItemPro
 
 function PicklistEditorPage() {
   const { currentEvent } = useDesktopEvent();
-  const { picklists, picklistEntries } = useDesktopCompetitionData();
+  const { picklists } = useDesktopCompetitionData();
   const [selectedPicklistId, setSelectedPicklistId] = useState<string | null>(null);
   const [excludedToBottom, setExcludedToBottom] = useState(true);
 
   // Find selected picklist and its entries
   const selectedPicklist = picklists.find((p) => p.id === selectedPicklistId);
-  const selectedEntries = selectedPicklistId
-    ? picklistEntries.filter((e) => e.id === selectedPicklistId)
-    : [];
+  const selectedEntries = selectedPicklist?.picklist ?? [];
 
   // Debug: Log when selectedEntries changes
   useEffect(() => {

@@ -220,8 +220,7 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Upsert picklist header
-    /// Mirrors: SyncManager.syncPicklistCreate()
+    /// Upsert picklist with embedded entries in `picklist` JSONB column
     pub async fn upsert_picklist(
         &self,
         id: &str,
@@ -231,12 +230,13 @@ impl SupabaseService {
         uid: &str,
         picklist_type: &str,
         timestamp_ms: i64,
+        entries: Value,
     ) -> Result<()> {
         let payload = json!({
             "id": id,
             "event": event,
             "title": title,
-            "picklist": [],  // deprecated field - empty array
+            "picklist": entries,
             "uname": uname,
             "uid": uid,
             "type": picklist_type,
@@ -254,112 +254,12 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Upsert picklist entries
-    /// Mirrors: SyncManager.syncPicklistCreate() entries part
-    pub async fn upsert_picklist_entries(
-        &self,
-        event: &str,
-        picklist_id: &str,
-        entries: Vec<(String, i32, Option<Value>)>, // (team, rank, flags)
-    ) -> Result<()> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        let payload: Vec<Value> = entries
-            .into_iter()
-            .map(|(team, rank, flags)| {
-                json!({
-                    "event": event,
-                    "id": picklist_id,
-                    "team": team,
-                    "rank": rank,
-                    "flags": flags,
-                    "last_modified": Self::now_iso(),
-                })
-            })
-            .collect();
-
-        self.auth_client()
-            .from("event_picklist_entries")
-            .upsert(&serde_json::to_string(&payload)?)
-            .execute()
-            .await
-            .context("Failed to upsert picklist entries")?;
-
-        Ok(())
-    }
-
-    /// Delete picklist entries (for picklist update)
-    /// DEPRECATED: Use soft_delete_removed_entries instead to reduce postgres_changes events
-    pub async fn delete_picklist_entries(&self, picklist_id: &str) -> Result<()> {
-        self.auth_client()
-            .from("event_picklist_entries")
-            .delete()
-            .eq("id", picklist_id)
-            .execute()
-            .await
-            .context("Failed to delete picklist entries")?;
-
-        Ok(())
-    }
-
-    /// Soft delete picklist entries NOT in the new list (reduces postgres_changes events by 50%)
-    /// Only updates entries that were removed, instead of deleting ALL then inserting ALL
-    pub async fn soft_delete_removed_entries(
-        &self,
-        picklist_id: &str,
-        current_teams: &[String],
-    ) -> Result<()> {
-        if current_teams.is_empty() {
-            // If no teams in new list, soft delete everything
-            let payload = json!({
-                "deleted_at": Self::now_iso(),
-            });
-
-            self.auth_client()
-                .from("event_picklist_entries")
-                .update(&payload.to_string())
-                .eq("id", picklist_id)
-                .is("deleted_at", "null")
-                .execute()
-                .await
-                .context("Failed to soft delete all picklist entries")?;
-        } else {
-            // Soft delete entries NOT in the current team list
-            let payload = json!({
-                "deleted_at": Self::now_iso(),
-            });
-
-            // Build CSV list for NOT IN query
-            let teams_csv = current_teams
-                .iter()
-                .map(|t| format!("\"{}\"", t.replace("\"", "\"\""))) // Escape quotes
-                .collect::<Vec<_>>()
-                .join(",");
-
-            self.auth_client()
-                .from("event_picklist_entries")
-                .update(&payload.to_string())
-                .eq("id", picklist_id)
-                .is("deleted_at", "null")
-                .not("team", "in", &format!("({})", teams_csv))
-                .execute()
-                .await
-                .context("Failed to soft delete removed picklist entries")?;
-        }
-
-        Ok(())
-    }
-
-    /// Soft delete picklist
-    /// Mirrors: SyncManager.syncPicklistDelete()
+    /// Soft delete picklist (entries are embedded — only the header row needs soft-deleting)
     pub async fn delete_picklist(&self, id: &str) -> Result<()> {
         let payload = json!({
             "deleted_at": Self::now_iso(),
         });
 
-        // Soft delete picklist header
         self.auth_client()
             .from("event_picklist")
             .update(&payload.to_string())
@@ -367,15 +267,6 @@ impl SupabaseService {
             .execute()
             .await
             .context("Failed to delete picklist")?;
-
-        // Soft delete entries
-        self.auth_client()
-            .from("event_picklist_entries")
-            .update(&payload.to_string())
-            .eq("id", id)
-            .execute()
-            .await
-            .context("Failed to delete picklist entries")?;
 
         Ok(())
     }
@@ -406,12 +297,21 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Fetch all user profiles from Supabase
-    pub async fn fetch_user_profiles(&self) -> Result<Vec<Value>> {
-        let response = self.auth_client()
+    /// Fetch user profiles from Supabase (incremental when since is provided)
+    pub async fn fetch_user_profiles(&self, since: Option<&str>) -> Result<Vec<Value>> {
+        let mut builder = self.auth_client()
             .from("user_profiles")
-            .select("uid,name,role,settings,last_modified,deleted_at")
-            .is("deleted_at", "null")
+            .select("uid,name,role,settings,last_modified,deleted_at");
+
+        builder = if let Some(since_iso) = since {
+            // Incremental: include recently deleted rows so deletions propagate
+            builder.gte("last_modified", since_iso)
+        } else {
+            // Full fetch: no filter — include deleted so deleted_at propagates to SQLite
+            builder
+        };
+
+        let response = builder
             .execute()
             .await
             .context("Failed to fetch user profiles")?;
@@ -668,24 +568,27 @@ impl SupabaseService {
         uname: &str,
         picklist_type: &str,
         timestamp: i64,
+        entries: Value,
     ) -> Result<()> {
-        self.upsert_picklist(id, event, title, uname, uid, picklist_type, timestamp).await
+        self.upsert_picklist(id, event, title, uname, uid, picklist_type, timestamp, entries).await
     }
 
-    /// Update picklist (from sync queue)
+    /// Update picklist with new title and embedded entries (from sync queue)
     pub async fn update_picklist(
         &self,
         id: &str,
         event: &str,
         title: &str,
+        entries: Value,
     ) -> Result<()> {
         let now = Self::now_iso();
         let payload = json!({
             "title": title,
+            "picklist": entries,
             "last_modified": now,
         });
 
-        println!("[Supabase] Updating picklist {} with timestamp: {}", id, now);
+        println!("[Supabase] Updating picklist {} with entries", id);
 
         self.auth_client()
             .from("event_picklist")
@@ -696,49 +599,10 @@ impl SupabaseService {
             .await
             .context("Failed to update picklist")?;
 
-        println!("[Supabase] Picklist header updated successfully");
+        println!("[Supabase] Picklist updated successfully");
 
         Ok(())
     }
-
-    /// Bulk upsert picklist entries (from sync queue)
-    /// IMPORTANT: Always sets deleted_at = NULL to restore soft-deleted entries
-    pub async fn bulk_upsert_picklist_entries(
-        &self,
-        event: &str,
-        entries: Vec<Value>,
-    ) -> Result<()> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        let payload: Vec<Value> = entries
-            .into_iter()
-            .map(|entry| {
-                json!({
-                    "event": event,
-                    "id": entry.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                    "team": entry.get("team").and_then(|v| v.as_str()).unwrap_or(""),
-                    "rank": entry.get("rank").and_then(|v| v.as_i64()).unwrap_or(0),
-                    "flags": entry.get("flags").cloned(),
-                    "deleted_at": Value::Null,  // Clear deleted_at (restore if was soft-deleted)
-                    "last_modified": Self::now_iso(),
-                })
-            })
-            .collect();
-
-        self.auth_client()
-            .from("event_picklist_entries")
-            .upsert(&serde_json::to_string(&payload)?)
-            .execute()
-            .await
-            .context("Failed to bulk upsert picklist entries")?;
-
-        Ok(())
-    }
-
-    // Note: delete_picklist and delete_picklist_entries already exist above
-    // and don't need event parameter, so sync queue can call them directly
 
     /// Put team data (from sync queue)
     pub async fn put_team_data(
@@ -811,18 +675,24 @@ impl SupabaseService {
 
     /// Fetch event picklists from Supabase
     /// Polls for picklists created by any user at this event.
-    /// `since`: if Some, only fetch rows with last_modified > since (incremental sync).
+    /// `since`: if Some, only fetch rows modified since that timestamp (incremental sync).
+    ///          Incremental includes soft-deleted rows so deletions propagate to the local cache.
     pub async fn fetch_event_picklists(&self, event: &str, since: Option<&str>) -> Result<Vec<Value>> {
-        let mut query = self.client
+        let mut query = self.auth_client()
             .from("event_picklist")
             .select("*")
             .eq("event", event)
-            .is("deleted_at", "null")
             .order("timestamp.desc");
 
-        if let Some(ts) = since {
-            query = query.gt("last_modified", ts);
-        }
+        // Always fetch all picklists (active and deleted) so the SQLite upsert can
+        // propagate deletions. On first sync the old SQLite entry might have deleted_at=NULL
+        // but the fresh Supabase row will have deleted_at set — the ON CONFLICT UPDATE will
+        // write deleted_at, and get_picklists filters it out with WHERE deleted_at IS NULL.
+        query = if let Some(ts) = since {
+            query.gte("last_modified", ts)
+        } else {
+            query // Full fetch: no deleted_at filter — include deleted rows so they propagate
+        };
 
         let response = query
             .execute()
@@ -836,46 +706,22 @@ impl SupabaseService {
         Ok(data)
     }
 
-    /// Fetch picklist entries from Supabase
-    /// Polls for all picklist entries at this event.
-    /// `since`: if Some, only fetch rows with last_modified > since (incremental sync).
-    pub async fn fetch_event_picklist_entries(&self, event: &str, since: Option<&str>) -> Result<Vec<Value>> {
-        let mut query = self.client
-            .from("event_picklist_entries")
-            .select("event, id, team, rank, flags, last_modified")
-            .eq("event", event)
-            .is("deleted_at", "null")
-            .order("rank.asc");
-
-        if let Some(ts) = since {
-            query = query.gt("last_modified", ts);
-        }
-
-        let response = query
-            .execute()
-            .await
-            .context("Failed to fetch picklist entries from Supabase")?;
-
-        let body = response.text().await?;
-        let data: Vec<Value> = serde_json::from_str(&body)
-            .context("Failed to parse picklist entries response")?;
-
-        Ok(data)
-    }
-
     /// Fetch match scouting data from Supabase
-    /// `since`: if Some, only fetch rows with last_modified > since (incremental sync).
+    /// `since`: if Some, only fetch rows modified since that timestamp (incremental sync).
+    ///          Incremental includes soft-deleted rows so deletions propagate to the local cache.
     /// This is the highest-egress operation — each data_raw is 5-15KB. Always use since when possible.
     pub async fn fetch_event_match_data(&self, event: &str, since: Option<&str>) -> Result<Vec<Value>> {
-        let mut query = self.client
+        let mut query = self.auth_client()
             .from("event_match_data")
             .select("event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at")
-            .eq("event", event)
-            .is("deleted_at", "null");
+            .eq("event", event);
 
-        if let Some(ts) = since {
-            query = query.gt("last_modified", ts);
-        }
+        query = if let Some(ts) = since {
+            query.gte("last_modified", ts)
+        } else {
+            // Full fetch: no filter — include deleted so deleted_at propagates to SQLite
+            query
+        };
 
         let response = query
             .execute()
@@ -891,17 +737,20 @@ impl SupabaseService {
 
     /// Fetch team data from Supabase
     /// Polls for team data at this event (includes TBA stats synced by desktop + pit scouting).
-    /// `since`: if Some, only fetch rows with last_modified > since (incremental sync).
+    /// `since`: if Some, only fetch rows modified since that timestamp (incremental sync).
+    ///          Incremental includes soft-deleted rows so deletions propagate to the local cache.
     pub async fn fetch_event_team_data(&self, event: &str, since: Option<&str>) -> Result<Vec<Value>> {
-        let mut query = self.client
+        let mut query = self.auth_client()
             .from("event_team_data")
             .select("*")
-            .eq("event", event)
-            .is("deleted_at", "null");
+            .eq("event", event);
 
-        if let Some(ts) = since {
-            query = query.gt("last_modified", ts);
-        }
+        query = if let Some(ts) = since {
+            query.gte("last_modified", ts)
+        } else {
+            // Full fetch: no filter — include deleted so deleted_at propagates to SQLite
+            query
+        };
 
         let response = query
             .execute()
@@ -917,17 +766,20 @@ impl SupabaseService {
 
     /// Fetch event schedule from Supabase
     /// Polls for schedule entries at this event (includes shift assignments).
-    /// `since`: if Some, only fetch rows with last_modified > since (incremental sync).
+    /// `since`: if Some, only fetch rows modified since that timestamp (incremental sync).
+    ///          Incremental includes soft-deleted rows so deletions propagate to the local cache.
     pub async fn fetch_event_schedule(&self, event: &str, since: Option<&str>) -> Result<Vec<Value>> {
-        let mut query = self.client
+        let mut query = self.auth_client()
             .from("event_schedule")
             .select("*")
-            .eq("event", event)
-            .is("deleted_at", "null");
+            .eq("event", event);
 
-        if let Some(ts) = since {
-            query = query.gt("last_modified", ts);
-        }
+        query = if let Some(ts) = since {
+            query.gte("last_modified", ts)
+        } else {
+            // Full fetch: no filter — include deleted so deleted_at propagates to SQLite
+            query
+        };
 
         let response = query
             .execute()

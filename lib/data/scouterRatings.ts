@@ -45,7 +45,7 @@ export interface ScouterRating {
  */
 export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
   try {
-    // Desktop: Try local cache first
+    // Desktop: Use local SQLite cache only — Rust sync keeps it fresh
     if (isTauri()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
@@ -53,29 +53,21 @@ export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
           uids: uids && uids.length > 0 ? uids : null,
         });
 
-        if (cached && cached.length > 0) {
-          // Convert cached profiles to match expected format
-          return cached.map((profile) => ({
-            uid: profile.uid,
-            name: profile.name,
-            role: profile.role as "user" | "scouter" | "admin",
-            settings: profile.settings || {},
-            last_modified: new Date(profile.last_modified).toISOString(), // Convert epoch to ISO string
-            deleted_at: null,
-          }));
-        }
-
-        // If cache is empty, fall through to Supabase fetch
-        console.log("[ScouterRatings] Cache empty, fetching from Supabase");
+        return (cached || []).map((profile) => ({
+          uid: profile.uid,
+          name: profile.name,
+          role: profile.role as "user" | "scouter" | "admin",
+          settings: profile.settings || {},
+          last_modified: new Date(profile.last_modified).toISOString(),
+          deleted_at: null,
+        }));
       } catch (err) {
-        console.warn(
-          "[ScouterRatings] Cache fetch failed, falling back to Supabase:",
-          err
-        );
+        console.warn("[ScouterRatings] Cache fetch failed:", err);
+        return [];
       }
     }
 
-    // Mobile or desktop fallback: Fetch from Supabase
+    // Mobile: Fetch from Supabase
     let query = supabase.from("user_profiles").select("*");
 
     if (uids && uids.length > 0) {
@@ -88,7 +80,7 @@ export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
       throw new Error(`Failed to fetch user profiles: ${error.message}`);
     }
 
-    const profiles = (data || []).map((profile) => ({
+    return (data || []).map((profile) => ({
       uid: profile.uid,
       name: profile.name,
       role: profile.role,
@@ -96,27 +88,6 @@ export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
       last_modified: profile.last_modified,
       deleted_at: profile.deleted_at,
     }));
-
-    // Desktop: Cache the fetched profiles
-    if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("cache_user_profiles", {
-          profiles: profiles.map((p) => ({
-            uid: p.uid,
-            name: p.name,
-            role: p.role,
-            settings: p.settings,
-            last_modified: new Date(p.last_modified).getTime(), // Convert to epoch
-            deleted_at: p.deleted_at ? new Date(p.deleted_at).getTime() : null,
-          })),
-        });
-      } catch (err) {
-        console.warn("[ScouterRatings] Failed to cache profiles:", err);
-      }
-    }
-
-    return profiles;
   } catch (error) {
     console.error("[ScouterRatings] Error fetching user profiles:", error);
     throw error;
@@ -129,7 +100,7 @@ export async function getUserProfiles(uids?: string[]): Promise<UserProfile[]> {
  * Combines user profile data with event-specific match counts
  */
 export async function getScouterRatings(
-  eventKey: string,
+  _eventKey: string,
   profiles: UserProfile[],
   matchData: EventMatchData[],
   scheduleData: EventScheduleEntry[]
@@ -266,7 +237,7 @@ export async function setScouterRating(
  */
 export async function calculateScouterRating(
   uid: string,
-  eventKey: string,
+  _eventKey: string,
   matchData: EventMatchData[]
 ): Promise<number | null> {
   const scoutedMatches = matchData.filter(

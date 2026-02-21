@@ -110,17 +110,6 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         },
         () => triggerRefresh()
       )
-      // Picklist entries (team add/remove/reorder)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_picklist_entries",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => triggerRefresh()
-      )
       // Match data (match scouting from mobile)
       .on(
         "postgres_changes",

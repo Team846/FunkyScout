@@ -102,7 +102,7 @@ function TestPicklistsPage() {
   const navigate = useNavigate();
   const { currentEvent } = useDesktopEvent();
   const { teams } = useDesktopTeamData();
-  const { picklists, picklistEntries, refresh } = useDesktopCompetitionData();
+  const { picklists, refresh } = useDesktopCompetitionData();
 
   const [selectedPicklistId, setSelectedPicklistId] = useState<string | null>(null);
   const [picklistTitle, setPicklistTitle] = useState("");
@@ -131,12 +131,10 @@ function TestPicklistsPage() {
     [picklists, selectedPicklistId]
   );
 
-  // Filter by both picklist ID and current event to prevent showing entries from other events during refresh
+  // Get embedded entries from the selected picklist
   const selectedEntries = useMemo(
-    () => picklistEntries.filter(
-      (e) => e.id === selectedPicklistId && e.event === currentEvent
-    ),
-    [picklistEntries, selectedPicklistId, currentEvent]
+    () => selectedPicklist?.picklist ?? [],
+    [selectedPicklist]
   );
 
   console.log(`[test-picklists] Selected picklist ${selectedPicklistId}: ${selectedEntries.length} entries`, selectedEntries.slice(0, 3));

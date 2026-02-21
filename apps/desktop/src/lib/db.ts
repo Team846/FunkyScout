@@ -12,10 +12,8 @@
  *   - cacheSchedule(event, schedule) - Cache schedule from Supabase
  *
  * Picklists:
- *   - getPicklists(event) - Fetch all picklists
- *   - getPicklistEntries(event) - Fetch all picklist entries
+ *   - getPicklists(event) - Fetch all picklists (with embedded entries)
  *   - cachePicklists(picklists) - Cache picklists from Supabase
- *   - cachePicklistEntries(entries) - Cache picklist entries from Supabase
  *
  * User Profiles:
  *   - getUserProfiles(uids?) - Fetch user profiles (filter by UIDs optional)
@@ -78,27 +76,25 @@ export interface EventScheduleEntry {
 }
 
 /**
- * Picklist from SQLite cache
+ * Embedded entry in a picklist
+ */
+export interface PicklistEntry {
+  team: string;
+  rank: number;
+  flags: Record<string, unknown> | null;
+}
+
+/**
+ * Picklist from SQLite cache (entries embedded in picklist column)
  */
 export interface EventPicklist {
   event: string;
   id: string;
   title: string;
+  picklist: PicklistEntry[];
   uname: string;
   uid: string;
   timestamp: number;
-  last_modified: number;
-}
-
-/**
- * Picklist entry from SQLite cache
- */
-export interface EventPicklistEntry {
-  event: string;
-  id: string;
-  team: string;
-  rank: number;
-  flags?: any; // JSON flags like { excluded: boolean }
   last_modified: number;
 }
 
@@ -128,15 +124,6 @@ export async function getPicklists(event: string): Promise<EventPicklist[]> {
 }
 
 /**
- * Fetch all picklist entries for an event from SQLite cache
- */
-export async function getPicklistEntries(
-  event: string
-): Promise<EventPicklistEntry[]> {
-  return invoke<EventPicklistEntry[]>("get_picklist_entries", { event });
-}
-
-/**
  * Cache schedule data to SQLite after fetching from Supabase
  * Allows offline access to Supabase data
  */
@@ -153,14 +140,6 @@ export async function cacheSchedule(
  */
 export async function cachePicklists(picklists: any[]): Promise<void> {
   return invoke<void>("cache_picklists", { picklists });
-}
-
-/**
- * Cache picklist entries to SQLite after fetching from Supabase
- * Allows offline access to picklist team rankings
- */
-export async function cachePicklistEntries(entries: any[]): Promise<void> {
-  return invoke<void>("cache_picklist_entries", { entries });
 }
 
 /**

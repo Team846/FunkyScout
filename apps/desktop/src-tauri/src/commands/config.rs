@@ -8,19 +8,30 @@ pub async fn save_config(
     state: State<'_, Mutex<crate::AppState>>,
     config: AppConfig,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
+    let event_arc = {
+        let app_state = state.lock().unwrap();
 
-    // Save to store
-    app_state
-        .app_store
-        .store
-        .set("config", serde_json::to_value(&config).unwrap());
+        // Save to store
+        app_state
+            .app_store
+            .store
+            .set("config", serde_json::to_value(&config).unwrap());
 
-    app_state
-        .app_store
-        .store
-        .save()
-        .map_err(|e| e.to_string())?;
+        app_state
+            .app_store
+            .store
+            .save()
+            .map_err(|e| e.to_string())?;
+
+        // Clone Arc before releasing lock so we can update it without holding the mutex
+        Arc::clone(&app_state.current_event_shared)
+    };
+
+    // Update the shared event key so SyncService picks it up on the next sync cycle
+    if !config.event_key.is_empty() {
+        *event_arc.write().unwrap() = config.event_key.clone();
+        println!("[Config] Updated current_event_shared to: {}", config.event_key);
+    }
 
     println!("[Config] Saved: {:?}", config);
     Ok(())
