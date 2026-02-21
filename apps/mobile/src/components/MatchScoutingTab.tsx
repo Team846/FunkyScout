@@ -13,7 +13,11 @@ interface MatchScoutingTabProps {
   eventKey: string;
   teamKey: string;
 }
-
+interface Frequencies{
+  L1: number,
+  L2: number,
+  L3: number
+}
 export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const [matchData, setMatchData] = useState<EventMatchData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,6 +110,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
                 </p>
               </div>
             )}
+            
           </div>
         )}
 
@@ -174,6 +179,30 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
 
   const selectedMatchData = matchData.filter((d) => d.match === selectedMatch);
 
+
+  
+  const allStats = matchData
+  .map(d => calculateSingleMatchStats(d))
+  .filter((s): s is NonNullable<typeof s> => s !== null);
+
+  const matchCount = allStats.length;
+
+  const intakeCounts = allStats.reduce((acc,m) => {
+    acc['Ground'] += m.auto.groundIntakes + m.teleop.groundIntakes;
+    acc['Station'] += m.auto.stationIntakes + m.teleop.stationIntakes;
+    
+    return acc;
+  }, { Ground: 0, Station: 0 } as Record<string, number>)
+  
+  const climbCounts = allStats.reduce((acc, m) => {
+    
+    const lvl = m.climb.level || "None";
+    acc[lvl] = (acc[lvl] || 0) + 1;
+    return acc; 
+  }, {} as Record<string, number>);
+  
+
+  
   return (
     <div className="flex flex-col gap-10 p-2.5">
       {/* OPR/EPA Stats */}
@@ -197,6 +226,35 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           )}
         </div>
       )}
+      
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl bg-muted p-4">
+          <p className="text-xs text-muted-foreground mb-2">Climb Frequency</p>
+          <div className="flex gap-3">
+            
+            {Object.entries(climbCounts).map(([level, count]) => (
+              <p key={level} className="text-sm text-foreground">
+                {level}: <span className="font-bold text-primary">{(100*count/(matchCount == 0 ? 100 : matchCount)).toFixed(0)}%</span>
+              </p>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl bg-muted p-4">
+          <p className="text-xs text-muted-foreground mb-2">Intake</p>
+          <div className="flex gap-3">
+            { 
+            
+            Object.entries(intakeCounts).map(([type, count]) => (
+              
+              <p key={type} className="flex text-sm text-foreground">
+
+                {type.substring(0,1)}: <span className="font-bold text-primary">{(100 * count/((intakeCounts['Ground'] + intakeCounts['Station']) == 0 ? 100 : intakeCounts['Ground'] + intakeCounts['Station'])).toFixed(0)}%</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Match Selector */}
       <div className="space-y-2">
@@ -312,13 +370,28 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-background p-3">
-          <p className="text-xs text-muted-foreground mb-1">Auto Actions</p>
-          <p className="text-lg font-semibold text-primary">{autoScore}</p>
+        <div className="flex flex-col rounded-lg bg-background p-3">
+          <p className="text-sm text-muted-foreground mb-1">Auto Actions: <span className="text-lg font-semibold text-primary">{autoScore}</span></p>
+
+          
+            
+            <p className="text-xs text-muted-foreground mb-1">Auto Shoots: <span className="text-primary">{matchStats.auto.shoots}</span></p>
+            <p className="text-xs text-muted-foreground mb-1">Auto Intakes: <span className="text-primary">{matchStats.auto.groundIntakes + matchStats.auto.stationIntakes}</span></p>
+            
         </div>
-        <div className="rounded-lg bg-background p-3">
-          <p className="text-xs text-muted-foreground mb-1">Teleop Actions</p>
-          <p className="text-lg font-semibold text-primary">{teleopScore}</p>
+          
+            
+            
+          
+        
+        <div className="flex flex-col rounded-lg bg-background p-3">
+
+          <p className="text-sm text-muted-foreground mb-1">
+            Teleop Actions: <span className="text-lg font-semibold text-primary">{teleopScore}</span>
+          </p>
+          <p className="text-xs text-muted-foreground mb-1">Teleop Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
+
+          <p className="text-xs text-muted-foreground mb-1">Teleop Intakes: <span className="text-primary">{matchStats.teleop.groundIntakes + matchStats.teleop.stationIntakes}</span></p>
         </div>
         <div className="rounded-lg bg-background p-3">
           <p className="text-xs text-muted-foreground mb-1">Auto Climb</p>
