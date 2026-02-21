@@ -363,7 +363,10 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       pollingController.current.start();
     }
 
-    return () => pollingController.current?.stop();
+    return () => {
+      pollingController.current?.stop();
+      pollingController.current = null;
+    };
   }, [dbInitialized, fetchTeamsStable]);
 
   // Handle event changes - fetch teams immediately
@@ -382,9 +385,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }
-      // Reset polling controller to trigger fresh fetches immediately
-      if (pollingController.current) pollingController.current.forceRefresh();
-
+      // Trigger one immediate fetch. Poller handles periodic background refresh.
+      // forceRefresh() is NOT called here — that would duplicate this fetch.
       fetchTeams();
     }
   }, [currentEvent, dbInitialized, fetchTeams, isOnline]);
@@ -496,10 +498,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   }, [currentEvent, dbInitialized, isOnline, fetchTeams]);
 
   const refresh = useCallback(async () => {
-    // Reset polling interval to trigger fresh fetches sooner
-    if (pollingController.current) pollingController.current.forceRefresh();
-
-    // Use ref to call current fetch function without changing callback identity
+    // Use ref to call current fetch function without changing callback identity.
+    // forceRefresh() is NOT called — that would duplicate this fetch.
     if (fetchTeamsRef.current) {
       await fetchTeamsRef.current();
     }

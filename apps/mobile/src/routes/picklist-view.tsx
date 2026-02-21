@@ -84,7 +84,10 @@ function PicklistViewPage() {
       setPicklist(result);
       setEntries((result?.picklist as PicklistEntry[]) ?? []);
       setHasUnsavedChanges(false);
-      setLastLoadedTimestamp(picklist?.last_modified || Date.now());
+      // Use `result` (the freshly fetched value), NOT `picklist` state which is stale
+      // until React re-renders. Using `picklist` here gives null on first load → Date.now()
+      // → isNewer checks always fail because cachedTimestamp (from Supabase) < Date.now()
+      setLastLoadedTimestamp(result?.last_modified ?? Date.now());
     } catch (error) {
       console.error("Failed to load picklist:", error);
       if (isInitialLoad) {
@@ -135,12 +138,15 @@ function PicklistViewPage() {
             "[picklist-view] ⚠️ Remote changes detected - cache is newer!"
           );
 
-          // Always show notification with options (even if no unsaved changes)
+          // Use a stable id so repeated 15s checks update the existing toast
+          // instead of stacking duplicate notifications
           toast.warning("Picklist updated by someone else", {
+            id: "picklist-conflict",
             position: "top-center",
             action: {
               label: "Accept",
               onClick: () => {
+                toast.dismiss("picklist-conflict");
                 loadPicklistData();
                 toast.success("Updated");
               },
@@ -148,6 +154,7 @@ function PicklistViewPage() {
             cancel: {
               label: "Keep mine",
               onClick: () => {
+                toast.dismiss("picklist-conflict");
                 // Update timestamp to prevent repeated notifications
                 setLastLoadedTimestamp(
                   cachedPicklist?.last_modified || Date.now()
@@ -156,7 +163,7 @@ function PicklistViewPage() {
                 setHasUnsavedChanges(true);
               },
             },
-            duration: 8000,
+            duration: Infinity,
             style: {
               backgroundColor: "hsl(var(--accent))",
               color: "hsl(var(--foreground))",
@@ -325,10 +332,7 @@ function PicklistViewPage() {
         "[picklist-view] refreshCompetition() completed, reading cache..."
       );
 
-      const { picklist: updatedPicklist } = await getPicklistById(
-        currentEvent,
-        id
-      );
+      const updatedPicklist = await getPicklistById(currentEvent, id);
 
       if (updatedPicklist) {
         console.log("[picklist-view] Post-save picklist from cache:", {
@@ -338,7 +342,7 @@ function PicklistViewPage() {
         });
         setPicklist(updatedPicklist);
         // Update with the actual Supabase timestamp for future conflict checks
-        setLastLoadedTimestamp(updatedPicklist.last_modified || Date.now());
+        setLastLoadedTimestamp(updatedPicklist.last_modified ?? Date.now());
         console.log(
           "[picklist-view] ✅ lastLoadedTimestamp updated to:",
           updatedPicklist.last_modified

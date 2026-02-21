@@ -197,8 +197,8 @@ function PicklistEditorPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Choose a picklist...</SelectItem>
-                {picklists.map((picklist) => (
-                  <SelectItem key={picklist.id} value={picklist.id}>
+                {picklists.map((picklist, index) => (
+                  <SelectItem key={picklist.id || `picklist-${index}`} value={picklist.id}>
                     {picklist.title} ({picklist.type})
                   </SelectItem>
                 ))}
@@ -270,9 +270,9 @@ function PicklistEditorPage() {
                   strategy={verticalListSortingStrategy}
                 >
                   <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
-                    {displayEntries.map((entry) => (
+                    {displayEntries.map((entry, index) => (
                       <SortableItem
-                        key={entry.team}
+                        key={entry.team ?? `entry-${index}`}
                         team={entry.team}
                         rank={entry.rank || 0}
                         excluded={!!entry.flags?.excluded}

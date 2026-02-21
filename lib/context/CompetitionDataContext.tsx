@@ -331,13 +331,6 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchMatchDataRef.current = fetchMatchData;
   }, [fetchSchedule, fetchNexus, fetchPicklists, fetchMatchData]);
 
-  // Initial fetch of match data when event loads
-  useEffect(() => {
-    if (currentEvent && dbInitialized && isOnline) {
-      fetchMatchData();
-    }
-  }, [currentEvent, dbInitialized, isOnline, fetchMatchData]);
-
   // Stable wrappers for polling - always call latest fetch functions
   const fetchScheduleStable = useCallback(async () => {
     if (fetchScheduleRef.current) {
@@ -402,9 +395,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       schedulePolling.current?.stop();
+      schedulePolling.current = null;
       nexusPolling.current?.stop();
+      nexusPolling.current = null;
       picklistPolling.current?.stop();
+      picklistPolling.current = null;
       matchDataPolling.current?.stop();
+      matchDataPolling.current = null;
     };
   }, [
     dbInitialized,
@@ -431,15 +428,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }
-      // Reset polling controllers to trigger fresh fetches immediately
-      if (schedulePolling.current) schedulePolling.current.forceRefresh();
-      if (nexusPolling.current) nexusPolling.current.forceRefresh();
-      if (picklistPolling.current) picklistPolling.current.forceRefresh();
-      if (matchDataPolling.current) matchDataPolling.current.forceRefresh();
-
+      // Trigger one immediate fetch per data type.
+      // Pollers handle the 5-min periodic background refresh.
+      // forceRefresh() is NOT called here — that would duplicate these calls.
       fetchSchedule();
       fetchNexus();
       fetchPicklists();
+      fetchMatchData();
     }
   }, [
     currentEvent,
@@ -447,6 +442,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchSchedule,
     fetchNexus,
     fetchPicklists,
+    fetchMatchData,
     isOnline,
   ]);
 
@@ -571,17 +567,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");
-    // Reset polling intervals to trigger fresh fetches sooner
-    if (schedulePolling.current) schedulePolling.current.forceRefresh();
-    if (nexusPolling.current) nexusPolling.current.forceRefresh();
-    if (picklistPolling.current) picklistPolling.current.forceRefresh();
-    if (matchDataPolling.current) matchDataPolling.current.forceRefresh();
-
-    // Use refs to call current fetch functions without changing callback identity
+    // Use refs to call current fetch functions without changing callback identity.
+    // forceRefresh() is NOT called — that would duplicate these fetches.
     const promises = [];
     if (fetchScheduleRef.current) promises.push(fetchScheduleRef.current());
     if (fetchNexusRef.current) promises.push(fetchNexusRef.current());
     if (fetchPicklistsRef.current) promises.push(fetchPicklistsRef.current());
+    if (fetchMatchDataRef.current) promises.push(fetchMatchDataRef.current());
     await Promise.all(promises);
   }, []); // Empty dependencies - callback never changes!
 
