@@ -645,7 +645,7 @@ function SortableTeamBar(
 
 // ─── GraphCard ──────────────────────────────────────────────────────────────
 
-const BAR_HEIGHT_PX = 120;
+const BAR_HEIGHT_PX = 80;
 
 interface GraphCardProps {
   metricKey: string;
@@ -709,7 +709,10 @@ function GraphCard({
       </div>
 
       {/* Bar chart */}
-      <div className="flex items-end justify-around gap-2 px-4 pb-3 pt-2 flex-1">
+      <div 
+        className="flex items-end justify-around px-3 pb-2 pt-1 flex-1 min-h-0 overflow-hidden"
+        style={{ gap: teams.length <= 2 ? '8px' : teams.length === 3 ? '6px' : '4px' }}
+      >
         {teams.length === 0 ? (
           <span className="text-xs text-muted-foreground self-center">
             Select teams to compare
@@ -717,48 +720,54 @@ function GraphCard({
         ) : (
           teams.map((teamKey, i) => {
             const isWinner = i === winnerIdx && raws[i] > 0;
-            const barH = Math.max(
-              4,
-              Math.round((normalized[i] ?? 0) * maxBarHeight)
-            );
+            const normalizedVal = normalized[i] ?? 0;
+            const barH = Math.max(4, Math.round(normalizedVal * maxBarHeight));
             const rawVal = raws[i] ?? 0;
             const teamNum = getTeamNum(teamKey);
-            const percentile = Math.round((normalized[i] ?? 0) * 100);
+            const percentile = Math.round(normalizedVal * 100);
+            const showPercentileInside = normalizedVal >= 0.25;
 
             return (
               <div
                 key={teamKey}
-                className="flex flex-col items-center gap-1"
+                className="flex flex-col items-center min-w-0"
                 style={{ width: `${barWidth}px`, flexShrink: 0 }}
               >
-                {/* Percentile indicator */}
-                {showPercentiles && (
-                  <div className="flex flex-col items-center -mb-1">
-                    <span className="text-[10px] text-muted-foreground font-medium">
-                      {percentile}%
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">↓</span>
+                {/* Bar section */}
+                <div className="flex flex-col items-center justify-end flex-1 min-h-0">
+                  {/* Percentile above bar (only if bar is too small) */}
+                  {showPercentiles && !showPercentileInside && (
+                    <div className="flex flex-col items-center leading-none">
+                      <span className="text-[9px] text-muted-foreground/70 font-medium">
+                        {percentile}%
+                      </span>
+                      <span className="text-[8px] text-muted-foreground/70">↓</span>
+                    </div>
+                  )}
+                  {/* Bar with percentile inside */}
+                  <div
+                    style={{ height: `${barH}px`, width: `${barWidth}px` }}
+                    className={[
+                      "rounded-sm transition-all relative flex items-center justify-center flex-shrink-0",
+                      isWinner ? "bg-primary" : "bg-primary/80",
+                    ].join(" ")}
+                  >
+                    {showPercentiles && showPercentileInside && (
+                      <span className="text-[9px] font-medium text-background/70">
+                        {percentile}%
+                      </span>
+                    )}
                   </div>
-                )}
-                {/* Raw value above bar */}
-                <span
-                  className={[
-                    "text-xs font-bold",
-                    isWinner ? "text-primary" : "text-muted-foreground",
-                  ].join(" ")}
-                >
+                </div>
+                {/* Stat value - highlighted if best */}
+                <span className={[
+                  "text-[11px] font-medium mt-1 flex-shrink-0",
+                  isWinner ? "text-primary" : "text-muted-foreground",
+                ].join(" ")}>
                   {rawVal > 0 ? rawVal.toFixed(1) : "—"}
                 </span>
-                {/* Bar */}
-                <div
-                  style={{ height: `${barH}px`, width: `${barWidth}px` }}
-                  className={[
-                    "rounded-sm transition-all",
-                    isWinner ? "bg-primary" : "bg-primary/80",
-                  ].join(" ")}
-                />
-                {/* Team number below bar */}
-                <span className="text-xs font-medium text-muted-foreground truncate w-full text-center">
+                {/* Team number */}
+                <span className="text-[11px] font-semibold text-foreground truncate w-full text-center flex-shrink-0">
                   {teamNum}
                 </span>
               </div>
@@ -779,7 +788,17 @@ interface MetricPickerProps {
 }
 
 function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
-  const groups = [...new Set(ALL_GRAPH_METRICS.map((m) => m.group))];
+  const [search, setSearch] = useState("");
+  
+  const filteredMetrics = useMemo(() => {
+    if (!search.trim()) return ALL_GRAPH_METRICS;
+    const q = search.toLowerCase();
+    return ALL_GRAPH_METRICS.filter(
+      (m) => m.label.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)
+    );
+  }, [search]);
+
+  const filteredGroups = [...new Set(filteredMetrics.map((m) => m.group))];
 
   return (
     <>
@@ -810,34 +829,54 @@ function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="max-h-80 overflow-y-auto py-2">
-          {groups.map((group) => (
-            <div key={group}>
-              <div className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                {group}
-              </div>
-              {ALL_GRAPH_METRICS.filter((m) => m.group === group).map(
-                (metric) => {
-                  const isActive = activeMetrics.includes(metric.key);
-                  return (
-                    <button
-                      key={metric.key}
-                      onClick={() => !isActive && onSelect(metric.key)}
-                      className={[
-                        "w-full text-left px-5 py-2 text-sm transition-colors",
-                        isActive
-                          ? "text-primary font-medium"
-                          : "text-muted-foreground hover:text-foreground hover:bg-card cursor-pointer",
-                      ].join(" ")}
-                    >
-                      {metric.label}
-                      {isActive && " ✓"}
-                    </button>
-                  );
-                }
-              )}
+        {/* Search bar */}
+        <div className="px-3 py-2 border-b border-border">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search metrics..."
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-card border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="max-h-64 overflow-y-auto py-2">
+          {filteredGroups.length === 0 ? (
+            <div className="px-4 py-4 text-sm text-muted-foreground text-center">
+              No metrics found
             </div>
-          ))}
+          ) : (
+            filteredGroups.map((group) => (
+              <div key={group}>
+                <div className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {group}
+                </div>
+                {filteredMetrics.filter((m) => m.group === group).map(
+                  (metric) => {
+                    const isActive = activeMetrics.includes(metric.key);
+                    return (
+                      <button
+                        key={metric.key}
+                        onClick={() => !isActive && onSelect(metric.key)}
+                        className={[
+                          "w-full text-left px-5 py-2 text-sm transition-colors",
+                          isActive
+                            ? "text-primary font-medium"
+                            : "text-muted-foreground hover:text-foreground hover:bg-card cursor-pointer",
+                        ].join(" ")}
+                      >
+                        {metric.label}
+                        {isActive && " ✓"}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
     </>

@@ -458,9 +458,15 @@ function MatchEditStats() {
       });
     }
 
+    // For climb actions added in edit mode, set timestamp to phase end
+    // so climbTime calculates to 0 (indicating added in post)
+    // Auto phase is 20s, teleop/endgame is 140s
+    const isClimbAction = actionType.startsWith("climb_");
+    const climbTimestamp = phase === "auto" ? 20000 : 140000;
+    
     const newAction: ToggleAction = {
       type: actionType,
-      timestamp: Date.now(),
+      timestamp: isClimbAction ? climbTimestamp : Date.now(),
       active: !currentlyActive,
       phase,
     };

@@ -1,277 +1,572 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@shadcn/ui/components/card.tsx";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shadcn/ui/components/tabs.tsx";
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { Card } from "@shadcn/ui/components/card.tsx";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@shadcn/ui/components/table.tsx";
-import { Badge } from "@shadcn/ui/components/badge.tsx";
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@shadcn/ui/components/tabs.tsx";
+import { Input } from "@shadcn/ui/components/input.tsx";
+import { Button } from "@shadcn/ui/components/button.tsx";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
+import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import {
-  getShiftsByMatch,
-  getShiftsByScouter,
-  type MatchAssignment,
-  type ScouterSchedule,
+  buildScouterViewData,
+  buildTeamViewData,
+  type ScouterViewRow,
+  type TeamViewRow,
+  type MatchCard,
 } from "@lib/data/shiftViews";
+import { setScouterRating } from "@lib/data/scouterRatings";
+import {
+  getMatchScoutingData,
+  getPitScoutingData,
+  getUserProfiles,
+  type MatchScoutingData,
+  type PitScoutingData,
+  type UserProfile,
+} from "../lib/db";
+import { setTeamPriority } from "@lib/data/writes";
 
 export const Route = createFileRoute("/shifts")({
   component: ShiftViewerPage,
 });
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StarRating({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="flex gap-0">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          onClick={() => onChange(n)}
+          className={`text-sm px-0.5 transition-colors leading-none ${
+            value != null && n <= value
+              ? "text-yellow-400"
+              : "text-muted-foreground/25"
+          } hover:text-yellow-300`}
+        >
+          ★
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ClimbBadge({
+  wasScouted,
+  scouted,
+  tba,
+  climbMatch,
+}: {
+  wasScouted: boolean | undefined;
+  scouted: "L1" | "L2" | "L3" | null | undefined;
+  tba: "L1" | "L2" | "L3" | null | undefined;
+  climbMatch: boolean | null | undefined;
+}) {
+  if (!wasScouted) {
+    return <span className="text-[10px] text-muted-foreground/40">—</span>;
+  }
+  if (climbMatch === null || climbMatch === undefined) {
+    return <span className="text-[10px] text-muted-foreground/40">no TBA</span>;
+  }
+  return (
+    <span
+      className={`text-[10px] font-medium leading-none ${
+        climbMatch ? "text-green-500" : "text-red-400"
+      }`}
+    >
+      {scouted ?? "none"} {climbMatch ? "✓" : `≠${tba ?? "none"}`}
+    </span>
+  );
+}
+
+function formatMatchTime(estTime: number | null): string | null {
+  if (!estTime) return null;
+  const date = new Date(estTime * 1000);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function MatchCardSmall({
+  card,
+  type,
+}: {
+  card: MatchCard;
+  type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
+}) {
+  const allianceBorder =
+    card.alliance === "red"
+      ? "border-red-500/40 bg-red-500/10"
+      : "border-blue-500/40 bg-blue-500/10";
+  const isTeam = type === "team-past" || type === "team-next";
+  const matchTime = formatMatchTime(card.estTime);
+
+  return (
+    <div
+      className={`w-[180px] flex-shrink-0 border rounded-lg px-3 py-3 flex flex-col gap-1.5 ${allianceBorder}`}
+    >
+      {/* Row 1: Match display + time */}
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-semibold text-base">{card.matchDisplay}</span>
+        {matchTime && (
+          <span className="text-xs text-muted-foreground/60">{matchTime}</span>
+        )}
+      </div>
+
+      {/* Scouter rows: team number */}
+      {!isTeam && (
+        <div className="text-sm text-muted-foreground leading-none">
+          {card.teamNumber}
+        </div>
+      )}
+
+      {/* Scouter past: climb badge */}
+      {type === "scouter-past" && (
+        <ClimbBadge
+          wasScouted={card.wasScouted}
+          scouted={card.scoutedClimbLevel}
+          tba={card.tbaClimbLevel}
+          climbMatch={card.climbMatch}
+        />
+      )}
+
+      {/* Team past: scores in "red - blue" format + who scouted */}
+      {type === "team-past" && (
+        <>
+          {card.redScore != null && (
+            <div className="text-sm leading-none font-medium">
+              <span className="text-red-400">{card.redScore}</span>
+              <span className="text-muted-foreground/50"> - </span>
+              <span className="text-blue-400">{card.blueScore}</span>
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground/70 leading-snug truncate">
+            {card.wasScouted
+              ? card.scoutedByName ?? "Scouted"
+              : "No one scouted"}
+          </div>
+          <ClimbBadge
+            wasScouted={card.wasScouted}
+            scouted={card.scoutedClimbLevel}
+            tba={card.tbaClimbLevel}
+            climbMatch={card.climbMatch}
+          />
+        </>
+      )}
+
+      {/* Team next: predicted scores + who's assigned */}
+      {type === "team-next" && (
+        <>
+          {card.predictedRedScore != null && (
+            <div className="text-sm leading-none font-medium">
+              <span className="text-red-400/70">~{Math.round(card.predictedRedScore)}</span>
+              <span className="text-muted-foreground/50"> - </span>
+              <span className="text-blue-400/70">~{Math.round(card.predictedBlueScore ?? 0)}</span>
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground/70 leading-snug truncate">
+            {card.assignedScouterName ?? "No one assigned"}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MatchCardScroll({
+  cards,
+  type,
+  alignRight,
+}: {
+  cards: MatchCard[];
+  type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
+  alignRight?: boolean;
+}) {
+  return (
+    <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
+      <div
+        className={`flex gap-2.5 overflow-x-auto items-center py-1 ${alignRight ? "flex-row-reverse" : ""}`}
+        style={{ scrollbarWidth: "thin" }}
+      >
+        {cards.length === 0 ? (
+          <div className="text-sm text-muted-foreground/30 px-2">
+            —
+          </div>
+        ) : (
+          cards.map((m) => (
+            <MatchCardSmall key={m.matchKey} card={m} type={type} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Center card — scouter
+function ScouterCard({
+  row,
+  rating,
+  onRatingChange,
+}: {
+  row: ScouterViewRow;
+  rating: number | null;
+  onRatingChange: (n: number) => void;
+}) {
+  return (
+    <Card className="w-[220px] flex-shrink-0 px-4 py-3 flex flex-col gap-1.5">
+      {/* Row 1: name + stars */}
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <span className="font-semibold text-base truncate flex-1">{row.name}</span>
+        <StarRating value={rating} onChange={onRatingChange} />
+      </div>
+      {/* Row 2: stats */}
+      <div className="text-xs text-muted-foreground leading-snug">
+        {row.matchesScouted}/{row.matchesAssigned} scouted
+        {row.climbAccuracy != null && ` · ${row.climbAccuracy.toFixed(0)}% climb`}
+      </div>
+    </Card>
+  );
+}
+
+// Center card — team
+function TeamCard({
+  row,
+  priority,
+  onPriorityChange,
+}: {
+  row: TeamViewRow;
+  priority: number | null;
+  onPriorityChange: (n: number) => void;
+}) {
+  return (
+    <Card className="w-[220px] flex-shrink-0 px-4 py-3 flex flex-col gap-1.5">
+      {/* Row 1: team number + name */}
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="font-bold text-base flex-shrink-0">{row.teamNumber}</span>
+        <span className="text-xs text-muted-foreground truncate">{row.teamName}</span>
+      </div>
+      {/* Row 2: EPA + scouted */}
+      <div className="text-xs text-muted-foreground leading-snug">
+        {row.matchesScouted}/{row.matchesAssigned} scouted
+        {row.epa != null && ` · EPA ${row.epa.toFixed(1)}`}
+      </div>
+      {/* Row 3: priority stars */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] text-muted-foreground">Priority</span>
+        <StarRating value={priority} onChange={onPriorityChange} />
+      </div>
+    </Card>
+  );
+}
+
+function ScouterRow({
+  row,
+  rating,
+  onRatingChange,
+}: {
+  row: ScouterViewRow;
+  rating: number | null;
+  onRatingChange: (uid: string, n: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <MatchCardScroll cards={row.pastMatches} type="scouter-past" alignRight />
+      <ScouterCard
+        row={row}
+        rating={rating}
+        onRatingChange={(n) => onRatingChange(row.uid, n)}
+      />
+      <MatchCardScroll cards={row.nextMatches} type="scouter-next" />
+    </div>
+  );
+}
+
+function TeamRow({
+  row,
+  priority,
+  onPriorityChange,
+}: {
+  row: TeamViewRow;
+  priority: number | null;
+  onPriorityChange: (teamKey: string, n: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <MatchCardScroll cards={row.pastMatches} type="team-past" alignRight />
+      <TeamCard
+        row={row}
+        priority={priority}
+        onPriorityChange={(n) => onPriorityChange(row.teamKey, n)}
+      />
+      <MatchCardScroll cards={row.nextMatches} type="team-next" />
+    </div>
+  );
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-center py-10 text-muted-foreground text-sm">
+      {children}
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 function ShiftViewerPage() {
   const { currentEvent } = useDesktopEvent();
-  const { lastDataRefreshAt } = useDesktopCompetitionData();
-  const [byMatch, setByMatch] = useState<Map<string, MatchAssignment[]>>(new Map());
-  const [byScouter, setByScouter] = useState<ScouterSchedule[]>([]);
+  const { schedule, tbaClimbData, lastDataRefreshAt } =
+    useDesktopCompetitionData();
+  const { tbaTeams } = useDesktopTeamData();
+
+  const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [pitData, setPitData] = useState<PitScoutingData[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [scouterSearch, setScouterSearch] = useState("");
+  const [teamSearch, setTeamSearch] = useState("");
+
+  // Pending changes — lifted from individual rows so one Save covers everything
+  const [dirtyRatings, setDirtyRatings] = useState<Record<string, number>>({});
+  const [dirtyPriorities, setDirtyPriorities] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState(false);
+
+  // Load per-event data from local SQLite; refresh on every sync cycle
   useEffect(() => {
-    loadShifts();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!currentEvent) return;
+    setLoading(true);
+    Promise.all([
+      getMatchScoutingData(currentEvent),
+      getPitScoutingData(currentEvent),
+      getUserProfiles(),
+    ])
+      .then(([md, pd, prof]) => {
+        setMatchData(md);
+        setPitData(pd);
+        setProfiles(prof);
+      })
+      .catch((e) => console.error("[Shifts] Failed to load data:", e))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentEvent, lastDataRefreshAt]);
 
-  const loadShifts = async () => {
+  // Clear dirty state when event changes
+  useEffect(() => {
+    setDirtyRatings({});
+    setDirtyPriorities({});
+  }, [currentEvent]);
+
+  const scouterRows = useMemo(
+    () => buildScouterViewData({ schedule, matchData, profiles, tbaClimbData }),
+    [schedule, matchData, profiles, tbaClimbData]
+  );
+
+  const teamRows = useMemo(
+    () => buildTeamViewData({ schedule, matchData, tbaTeams, pitData, tbaClimbData }),
+    [schedule, matchData, tbaTeams, pitData, tbaClimbData]
+  );
+
+  const filteredScouters = useMemo(
+    () =>
+      scouterSearch
+        ? scouterRows.filter((s) =>
+            s.name.toLowerCase().includes(scouterSearch.toLowerCase())
+          )
+        : scouterRows,
+    [scouterRows, scouterSearch]
+  );
+
+  const filteredTeams = useMemo(
+    () =>
+      teamSearch
+        ? teamRows.filter(
+            (t) =>
+              t.teamNumber.toString().includes(teamSearch) ||
+              t.teamName.toLowerCase().includes(teamSearch.toLowerCase())
+          )
+        : teamRows,
+    [teamRows, teamSearch]
+  );
+
+  const handleRatingChange = useCallback((uid: string, n: number) => {
+    setDirtyRatings((prev) => ({ ...prev, [uid]: n }));
+  }, []);
+
+  const handlePriorityChange = useCallback((teamKey: string, n: number) => {
+    setDirtyPriorities((prev) => ({ ...prev, [teamKey]: n }));
+  }, []);
+
+  const handleSaveAll = useCallback(async () => {
     if (!currentEvent) return;
-
-    setLoading(true);
+    setSaving(true);
     try {
-      console.log("[Shifts] Loading shifts for event:", currentEvent);
-      const [matchData, scouterData] = await Promise.all([
-        getShiftsByMatch(currentEvent),
-        getShiftsByScouter(currentEvent),
+      await Promise.all([
+        ...Object.entries(dirtyRatings).map(([uid, r]) => setScouterRating(uid, r)),
+        ...Object.entries(dirtyPriorities).map(([teamKey, p]) =>
+          setTeamPriority(currentEvent, teamKey, p)
+        ),
       ]);
-
-      console.log("[Shifts] Loaded:", {
-        matches: matchData.size,
-        scouters: scouterData.length,
-      });
-
-      setByMatch(matchData);
-      setByScouter(scouterData);
-    } catch (error) {
-      console.error("[Shifts] Failed to load shifts:", error);
-      if (error instanceof Error) {
-        console.error("[Shifts] Error details:", error.message, error.stack);
-      }
+      setDirtyRatings({});
+      setDirtyPriorities({});
+    } catch (e) {
+      console.error("[Shifts] Save failed:", e);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  };
+  }, [currentEvent, dirtyRatings, dirtyPriorities]);
+
+  const handleReset = useCallback(() => {
+    setDirtyRatings({});
+    setDirtyPriorities({});
+  }, []);
+
+  const hasScouterChanges = Object.keys(dirtyRatings).length > 0;
+  const hasTeamChanges = Object.keys(dirtyPriorities).length > 0;
 
   if (!currentEvent) {
     return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Shift Viewer</CardTitle>
-            <CardDescription>Please select an event to view shifts</CardDescription>
-          </CardHeader>
-        </Card>
+      <div className="p-6">
+        <p className="text-muted-foreground">
+          Please select an event to view shifts.
+        </p>
       </div>
     );
   }
 
-  // Convert map to sorted array for display
-  const matchArray = Array.from(byMatch.entries())
-    .map(([match, assignments]) => ({
-      match,
-      assignments,
-    }))
-    .sort((a, b) => {
-      // Sort by match number
-      const aNum = parseInt(a.match.replace(/\D/g, "")) || 0;
-      const bNum = parseInt(b.match.replace(/\D/g, "")) || 0;
-      return aNum - bNum;
-    });
-
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Shift Viewer - {currentEvent}</CardTitle>
-          <CardDescription>
-            View scouting assignments by match or by scouter
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="by-match" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="by-match">By Match</TabsTrigger>
-              <TabsTrigger value="by-scouter">By Scouter</TabsTrigger>
-            </TabsList>
+    <div className="p-4 h-full overflow-y-auto">
+      <Tabs defaultValue="by-scouter" className="w-full">
+        <TabsList>
+          <TabsTrigger value="by-scouter">By Scouter</TabsTrigger>
+          <TabsTrigger value="by-team">By Team</TabsTrigger>
+        </TabsList>
 
-            {/* By Match View */}
-            <TabsContent value="by-match" className="space-y-4">
-              {loading ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  Loading shifts...
-                </div>
-              ) : matchArray.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  No shifts found for this event
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[100px]">Match</TableHead>
-                        <TableHead>Red 1</TableHead>
-                        <TableHead>Red 2</TableHead>
-                        <TableHead>Red 3</TableHead>
-                        <TableHead>Blue 1</TableHead>
-                        <TableHead>Blue 2</TableHead>
-                        <TableHead>Blue 3</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {matchArray.map(({ match, assignments }) => {
-                        // Sort by alliance and team
-                        const sorted = assignments.sort((a, b) => {
-                          if (a.alliance !== b.alliance) {
-                            return a.alliance === "red" ? -1 : 1;
-                          }
-                          return a.team.localeCompare(b.team);
-                        });
+        {/* ── By Scouter ── */}
+        <TabsContent value="by-scouter" className="mt-3 space-y-3">
+          {/* Toolbar: search + save/reset */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              placeholder="Search scouters…"
+              value={scouterSearch}
+              onChange={(e) => setScouterSearch(e.target.value)}
+              className="w-52 h-8 text-sm"
+            />
+            {hasScouterChanges && (
+              <>
+                <Button
+                  size="sm"
+                  className="h-8"
+                  disabled={saving}
+                  onClick={handleSaveAll}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={saving}
+                  onClick={handleReset}
+                >
+                  Reset
+                </Button>
+              </>
+            )}
+          </div>
 
-                        const red = sorted.filter((a) => a.alliance === "red");
-                        const blue = sorted.filter((a) => a.alliance === "blue");
+          {loading ? (
+            <EmptyState>Loading…</EmptyState>
+          ) : filteredScouters.length === 0 ? (
+            <EmptyState>
+              {scouterSearch
+                ? "No scouters match the search"
+                : "No scouters assigned or scouting data found"}
+            </EmptyState>
+          ) : (
+            <div className="space-y-4">
+              {filteredScouters.map((s) => (
+                <ScouterRow
+                  key={s.uid}
+                  row={s}
+                  rating={dirtyRatings[s.uid] ?? s.rating}
+                  onRatingChange={handleRatingChange}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
 
-                        return (
-                          <TableRow key={match}>
-                            <TableCell className="font-medium">{match}</TableCell>
-                            {[0, 1, 2].map((i) => (
-                              <TableCell key={`red-${i}`}>
-                                {red[i] ? (
-                                  <div className="space-y-1">
-                                    <div className="font-mono text-xs">
-                                      {red[i].team.replace("frc", "")}
-                                    </div>
-                                    {red[i].scouterName ? (
-                                      <Badge variant="secondary" className="text-xs">
-                                        {red[i].scouterName}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="outline" className="text-xs">
-                                        Unassigned
-                                      </Badge>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                            ))}
-                            {[0, 1, 2].map((i) => (
-                              <TableCell key={`blue-${i}`}>
-                                {blue[i] ? (
-                                  <div className="space-y-1">
-                                    <div className="font-mono text-xs">
-                                      {blue[i].team.replace("frc", "")}
-                                    </div>
-                                    {blue[i].scouterName ? (
-                                      <Badge variant="secondary" className="text-xs">
-                                        {blue[i].scouterName}
-                                      </Badge>
-                                    ) : (
-                                      <Badge variant="outline" className="text-xs">
-                                        Unassigned
-                                      </Badge>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-muted-foreground">-</span>
-                                )}
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </TabsContent>
+        {/* ── By Team ── */}
+        <TabsContent value="by-team" className="mt-3 space-y-3">
+          {/* Toolbar: search + save/reset */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              placeholder="Search teams…"
+              value={teamSearch}
+              onChange={(e) => setTeamSearch(e.target.value)}
+              className="w-52 h-8 text-sm"
+            />
+            {hasTeamChanges && (
+              <>
+                <Button
+                  size="sm"
+                  className="h-8"
+                  disabled={saving}
+                  onClick={handleSaveAll}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={saving}
+                  onClick={handleReset}
+                >
+                  Reset
+                </Button>
+              </>
+            )}
+          </div>
 
-            {/* By Scouter View */}
-            <TabsContent value="by-scouter" className="space-y-4">
-              {loading ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  Loading shifts...
-                </div>
-              ) : byScouter.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  No scouters assigned for this event
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {byScouter.map((scouter) => (
-                    <Card key={scouter.uid}>
-                      <CardHeader>
-                        <CardTitle className="text-lg">
-                          {scouter.name}
-                          <span className="ml-2 text-sm font-normal text-muted-foreground">
-                            ({scouter.totalMatches} matches)
-                          </span>
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Match</TableHead>
-                                <TableHead>Team</TableHead>
-                                <TableHead>Alliance</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {scouter.assignments.map((assignment) => (
-                                <TableRow key={`${assignment.match}-${assignment.team}`}>
-                                  <TableCell className="font-medium">
-                                    {assignment.match}
-                                  </TableCell>
-                                  <TableCell className="font-mono">
-                                    {assignment.team.replace("frc", "")}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant={
-                                        assignment.alliance === "red"
-                                          ? "destructive"
-                                          : "default"
-                                      }
-                                      className="capitalize"
-                                    >
-                                      {assignment.alliance || "Unknown"}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+          {loading ? (
+            <EmptyState>Loading…</EmptyState>
+          ) : filteredTeams.length === 0 ? (
+            <EmptyState>
+              {teamSearch
+                ? "No teams match the search"
+                : "No teams in the schedule"}
+            </EmptyState>
+          ) : (
+            <div className="space-y-4">
+              {filteredTeams.map((t) => (
+                <TeamRow
+                  key={t.teamKey}
+                  row={t}
+                  priority={dirtyPriorities[t.teamKey] ?? t.priority}
+                  onPriorityChange={handlePriorityChange}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -131,7 +131,9 @@ export async function getSchedule(eventKey: string) {
 
     localStorage.setItem(scheduleSyncKey(eventKey), new Date().toISOString());
 
-    return data ?? [];
+    // Always return the full local cache so callers get the complete schedule,
+    // not just the partial incremental subset from this fetch.
+    return getEventSchedule(eventKey);
   } catch (e) {
     console.warn("[Schedule] Supabase fetch failed, using local cache:", e);
     return cached;

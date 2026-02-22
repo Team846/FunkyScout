@@ -816,6 +816,75 @@ export async function putTeamDataWithImages(
 }
 
 /**
+ * Set team priority for the scouting scheduler (desktop only).
+ * Uses a read-merge-write pattern to preserve all other data already in
+ * event_team_data.data (TBA stats, pit scouting answers, etc.).
+ */
+export async function setTeamPriority(
+  eventKey: string,
+  teamKey: string,
+  priority: number | null
+): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("setTeamPriority is only supported on desktop");
+  }
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const now = Date.now();
+
+  // 1. Read the current full row from local SQLite (preserves TBA stats + pit data)
+  const allPitData = await invoke<any[]>("get_pit_scouting_data", { event: eventKey });
+  const existing = allPitData.find((r: any) => r.team === teamKey);
+  const existingData = existing?.data ?? {};
+
+  // 2. Merge priority into existing data (null keeps the field but clears the value)
+  const mergedData =
+    priority !== null
+      ? { ...existingData, priority }
+      : { ...existingData, priority: null };
+
+  // 3. Build the full row shape expected by cache_pit_scouting_data
+  const updatedRow = {
+    event: eventKey,
+    team: teamKey,
+    data: mergedData,
+    team_name: existing?.team_name ?? null,
+    name: existing?.name ?? null,
+    uid: existing?.uid ?? null,
+    assigned: existing?.assigned ?? null,
+    timestamp: existing?.timestamp ?? null,
+    last_modified: now,
+    deleted_at: null,
+  };
+
+  // 4. Cache locally so the UI reflects the change immediately
+  await invoke("cache_pit_scouting_data", { data: [updatedRow] });
+
+  // 5. Queue a PUT_TEAM_DATA sync so Supabase gets the merged data
+  await invoke("add_to_sync_queue", {
+    operation: "PUT_TEAM_DATA",
+    payload: {
+      event: eventKey,
+      team: teamKey,
+      data: mergedData,
+      teamName: existing?.team_name,
+      name: existing?.name,
+      uid: existing?.uid,
+      timestamp: now,
+    },
+  });
+
+  console.log(
+    `[Writes] Desktop: Set priority ${priority} for ${teamKey} in ${eventKey}`
+  );
+
+  // 6. Trigger instant sync (fire-and-forget)
+  invoke("trigger_sync_now").catch((e) => {
+    console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+  });
+}
+
+/**
  * Bulk-assign shifts from a cycle run (desktop only).
  * Applies each CycleAssignment to its specific (match, team) row in the schedule.
  * Writes to local SQLite first, then queues a single ASSIGN_SHIFTS_BULK operation.

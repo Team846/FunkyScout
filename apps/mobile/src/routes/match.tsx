@@ -367,78 +367,82 @@ export function Match() {
           </div>
         </div>
 
-        {/* Recommended Matches - show first 3 matches with one team each */}
+        {/* Recommended Matches - next 3 matches assigned to current user */}
         <p className="text-base text-primary mt-2">Recommended Matches</p>
 
         {loading ? (
           <p className="text-muted-foreground">Loading matches...</p>
-        ) : nexusMatches.length === 0 ? (
-          <p className="text-muted-foreground">No upcoming matches available</p>
-        ) : (
-          <div className="flex flex-col">
-            {nexusMatches.slice(0, 3).map((nexusMatch) => {
-              // Find the corresponding match in schedule
-              const matchKey = uniqueMatches.find(
-                (m) => formatMatchKey(m) === nexusMatch.label,
-              );
-              const matchTeams = matchKey
-                ? schedule.filter((s) => s.match === matchKey)
-                : [];
-              // Pick the first team from the match
-              const firstTeamEntry = matchTeams[0];
-              const firstTeam = teams.find(
-                (t: any) => t.key === firstTeamEntry?.team,
-              );
+        ) : (() => {
+          // Deduplicate by match key, keeping only the user's assigned entry per match
+          const seen = new Set<string>();
+          const assignedShifts = schedule
+            .filter((s) => s.uid === currentUserUid)
+            .filter((s) => !s.est_time || s.est_time * 1000 >= Date.now() - 30 * 60 * 1000)
+            .sort((a, b) => (a.est_time ?? 0) - (b.est_time ?? 0))
+            .filter((s) => {
+              if (seen.has(s.match)) return false;
+              seen.add(s.match);
+              return true;
+            })
+            .slice(0, 3);
 
-              return (
-                <div
-                  key={nexusMatch.label}
-                  className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
-                  onClick={() => {
-                    if (matchKey) {
-                      setSelectedMatch(matchKey);
-                      if (firstTeamEntry) setSelectedTeam(firstTeamEntry.team);
-                    }
-                  }}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <div>
-                      <p className="text-base">
-                        <span className="font-bold text-primary">
-                          {nexusMatch.label}
-                        </span>
-                        {firstTeam && (
-                          <span className="text-foreground">
-                            {" "}
-                            | Team {firstTeam.num}
-                          </span>
-                        )}
-                      </p>
-                      <p className="mt-1 text-sm text-border">
-                        {formatMatchTime(nexusMatch.times.estimatedStartTime)}
-                      </p>
+          if (assignedShifts.length === 0) {
+            return <p className="text-muted-foreground">No assigned upcoming matches</p>;
+          }
+
+          return (
+            <div className="flex flex-col">
+              {assignedShifts.map((shift) => {
+                const matchLabel = formatMatchKey(shift.match);
+                const nexusMatch = nexusMatches.find((nm) => nm.label === matchLabel);
+                const matchTime = nexusMatch?.times.estimatedStartTime
+                  ?? (shift.est_time ? shift.est_time * 1000 : null);
+                const team = teams.find((t: any) => t.key === shift.team);
+
+                return (
+                  <div
+                    key={shift.match}
+                    className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
+                    onClick={() => {
+                      setSelectedMatch(shift.match);
+                      setMatchQuery(matchLabel);
+                      setSelectedTeam(shift.team);
+                    }}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <div>
+                        <p className="text-base">
+                          <span className="font-bold text-primary">{matchLabel}</span>
+                          {team && (
+                            <span className="text-foreground"> | Team {team.num}</span>
+                          )}
+                        </p>
+                        <p className="mt-1 text-sm text-border">
+                          {matchTime ? formatMatchTime(matchTime) : "Time not available"}
+                        </p>
+                      </div>
+                      <svg
+                        viewBox="0 0 24 24"
+                        style={{ width: 20, height: 20 }}
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M9 18L15 12L9 6"
+                          stroke="currentColor"
+                          className="text-primary"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </div>
-                    <svg
-                      viewBox="0 0 24 24"
-                      style={{ width: 20, height: 20 }}
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M9 18L15 12L9 6"
-                        stroke="currentColor"
-                        className="text-primary"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
 
         <p className="text-sm text-muted-foreground text-center mt-4">
           The match does NOT start after clicking the arrow button. Please lock

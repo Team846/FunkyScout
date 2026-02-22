@@ -1,5 +1,5 @@
 import supabase from "../supabase/supabase";
-import { cacheEventMatchData, upsertEventMatchDataRows } from "../db";
+import { cacheEventMatchData, upsertEventMatchDataRows, getEventMatchData } from "../db";
 
 // Per-event localStorage key tracking when we last successfully fetched match data.
 // Enables incremental fetching: only rows with last_modified >= last sync are fetched.
@@ -176,9 +176,11 @@ export async function getMatchData(eventKey: string) {
     // Record this sync time for the next incremental fetch
     localStorage.setItem(matchSyncKey(eventKey), new Date().toISOString());
 
-    return data ?? [];
+    // Always return the full local cache so callers get the complete match data,
+    // not just the partial incremental subset from this fetch.
+    return getEventMatchData(eventKey);
   } catch (e) {
     console.warn("[MatchData] Supabase fetch failed:", e);
-    return [];
+    return getEventMatchData(eventKey);
   }
 }

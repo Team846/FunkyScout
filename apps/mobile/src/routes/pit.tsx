@@ -198,61 +198,69 @@ export function Pit() {
 
       {loading ? (
         <p className="text-muted-foreground">Loading teams...</p>
-      ) : (
-        <div className="flex flex-col">
-          {teams.slice(0, 3).map((team: any) => {
-            const badge = getTeamBadge(team.key);
-            return (
-              <div
-                key={team.key}
-                className="mt-3 rounded-2xl bg-muted px-6 py-6 cursor-pointer"
-                onClick={() =>
-                  navigate({
-                    to: "/pitscout",
-                    search: { teamNum: team.num, teamName: team.name },
-                  })
-                }
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-base">
-                      <span className="font-bold text-primary">{team.num}</span>
-                      <span> | {team.name}</span>
-                    </p>
-                    {team.rank > 0 && (
-                      <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+      ) : (() => {
+        const assignedTeams = [...teamAssignments.entries()]
+          .filter(([, uid]) => uid === currentUserUid)
+          .map(([teamKey]) => teams.find((t: any) => t.key === teamKey))
+          .filter(Boolean) as typeof teams;
+
+        if (assignedTeams.length === 0) {
+          return <p className="text-muted-foreground mt-3">No assigned teams</p>;
+        }
+
+        return (
+          <div className="flex flex-col">
+            {assignedTeams.map((team: any) => {
+              const badge = getTeamBadge(team.key);
+              return (
+                <div
+                  key={team.key}
+                  className="mt-3 rounded-2xl bg-muted px-6 py-6 cursor-pointer"
+                  onClick={() =>
+                    navigate({
+                      to: "/pitscout",
+                      search: { teamNum: team.num, teamName: team.name },
+                    })
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-base">
+                        <span className="font-bold text-primary">{team.num}</span>
+                        <span> | {team.name}</span>
+                      </p>
+                      {team.rank > 0 && (
+                        <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+                      )}
+                    </div>
+                    {badge && (
+                      <Badge variant="outline" className={`ml-2 ${badge.style}`}>
+                        {badge.type === "SCOUTED" && (
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="size-3 mr-1"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M20 6L9 17L4 12"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                        {badge.type}
+                      </Badge>
                     )}
                   </div>
-                  {badge && (
-                    <Badge
-                      variant="outline"
-                      className={`ml-2 ${badge.style}`}
-                    >
-                      {badge.type === "SCOUTED" && (
-                        <svg
-                          viewBox="0 0 24 24"
-                          className="size-3 mr-1"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M20 6L9 17L4 12"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                      {badge.type}
-                    </Badge>
-                  )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }
