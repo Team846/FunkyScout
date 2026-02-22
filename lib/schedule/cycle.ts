@@ -148,6 +148,9 @@ function specifyMatches(
   matchKeys: string[],
 ): CycleAssignment[] {
   const result: CycleAssignment[] = [];
+  // Ensure each (match, team) slot is assigned to at most one scouter.
+  // If the group has more scouters than teams, extra scouters rest that match.
+  const assignedSlots = new Set<string>();
 
   for (let groupIdx = 0; groupIdx < groupedScouters.length; groupIdx++) {
     if (groupIdx >= matches.length) break;
@@ -155,7 +158,8 @@ function specifyMatches(
     const scouters = groupedScouters[groupIdx];
     const groupMatchList = matches[groupIdx];
 
-    for (const scouter of scouters) {
+    for (let scouterIdxInGroup = 0; scouterIdxInGroup < scouters.length; scouterIdxInGroup++) {
+      const scouter = scouters[scouterIdxInGroup];
       for (let matchIndex = 0; matchIndex < groupMatchList.length; matchIndex++) {
         const match = groupMatchList[matchIndex];
         if (match > sortedMatches.length) continue;
@@ -163,17 +167,23 @@ function specifyMatches(
         const teamsAvailable = sortedMatches[match - 1];
         if (!teamsAvailable || teamsAvailable.length === 0) continue;
 
-        const teamIdx = matchIndex % teamsAvailable.length;
-        const team = teamsAvailable[teamIdx];
-        const matchKey =
-          matchKeys[match - 1] ?? `qm${match}`;
+        const matchKey = matchKeys[match - 1] ?? `qm${match}`;
 
-        result.push({
-          uid: scouter.uid,
-          name: scouter.name,
-          teamKey: team,
-          matchKey,
-        });
+        // Find the next un-assigned team for this match, offset by scouter position.
+        let assigned = false;
+        for (let offset = 0; offset < teamsAvailable.length; offset++) {
+          const teamIdx = (matchIndex + scouterIdxInGroup + offset) % teamsAvailable.length;
+          const team = teamsAvailable[teamIdx];
+          const slotKey = `${matchKey}|${team}`;
+          if (!assignedSlots.has(slotKey)) {
+            assignedSlots.add(slotKey);
+            result.push({ uid: scouter.uid, name: scouter.name, teamKey: team, matchKey });
+            assigned = true;
+            break;
+          }
+        }
+        // If all teams are taken, this scouter rests this match (no push).
+        void assigned;
       }
     }
   }

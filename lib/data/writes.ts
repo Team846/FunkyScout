@@ -29,6 +29,7 @@ import {
   type EventScheduleEntry,
   type EventPicklist,
 } from "@lib/db";
+import type { CycleAssignment } from "@lib/schedule/cycle";
 import { addToImageQueue } from "@lib/storage/imageQueue";
 import { compressImage } from "@lib/utils/imageCompression";
 import { isTauri } from "@lib/utils/platform";
@@ -398,7 +399,7 @@ export async function assignShift(
     );
 
     // 1. Cache locally (Tauri SQLite)
-    await invoke("cache_schedule", { schedule: updated });
+    await invoke("cache_schedule", { event: eventKey, schedule: updated });
 
     // 2. Add to sync queue
     await invoke("add_to_sync_queue", {
@@ -812,4 +813,61 @@ export async function putTeamDataWithImages(
 
   // 5. Trigger instant sync if online
   await triggerInstantSync();
+}
+
+/**
+ * Bulk-assign shifts from a cycle run (desktop only).
+ * Applies each CycleAssignment to its specific (match, team) row in the schedule.
+ * Writes to local SQLite first, then queues a single ASSIGN_SHIFTS_BULK operation.
+ */
+export async function assignShiftsFromCycle(
+  eventKey: string,
+  assignments: CycleAssignment[],
+): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("assignShiftsFromCycle is only supported on desktop");
+  }
+  if (assignments.length === 0) return;
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const now = Date.now();
+
+  // Build lookup: "matchKey|teamKey" -> assignment
+  const assignmentMap = new Map(
+    assignments.map((a) => [`${a.matchKey}|${a.teamKey}`, a]),
+  );
+
+  // Read current schedule, apply assignments by (match, team)
+  const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
+  const updated = schedule.map((s: EventScheduleEntry) => {
+    const a = assignmentMap.get(`${s.match}|${s.team}`);
+    return a ? { ...s, uid: a.uid, name: a.name ?? null, last_modified: now } : s;
+  });
+
+  // 1. Cache locally (Tauri SQLite)
+  await invoke("cache_schedule", { event: eventKey, schedule: updated });
+
+  // 2. Queue a single bulk operation for Rust sync
+  const user_jwt = await getUserJWT();
+  await invoke("add_to_sync_queue", {
+    operation: "ASSIGN_SHIFTS_BULK",
+    payload: {
+      event: eventKey,
+      assignments: assignments.map((a) => ({
+        match: a.matchKey,
+        team: a.teamKey,
+        uid: a.uid,
+        name: a.name ?? null,
+      })),
+      user_jwt,
+      timestamp: now,
+    },
+  });
+
+  console.log(`[Writes] Desktop: Queued ASSIGN_SHIFTS_BULK (${assignments.length} assignments)`);
+
+  // 3. Trigger instant sync (fire-and-forget)
+  invoke("trigger_sync_now").catch((e) => {
+    console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+  });
 }

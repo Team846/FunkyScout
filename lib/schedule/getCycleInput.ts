@@ -5,6 +5,7 @@
 import { getSchedule } from "@lib/data";
 import { fetchAllUserDetails } from "@lib/supabase/user";
 import { getMatchSortOrder } from "@lib/utils/match";
+import { isTauri } from "@lib/utils/platform";
 import type { CycleInput, Scouter } from "./cycle";
 
 function sortMatchKeys(matchKeys: string[]): string[] {
@@ -27,35 +28,52 @@ function sortMatchKeys(matchKeys: string[]): string[] {
 /**
  * Fetch schedule, scouters, and build CycleInput.
  * Uses default priority 0 for all teams until team priorities are implemented.
+ * Only qual matches (qm*) are included.
  *
  * @param eventKey - Event key (e.g. "2025casf")
  * @param ratio - [w, r] work and rest slots
+ * @param scoutersOverride - If provided, use these scouters instead of fetching from DB.
  * @param teamPriorityOverride - Optional. Map of "matchKey" -> { teamKey: priority }. Missing entries default to 0.
  */
 export async function getCycleInput(
   eventKey: string,
   ratio: [number, number],
+  scoutersOverride?: Scouter[],
   teamPriorityOverride?: Record<string, Record<string, number>>,
 ): Promise<CycleInput> // get the schedule and the profiles
 {
-  const [schedule, profiles] = await Promise.all([
-    getSchedule(eventKey),
-    fetchAllUserDetails(),
-  ]);
+  const schedulePromise = isTauri()
+    ? import("@tauri-apps/api/core").then(({ invoke }) =>
+        invoke<{ match: string; team: string; alliance: string }[]>("get_schedule", {
+          event: eventKey,
+        }),
+      )
+    : getSchedule(eventKey);
 
-  // safety checks in case can't get data
-  if (!profiles || !Array.isArray(profiles)) {
-    throw new Error("Could not load scouters");
+  const profilesPromise = scoutersOverride ? Promise.resolve(null) : fetchAllUserDetails();
+
+  const [schedule, profiles] = await Promise.all([schedulePromise, profilesPromise]);
+
+  // resolve scouters: use override if provided, else filter profiles
+  let scouters: Scouter[];
+  if (scoutersOverride) {
+    scouters = scoutersOverride;
+  } else {
+    if (!profiles || !Array.isArray(profiles)) {
+      throw new Error("Could not load scouters");
+    }
+    scouters = (profiles as { uid: string; name?: string; role?: string }[])
+      .filter((p) => p.role === "scouter" || p.role === "admin")
+      .map((p) => ({ uid: p.uid, name: p.name ?? undefined }));
   }
 
-  // filter profiles so that only scouters and leads are included
-  const scouters: Scouter[] = (profiles as { uid: string; name?: string; role?: string }[])
-    .filter((p) => p.role === "scouter" || p.role === "lead")
-    .map((p) => ({ uid: p.uid, name: p.name ?? undefined }));
-
-  // get unique match keys from the schedule and sort them
-  const rawMatchKeys = [...new Set((schedule as { match: string }[]).map((s) => s.match))];
-  const matchKeys = sortMatchKeys(rawMatchKeys);
+  // get unique match keys from the schedule, filter to qual matches only, then sort
+  const allMatchKeys = [...new Set((schedule as { match: string }[]).map((s) => s.match))];
+  const qualMatchKeys = allMatchKeys.filter((mk) => {
+    const order = getMatchSortOrder(mk);
+    return order[0] === 0; // 0 = qual match
+  });
+  const matchKeys = sortMatchKeys(qualMatchKeys);
 
   // for each match key, get the teams in that match
   const matchTeams = matchKeys.map((mk) =>

@@ -748,6 +748,10 @@ impl SyncService {
             let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
             let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
             let alliance = record.get("alliance").and_then(|v| v.as_str()).unwrap_or("");
+            // Assignment fields — present in Supabase pull records, absent in TBA push records.
+            // COALESCE in the ON CONFLICT clause preserves existing SQLite values when NULL.
+            let name = record.get("name").and_then(|v| v.as_str());
+            let uid = record.get("uid").and_then(|v| v.as_str());
             let est_time = record.get("est_time").and_then(|v| v.as_i64());
             let red_score = record.get("red_score").and_then(|v| v.as_i64());
             let blue_score = record.get("blue_score").and_then(|v| v.as_i64());
@@ -756,10 +760,12 @@ impl SyncService {
             let predicted_blue_score = record.get("predicted_blue_score").and_then(|v| v.as_f64());
 
             sqlx::query(
-                "INSERT INTO event_schedule (event, match, team, alliance, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(event, match, team) DO UPDATE SET
                    alliance = excluded.alliance,
+                   name = COALESCE(excluded.name, event_schedule.name),
+                   uid = COALESCE(excluded.uid, event_schedule.uid),
                    est_time = excluded.est_time,
                    red_score = excluded.red_score,
                    blue_score = excluded.blue_score,
@@ -772,6 +778,8 @@ impl SyncService {
             .bind(match_key)
             .bind(team)
             .bind(alliance)
+            .bind(name)
+            .bind(uid)
             .bind(est_time)
             .bind(red_score)
             .bind(blue_score)
@@ -1033,6 +1041,7 @@ impl SyncService {
                 "PUT_MATCH_DATA" => self.sync_put_match_data(payload).await,
                 "DELETE_MATCH_DATA" => self.sync_delete_match_data(payload).await,
                 "ASSIGN_SHIFT" => self.sync_assign_shift(payload).await,
+                "ASSIGN_SHIFTS_BULK" => self.sync_assign_shifts_bulk(payload).await,
                 "UPDATE_USER_PROFILE" => self.sync_update_user_profile(payload).await,
                 _ => {
                     eprintln!("[SyncQueue] Unknown operation: {}", operation);
@@ -1227,6 +1236,21 @@ impl SyncService {
 
         self.supabase.assign_shift(event, team, uid, name).await?;
 
+        Ok(())
+    }
+
+    /// Sync ASSIGN_SHIFTS_BULK operation to Supabase
+    async fn sync_assign_shifts_bulk(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let assignments = payload.get("assignments")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing assignments array"))?
+            .clone();
+
+        let count = assignments.len();
+        self.supabase.bulk_assign_shifts(event, &assignments).await?;
+        println!("[Sync] ✅ Bulk assigned {} shifts to Supabase", count);
         Ok(())
     }
 

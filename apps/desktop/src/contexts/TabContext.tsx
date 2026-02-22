@@ -50,41 +50,34 @@ export function TabProvider({ children, router }: TabProviderProps) {
   }, [router]);
 
   const addTab = useCallback((path: string, title: string, search?: Record<string, string>, customId?: string) => {
+    const id = customId || path.replace(/\//g, "-").replace(/^-/, "") || "dashboard";
     setTabs((prev) => {
-      const id = customId || path.replace(/\//g, "-").replace(/^-/, "") || "dashboard";
       // Deduplicate by id (not path) so different picklists can coexist
-      const existing = prev.find((t) => t.id === id);
-      if (existing) {
-        setActiveTabIdState(existing.id);
-        return prev;
-      }
-      const newTab: Tab = { id, path, title, search };
-      setActiveTabIdState(id);
-      return [...prev, newTab];
+      if (prev.find((t) => t.id === id)) return prev;
+      return [...prev, { id, path, title, search }];
     });
+    // Always activate the tab (existing or new) — called outside the updater to avoid setState-in-render
+    setActiveTabIdState(id);
   }, []);
 
   const closeTab = useCallback(
     (id: string) => {
-      setTabs((prev) => {
-        if (prev.length === 1) return prev; // Never close last tab
-        const idx = prev.findIndex((t) => t.id === id);
-        const filtered = prev.filter((t) => t.id !== id);
-
-        setActiveTabIdState((currentActive) => {
-          if (currentActive !== id) return currentActive;
-          // Navigate to adjacent tab
-          const nextTab = filtered[Math.max(0, idx - 1)];
-          if (nextTab && navigateRef.current) {
-            navigateRef.current(nextTab.path, nextTab.search);
-          }
-          return nextTab?.id ?? filtered[0]?.id ?? "dashboard";
-        });
-
-        return filtered;
-      });
+      if (tabs.length === 1) return; // Never close last tab
+      const idx = tabs.findIndex((t) => t.id === id);
+      const filtered = tabs.filter((t) => t.id !== id);
+      setTabs(filtered);
+      // Navigate outside any setState updater — calling router.navigate() inside a
+      // functional updater runs during React's render phase and triggers setState-in-render
+      if (activeTabId === id) {
+        const nextTab = filtered[Math.max(0, idx - 1)];
+        const nextId = nextTab?.id ?? filtered[0]?.id ?? "dashboard";
+        setActiveTabIdState(nextId);
+        if (nextTab && navigateRef.current) {
+          navigateRef.current(nextTab.path, nextTab.search);
+        }
+      }
     },
-    []
+    [tabs, activeTabId]
   );
 
   const setActiveTab = useCallback(

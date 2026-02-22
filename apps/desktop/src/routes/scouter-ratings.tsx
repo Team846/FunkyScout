@@ -33,7 +33,7 @@ export const Route = createFileRoute("/scouter-ratings")({
 
 function ScouterRatingsPage() {
   const { currentEvent } = useDesktopEvent();
-  const { schedule } = useDesktopCompetitionData(); // Use context for schedule
+  const { schedule, lastDataRefreshAt } = useDesktopCompetitionData(); // Use context for schedule
   const [scouterRatings, setScouterRatings] = useState<ScouterRating[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
@@ -98,13 +98,13 @@ function ScouterRatingsPage() {
     }
   }, [currentEvent, schedule]);
 
-  // Initial fetch on mount and event change
+  // Fetch on event change and after each 120s sync
   useEffect(() => {
     if (currentEvent) {
       setLoading(true);
       fetchData();
     }
-  }, [currentEvent, fetchData]);
+  }, [currentEvent, fetchData, lastDataRefreshAt]);
 
   /**
    * Handle rating change for a scouter

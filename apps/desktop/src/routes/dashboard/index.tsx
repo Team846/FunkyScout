@@ -35,7 +35,7 @@ interface UserProfile {
 
 function DashboardPage() {
   const { tbaTeams } = useDesktopTeamData();
-  const { schedule, tbaSchedule, tbaClimbData } = useDesktopCompetitionData();
+  const { schedule, tbaSchedule, tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
   const { currentEvent, homeTeam, useTbaClimb } = useDesktopEvent();
 
   const scheduleTableRef = useRef<ScheduleTableHandle>(null);
@@ -44,14 +44,17 @@ function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("schedule");
 
-  // Fetch scouter data on event change
+  // Re-fetch match data on event change and after each 120s sync
   useEffect(() => {
     if (!currentEvent) return;
-
     getMatchScoutingData(currentEvent)
       .then(setMatchData)
       .catch((e) => console.error("[Dashboard] Failed to load match data:", e));
+  }, [currentEvent, lastDataRefreshAt]);
 
+  // Re-fetch user profiles on event change and after each sync (profiles hold scouter ratings)
+  useEffect(() => {
+    if (!currentEvent) return;
     getUserProfiles()
       .then((p) =>
         setProfiles(
@@ -63,7 +66,7 @@ function DashboardPage() {
         )
       )
       .catch((e) => console.error("[Dashboard] Failed to load profiles:", e));
-  }, [currentEvent]);
+  }, [currentEvent, lastDataRefreshAt]);
 
   const homeTeamKey = `frc${homeTeam}`;
 

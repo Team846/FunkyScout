@@ -646,6 +646,44 @@ impl SupabaseService {
         self.update_schedule_assignment(event, team, Some(uid), name).await
     }
 
+    /// Bulk assign shifts from cycle algorithm (from sync queue).
+    /// Updates each (event, match, team) row individually since each row
+    /// needs different uid/name values — not possible in a single PostgREST PATCH.
+    pub async fn bulk_assign_shifts(
+        &self,
+        event: &str,
+        assignments: &[Value],
+    ) -> Result<()> {
+        for assignment in assignments {
+            let match_key = assignment.get("match").and_then(|v| v.as_str()).unwrap_or("");
+            let team = assignment.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let uid = assignment.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+            let name = assignment.get("name").and_then(|v| v.as_str());
+
+            let payload = json!({
+                "uid": uid,
+                "name": name,
+                "last_modified": Self::now_iso(),
+            });
+
+            self.auth_client()
+                .from("event_schedule")
+                .update(&payload.to_string())
+                .eq("event", event)
+                .eq("match", match_key)
+                .eq("team", team)
+                .execute()
+                .await
+                .context(format!(
+                    "Failed to assign shift for match {} team {}",
+                    match_key, team
+                ))?;
+        }
+
+        println!("[Supabase] ✓ Bulk assigned {} shifts", assignments.len());
+        Ok(())
+    }
+
     /// Update user profile settings (from sync queue)
     /// Used for scouter ratings and other profile settings
     pub async fn update_user_profile_settings(

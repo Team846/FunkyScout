@@ -76,6 +76,7 @@ interface DesktopCompetitionDataContextType {
   picklists: Picklist[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   loading: boolean;
+  lastDataRefreshAt: number; // Bumped each time SQLite is re-read; watch this to react to syncs
   refresh: () => Promise<void>;
   refreshFromCache: () => Promise<void>;
 }
@@ -99,6 +100,7 @@ export function DesktopCompetitionDataProvider({
   const [picklists, setPicklists] = useState<Picklist[]>([]);
   const [tbaClimbData, setTbaClimbData] = useState<Record<string, Record<string, TbaClimbEntry>>>({});
   const [loading, setLoading] = useState(false);
+  const [lastDataRefreshAt, setLastDataRefreshAt] = useState(0);
 
   const hasLoadedDataRef = useRef(false);
   const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
@@ -185,6 +187,7 @@ export function DesktopCompetitionDataProvider({
       console.error("[DesktopCompetitionData] Failed to read from SQLite:", error);
     } finally {
       setLoading(false);
+      setLastDataRefreshAt(Date.now());
     }
   }, [currentEvent]);
 
@@ -279,10 +282,11 @@ export function DesktopCompetitionDataProvider({
       picklists,
       tbaClimbData,
       loading,
+      lastDataRefreshAt,
       refresh,
       refreshFromCache,
     }),
-    [schedule, tbaSchedule, picklists, tbaClimbData, loading, refresh, refreshFromCache]
+    [schedule, tbaSchedule, picklists, tbaClimbData, loading, lastDataRefreshAt, refresh, refreshFromCache]
   );
 
   return (

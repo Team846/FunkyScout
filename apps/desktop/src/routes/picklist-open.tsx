@@ -52,13 +52,14 @@ import {
 import { toast } from "sonner";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
+import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import type { TBATeam } from "../contexts/DesktopTeamDataContext";
 import { usePicklistEditor } from "@lib/hooks/usePicklistEditor";
 import { getMatchScoutingData } from "../lib/db";
 import type { MatchScoutingData } from "../lib/db";
 import { deletePicklist } from "@lib/data/writes";
-import { GRAPHABLE_STATS, getStatDataPoints } from "@lib/data/matchStats";
+import { GRAPHABLE_STATS, getStatDataPoints, calculateSingleMatchStats } from "@lib/data/matchStats";
 import type { PicklistEntry } from "@lib/data/schema";
 
 export const Route = createFileRoute("/picklist-open")({
@@ -119,6 +120,43 @@ function getTeamStatAvg(
   );
   if (!pts.length) return 0;
   return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
+}
+
+interface ClimbCounts {
+  auto: { L1: number; L2: number; L3: number; any: number };
+  teleop: { L1: number; L2: number; L3: number };
+  n: number;
+}
+
+function getClimbCounts(
+  teamKey: string,
+  matchData: MatchScoutingData[],
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>,
+  useTba: boolean,
+): ClimbCounts {
+  const teamMatches = matchData.filter((m) => m.team === teamKey);
+  const auto = { L1: 0, L2: 0, L3: 0, any: 0 };
+  const teleop = { L1: 0, L2: 0, L3: 0 };
+
+  for (const m of teamMatches) {
+    const tba = useTba ? tbaClimbData[m.match]?.[teamKey] : undefined;
+    if (tba !== undefined) {
+      if (tba.auto_climb === "L1") { auto.L1++; auto.any++; }
+      else if (tba.auto_climb === "L2") { auto.L2++; auto.any++; }
+      else if (tba.auto_climb === "L3") { auto.L3++; auto.any++; }
+      if (tba.teleop_climb === "L1") teleop.L1++;
+      else if (tba.teleop_climb === "L2") teleop.L2++;
+      else if (tba.teleop_climb === "L3") teleop.L3++;
+    } else {
+      const stats = calculateSingleMatchStats(m as any);
+      if (stats?.climb.hasAutoClimb) auto.any++;
+      if (stats?.climb.level === "L1") teleop.L1++;
+      else if (stats?.climb.level === "L2") teleop.L2++;
+      else if (stats?.climb.level === "L3") teleop.L3++;
+    }
+  }
+
+  return { auto, teleop, n: teamMatches.length };
 }
 
 function computeGraphData(
@@ -281,6 +319,9 @@ interface FullTeamPanelProps {
   teamKey: string;
   entry: PicklistEntry | undefined;
   tbaTeam: TBATeam | undefined;
+  matchData: MatchScoutingData[];
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
+  useTbaClimb: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
@@ -288,10 +329,35 @@ interface FullTeamPanelProps {
   dragAttributes?: Record<string, unknown>;
 }
 
+function ClimbLevelChip({ label, count, n }: { label: string; count: number; n: number }) {
+  const active = count > 0;
+  return (
+    <div className={[
+      "flex flex-col items-center rounded-md px-2.5 py-1 min-w-[40px]",
+      active ? "bg-primary/15" : "bg-muted/50",
+    ].join(" ")}>
+      <span className={["text-[10px] font-semibold", active ? "text-primary" : "text-muted-foreground/50"].join(" ")}>
+        {label}
+      </span>
+      <span className={["text-sm font-bold tabular-nums", active ? "text-primary" : "text-muted-foreground/30"].join(" ")}>
+        {count}
+      </span>
+      {n > 0 && (
+        <span className="text-[9px] text-muted-foreground/50">
+          {Math.round((count / n) * 100)}%
+        </span>
+      )}
+    </div>
+  );
+}
+
 function FullTeamPanel({
   teamKey,
   entry,
   tbaTeam,
+  matchData,
+  tbaClimbData,
+  useTbaClimb,
   onMoveUp,
   onMoveDown,
   onRemove,
@@ -300,6 +366,7 @@ function FullTeamPanel({
 }: FullTeamPanelProps) {
   const teamNum = getTeamNum(teamKey);
   const teamName = tbaTeam?.name ?? teamKey;
+  const climb = getClimbCounts(teamKey, matchData, tbaClimbData, useTbaClimb);
 
   return (
     <div className="w-full h-full border border-border rounded-lg bg-card flex flex-col overflow-hidden">
@@ -360,15 +427,67 @@ function FullTeamPanel({
         </div>
       </div>
 
-      {/* Team info - centered */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-1 p-4">
-        <span className="text-xs text-muted-foreground">
-          #{entry?.rank ?? "—"}
-        </span>
-        <span className="text-5xl font-bold text-primary">{teamNum}</span>
-        <span className="text-sm text-muted-foreground text-center leading-tight">
-          {teamName}
-        </span>
+      {/* Team info + climb stats */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-xs text-muted-foreground">#{entry?.rank ?? "—"}</span>
+          <span className="text-5xl font-bold text-primary">{teamNum}</span>
+          <span className="text-sm text-muted-foreground text-center leading-tight">{teamName}</span>
+        </div>
+
+        {/* Climb stats */}
+        <div className="w-full space-y-2 pt-1 border-t border-border/50">
+          {/* Auto */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-8 flex-shrink-0">
+              Auto
+            </span>
+            {useTbaClimb ? (
+              <div className="flex gap-1.5">
+                <ClimbLevelChip label="L1" count={climb.auto.L1} n={climb.n} />
+                <ClimbLevelChip label="L2" count={climb.auto.L2} n={climb.n} />
+                <ClimbLevelChip label="L3" count={climb.auto.L3} n={climb.n} />
+              </div>
+            ) : (
+              <div className="flex gap-1.5 items-center">
+                <div className={[
+                  "flex flex-col items-center rounded-md px-2.5 py-1 min-w-[40px]",
+                  climb.auto.any > 0 ? "bg-primary/15" : "bg-muted/50",
+                ].join(" ")}>
+                  <span className={["text-[10px] font-semibold", climb.auto.any > 0 ? "text-primary" : "text-muted-foreground/50"].join(" ")}>
+                    Any
+                  </span>
+                  <span className={["text-sm font-bold tabular-nums", climb.auto.any > 0 ? "text-primary" : "text-muted-foreground/30"].join(" ")}>
+                    {climb.auto.any}
+                  </span>
+                  {climb.n > 0 && (
+                    <span className="text-[9px] text-muted-foreground/50">
+                      {Math.round((climb.auto.any / climb.n) * 100)}%
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-muted-foreground/50">no level from scouted</span>
+              </div>
+            )}
+          </div>
+
+          {/* Teleop */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-8 flex-shrink-0">
+              Tele
+            </span>
+            <div className="flex gap-1.5">
+              <ClimbLevelChip label="L1" count={climb.teleop.L1} n={climb.n} />
+              <ClimbLevelChip label="L2" count={climb.teleop.L2} n={climb.n} />
+              <ClimbLevelChip label="L3" count={climb.teleop.L3} n={climb.n} />
+            </div>
+          </div>
+
+          {/* Match count */}
+          <p className="text-[10px] text-muted-foreground/50 text-center">
+            {climb.n} match{climb.n !== 1 ? "es" : ""} scouted
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -737,8 +856,8 @@ function PicklistEditorPage() {
 
 function PicklistEditor({ picklistId }: { picklistId: string }) {
   const navigate = useNavigate();
-  const { currentEvent } = useDesktopEvent();
-  const { picklists } = useDesktopCompetitionData();
+  const { currentEvent, useTbaClimb } = useDesktopEvent();
+  const { picklists, tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
 
   // ── State ──
@@ -774,6 +893,12 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
   }, [currentEvent]);
 
+  // Re-fetch match data whenever DesktopCompetitionData refreshes SQLite (120s sync cycle)
+  useEffect(() => {
+    if (!currentEvent || lastDataRefreshAt === 0) return;
+    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
+  }, [currentEvent, lastDataRefreshAt]);
+
   // ── Merge picklist entries with all event teams ──
   const mergedInitialEntries = useMemo<PicklistEntry[]>(() => {
     if (!selectedPicklist) return [];
@@ -791,7 +916,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
       .filter((t) => !entriesByTeam.has(t.key))
       .map((t, i) => ({ team: t.key, rank: maxRank + i + 1, flags: null }));
     return [...inPicklist, ...extra];
-  }, [selectedPicklist?.id, tbaTeams.length]);
+  }, [selectedPicklist?.id, selectedPicklist?.last_modified, tbaTeams.length]);
 
   // ── Picklist editor hook ──
   const {
@@ -1229,6 +1354,9 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                         teamKey={teamKey}
                         entry={entries.find((e) => e.team === teamKey)}
                         tbaTeam={tbaTeams.find((t) => t.key === teamKey)}
+                        matchData={matchData}
+                        tbaClimbData={tbaClimbData}
+                        useTbaClimb={useTbaClimb}
                         onMoveUp={() => moveRank(teamKey, "up")}
                         onMoveDown={() => moveRank(teamKey, "down")}
                         onRemove={() =>

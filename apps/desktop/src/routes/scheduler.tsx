@@ -1,0 +1,260 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { Button } from "@shadcn/ui/components/button.tsx";
+import { Input } from "@shadcn/ui/components/input.tsx";
+import { Label } from "@shadcn/ui/components/label.tsx";
+import { Checkbox } from "@shadcn/ui/components/checkbox.tsx";
+import { useDesktopEvent } from "../contexts/DesktopEventContext";
+import { runCycleForEvent } from "@lib/schedule/runCycleForEvent";
+import { assignShiftsFromCycle } from "@lib/data/writes";
+import type { CycleAssignment, Scouter } from "@lib/schedule/cycle";
+import { getMatchLabel } from "@lib/utils/match";
+import { fetchAllUserDetails } from "@lib/supabase/user";
+import { toast } from "sonner";
+
+export const Route = createFileRoute("/scheduler")({
+  component: SchedulerPage,
+});
+
+interface ScouterProfile {
+  uid: string;
+  name: string;
+  role: string;
+}
+
+function SchedulerPage() {
+  const { currentEvent } = useDesktopEvent();
+  const [w, setW] = useState(3);
+  const [r, setR] = useState(1);
+  const [assignments, setAssignments] = useState<CycleAssignment[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  // Scouter selection
+  const [allScouters, setAllScouters] = useState<ScouterProfile[]>([]);
+  const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
+  const [loadingScouters, setLoadingScouters] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    fetchAllUserDetails().then((profiles) => {
+      if (!profiles || !Array.isArray(profiles)) return;
+      const eligible = (profiles as { uid: string; name?: string; role?: string }[])
+        .filter((p) => p.role === "scouter" || p.role === "admin")
+        .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: p.role ?? "scouter" }));
+      setAllScouters(eligible);
+      setSelectedUids(new Set(eligible.map((s) => s.uid)));
+      setLoadingScouters(false);
+    });
+  }, []);
+
+  const filtered = allScouters.filter((s) =>
+    s.name.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const toggleUid = (uid: string) => {
+    setSelectedUids((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelectedUids(new Set(allScouters.map((s) => s.uid)));
+  const selectNone = () => setSelectedUids(new Set());
+
+  const handleGenerate = async () => {
+    if (!currentEvent) return;
+    if (selectedUids.size === 0) {
+      toast.error("Select at least one scouter");
+      return;
+    }
+    setGenerating(true);
+    setAssignments([]);
+    try {
+      const scouters: Scouter[] = allScouters
+        .filter((s) => selectedUids.has(s.uid))
+        .map((s) => ({ uid: s.uid, name: s.name }));
+      const result = await runCycleForEvent(currentEvent, [w, r], scouters);
+      setAssignments(result);
+      toast.success(`Generated ${result.length} assignments`);
+    } catch (e: any) {
+      toast.error(`Failed to generate: ${e.message ?? String(e)}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!currentEvent || assignments.length === 0) return;
+    setApplying(true);
+    try {
+      await assignShiftsFromCycle(currentEvent, assignments);
+      toast.success(`Applied ${assignments.length} shift assignments`);
+    } catch (e: any) {
+      toast.error(`Failed to apply: ${e.message ?? String(e)}`);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  // Group by uid (always unique) for display
+  const byUid = assignments.reduce<Record<string, CycleAssignment[]>>((acc, a) => {
+    (acc[a.uid] ??= []).push(a);
+    return acc;
+  }, {});
+
+  return (
+    <div className="h-full overflow-auto p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-xl font-semibold">Scheduler</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Assign scouters to qual matches using the work/rest cycle algorithm.
+          </p>
+        </div>
+
+        {/* Config row */}
+        <div className="flex items-end gap-4 p-4 rounded-lg bg-card border border-border">
+          <div className="space-y-1.5">
+            <Label>Work (w)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={w}
+              onChange={(e) => setW(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-24"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Rest (r)</Label>
+            <Input
+              type="number"
+              min={0}
+              value={r}
+              onChange={(e) => setR(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-24"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground pb-2">
+            Work {w} match{w !== 1 ? "es" : ""}, rest {r} match{r !== 1 ? "es" : ""}, repeat.
+          </p>
+          <Button
+            onClick={handleGenerate}
+            disabled={generating || !currentEvent || selectedUids.size === 0}
+            className="ml-auto"
+          >
+            {generating ? "Generating..." : "Generate"}
+          </Button>
+        </div>
+
+        {/* Scouter selection */}
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Scouters</span>
+              <span className="text-xs text-muted-foreground">
+                {selectedUids.size} / {allScouters.length} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={selectAll} className="text-xs text-primary hover:underline">
+                All
+              </button>
+              <span className="text-xs text-muted-foreground">·</span>
+              <button onClick={selectNone} className="text-xs text-primary hover:underline">
+                None
+              </button>
+            </div>
+          </div>
+          <div className="p-3 border-b border-border">
+            <Input
+              placeholder="Search scouters..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 text-sm"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {loadingScouters ? (
+              <p className="text-sm text-muted-foreground p-4">Loading scouters...</p>
+            ) : filtered.length === 0 ? (
+              <p className="text-sm text-muted-foreground p-4">No scouters found.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {filtered.map((s) => (
+                  <label
+                    key={s.uid}
+                    className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-secondary/40 select-none"
+                  >
+                    <Checkbox
+                      checked={selectedUids.has(s.uid)}
+                      onCheckedChange={() => toggleUid(s.uid)}
+                    />
+                    <span className="text-sm flex-1">{s.name}</span>
+                    {s.role === "admin" && (
+                      <span className="text-xs text-muted-foreground">admin</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* No event selected */}
+        {!currentEvent && (
+          <p className="text-sm text-muted-foreground">Select an event to use the scheduler.</p>
+        )}
+
+        {/* Results */}
+        {assignments.length > 0 && (
+          <>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {assignments.length} assignments across {Object.keys(byUid).length} scouters
+              </p>
+              <Button onClick={handleApply} disabled={applying}>
+                {applying ? "Applying..." : "Apply Assignments"}
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {Object.entries(byUid).map(([uid, rows]) => (
+                <div
+                  key={uid}
+                  className="rounded-lg border border-border bg-card overflow-hidden"
+                >
+                  <div className="px-4 py-2 bg-secondary/50 border-b border-border flex items-center gap-2">
+                    <span className="text-sm font-medium">{rows[0]?.name || uid}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({rows.length} match{rows.length !== 1 ? "es" : ""})
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 p-3">
+                    {rows
+                      .sort((a, b) => a.matchKey.localeCompare(b.matchKey))
+                      .map((a) => (
+                        <div
+                          key={`${a.matchKey}|${a.teamKey}`}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary text-xs"
+                        >
+                          <span className="font-medium text-muted-foreground">
+                            {getMatchLabel(a.matchKey)}
+                          </span>
+                          <span className="text-foreground">
+                            {a.teamKey.replace("frc", "")}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

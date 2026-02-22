@@ -20,6 +20,7 @@ import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import { Label } from "@shadcn/ui/components/label.tsx";
 import { Loader2, Save, RefreshCw } from "lucide-react";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
+import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { getMatchScoutingData } from "../lib/db";
 import { reverseTransformMatchData } from "@lib/data/matchDataTransform";
 import { transformMatchData } from "@lib/data/matchDataTransform";
@@ -35,6 +36,7 @@ export const Route = createFileRoute("/match-edit-test")({
 
 function MatchEditTestPage() {
   const { currentEvent } = useDesktopEvent();
+  const { lastDataRefreshAt } = useDesktopCompetitionData();
   const [allMatchData, setAllMatchData] = useState<any[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
@@ -59,7 +61,7 @@ function MatchEditTestPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load all match data when event changes
+  // Load all match data when event changes or after a sync cycle
   useEffect(() => {
     if (!currentEvent) return;
 
@@ -79,7 +81,7 @@ function MatchEditTestPage() {
     }
 
     loadMatchData();
-  }, [currentEvent]);
+  }, [currentEvent, lastDataRefreshAt]);
 
   // Load selected match data
   useEffect(() => {

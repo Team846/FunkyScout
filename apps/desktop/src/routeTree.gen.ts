@@ -13,6 +13,7 @@ import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as TestPicklistsRouteImport } from './routes/test-picklists'
 import { Route as ShiftsRouteImport } from './routes/shifts'
 import { Route as ScouterRatingsRouteImport } from './routes/scouter-ratings'
+import { Route as SchedulerRouteImport } from './routes/scheduler'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as PicklistsRouteImport } from './routes/picklists'
 import { Route as PicklistOpenRouteImport } from './routes/picklist-open'
@@ -39,6 +40,11 @@ const ShiftsRoute = ShiftsRouteImport.update({
 const ScouterRatingsRoute = ScouterRatingsRouteImport.update({
   id: '/scouter-ratings',
   path: '/scouter-ratings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SchedulerRoute = SchedulerRouteImport.update({
+  id: '/scheduler',
+  path: '/scheduler',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetRoute = ResetRouteImport.update({
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
+  '/scheduler': typeof SchedulerRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/shifts': typeof ShiftsRoute
   '/test-picklists': typeof TestPicklistsRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
+  '/scheduler': typeof SchedulerRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/shifts': typeof ShiftsRoute
   '/test-picklists': typeof TestPicklistsRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
+  '/scheduler': typeof SchedulerRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/shifts': typeof ShiftsRoute
   '/test-picklists': typeof TestPicklistsRoute
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/picklist-open'
     | '/picklists'
     | '/reset'
+    | '/scheduler'
     | '/scouter-ratings'
     | '/shifts'
     | '/test-picklists'
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/picklist-open'
     | '/picklists'
     | '/reset'
+    | '/scheduler'
     | '/scouter-ratings'
     | '/shifts'
     | '/test-picklists'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/picklist-open'
     | '/picklists'
     | '/reset'
+    | '/scheduler'
     | '/scouter-ratings'
     | '/shifts'
     | '/test-picklists'
@@ -165,6 +177,7 @@ export interface RootRouteChildren {
   PicklistOpenRoute: typeof PicklistOpenRoute
   PicklistsRoute: typeof PicklistsRoute
   ResetRoute: typeof ResetRoute
+  SchedulerRoute: typeof SchedulerRoute
   ScouterRatingsRoute: typeof ScouterRatingsRoute
   ShiftsRoute: typeof ShiftsRoute
   TestPicklistsRoute: typeof TestPicklistsRoute
@@ -201,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/scouter-ratings'
       fullPath: '/scouter-ratings'
       preLoaderRoute: typeof ScouterRatingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scheduler': {
+      id: '/scheduler'
+      path: '/scheduler'
+      fullPath: '/scheduler'
+      preLoaderRoute: typeof SchedulerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset': {
@@ -261,6 +281,7 @@ const rootRouteChildren: RootRouteChildren = {
   PicklistOpenRoute: PicklistOpenRoute,
   PicklistsRoute: PicklistsRoute,
   ResetRoute: ResetRoute,
+  SchedulerRoute: SchedulerRoute,
   ScouterRatingsRoute: ScouterRatingsRoute,
   ShiftsRoute: ShiftsRoute,
   TestPicklistsRoute: TestPicklistsRoute,

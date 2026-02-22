@@ -18,6 +18,7 @@ import {
 } from "@shadcn/ui/components/table.tsx";
 import { Badge } from "@shadcn/ui/components/badge.tsx";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
+import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import {
   getShiftsByMatch,
   getShiftsByScouter,
@@ -31,13 +32,15 @@ export const Route = createFileRoute("/shifts")({
 
 function ShiftViewerPage() {
   const { currentEvent } = useDesktopEvent();
+  const { lastDataRefreshAt } = useDesktopCompetitionData();
   const [byMatch, setByMatch] = useState<Map<string, MatchAssignment[]>>(new Map());
   const [byScouter, setByScouter] = useState<ScouterSchedule[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadShifts();
-  }, [currentEvent]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentEvent, lastDataRefreshAt]);
 
   const loadShifts = async () => {
     if (!currentEvent) return;
