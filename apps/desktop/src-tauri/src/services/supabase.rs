@@ -684,6 +684,36 @@ impl SupabaseService {
         Ok(())
     }
 
+    /// Bulk assign pit scouting teams (from sync queue).
+    /// Updates the `assigned` column in event_team_data for each team.
+    pub async fn bulk_assign_pit_teams(
+        &self,
+        event: &str,
+        assignments: &[Value],
+    ) -> Result<()> {
+        for assignment in assignments {
+            let team = assignment.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let uid = assignment.get("uid").and_then(|v| v.as_str());
+
+            let payload = json!({
+                "assigned": uid,
+                "last_modified": Self::now_iso(),
+            });
+
+            self.auth_client()
+                .from("event_team_data")
+                .update(&payload.to_string())
+                .eq("event", event)
+                .eq("team", team)
+                .execute()
+                .await
+                .context(format!("Failed to assign pit team {}", team))?;
+        }
+
+        println!("[Supabase] ✓ Bulk assigned {} pit teams", assignments.len());
+        Ok(())
+    }
+
     /// Update user profile settings (from sync queue)
     /// Used for scouter ratings and other profile settings
     pub async fn update_user_profile_settings(

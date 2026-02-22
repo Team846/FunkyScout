@@ -117,31 +117,50 @@ impl SyncService {
                 .map(|t| t.team)
                 .collect();
 
-            // Try batch endpoint first — fetches all teams for the year in 1 call
-            let mut epa_data = Vec::new();
-            match self.statbotics.fetch_event_team_years(&self.current_event, &event_year).await {
-                Ok(team_years) => {
-                    println!("[Sync] ✓ Fetched {} total team EPAs for year {}", team_years.len(), event_year);
+            // Step 1: Try event-specific endpoint (1 call, pre-event EPA, most accurate).
+            // Step 2: If event not indexed (returns 0 results), fall back to year-level batch
+            //         filtered to event teams (slower but covers off-season/unregistered events).
+            let mut epa_data: Vec<(i32, serde_json::Value)> = Vec::new();
 
-                    // Filter to only teams at THIS event, then convert to (team_num, data) pairs
-                    epa_data = team_years
+            let event_specific_result = self.statbotics.fetch_event_team_events(&self.current_event).await;
+            match event_specific_result {
+                Ok(team_events) if !team_events.is_empty() => {
+                    println!("[Sync] ✓ Event-specific EPA: {} teams from /team_events", team_events.len());
+                    epa_data = team_events
                         .into_iter()
                         .filter_map(|data| {
                             let team_num = data.get("team").and_then(|t| t.as_i64()).map(|t| t as i32)?;
-                            if event_team_nums.contains(&team_num) {
-                                Some((team_num, data))
-                            } else {
-                                None
-                            }
+                            Some((team_num, data))
                         })
                         .collect();
-
-                    println!("[Sync] ✓ Matched {}/{} event teams with EPA data", epa_data.len(), teams.len());
+                },
+                Ok(_) => {
+                    // Empty = event not indexed in Statbotics — fall back to year-level batch
+                    println!("[Sync] Event not indexed in Statbotics, falling back to year-level batch...");
+                    match self.statbotics.fetch_event_team_years(&self.current_event, &event_year).await {
+                        Ok(team_years) => {
+                            println!("[Sync] ✓ Fetched {} total team EPAs for year {}", team_years.len(), event_year);
+                            epa_data = team_years
+                                .into_iter()
+                                .filter_map(|data| {
+                                    let team_num = data.get("team").and_then(|t| t.as_i64()).map(|t| t as i32)?;
+                                    if event_team_nums.contains(&team_num) {
+                                        Some((team_num, data))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            println!("[Sync] ✓ Matched {}/{} event teams with year-level EPA", epa_data.len(), teams.len());
+                        },
+                        Err(e) => {
+                            eprintln!("[Sync] ✗ Statbotics year-level EPA unavailable, skipping: {}", e);
+                        }
+                    }
                 },
                 Err(e) => {
-                    // Statbotics may be temporarily unavailable (503, rate limit, etc).
-                    // Skip EPA this cycle — next sync will retry. Do NOT hammer with individual calls.
-                    eprintln!("[Sync] ✗ Statbotics batch EPA unavailable, skipping this cycle: {}", e);
+                    // API unavailable — skip EPA this cycle, next sync will retry
+                    eprintln!("[Sync] ✗ Statbotics EPA unavailable, skipping this cycle: {}", e);
                 }
             }
 
@@ -1042,6 +1061,7 @@ impl SyncService {
                 "DELETE_MATCH_DATA" => self.sync_delete_match_data(payload).await,
                 "ASSIGN_SHIFT" => self.sync_assign_shift(payload).await,
                 "ASSIGN_SHIFTS_BULK" => self.sync_assign_shifts_bulk(payload).await,
+                "ASSIGN_PIT_TEAMS_BULK" => self.sync_assign_pit_teams_bulk(payload).await,
                 "UPDATE_USER_PROFILE" => self.sync_update_user_profile(payload).await,
                 _ => {
                     eprintln!("[SyncQueue] Unknown operation: {}", operation);
@@ -1251,6 +1271,21 @@ impl SyncService {
         let count = assignments.len();
         self.supabase.bulk_assign_shifts(event, &assignments).await?;
         println!("[Sync] ✅ Bulk assigned {} shifts to Supabase", count);
+        Ok(())
+    }
+
+    /// Sync ASSIGN_PIT_TEAMS_BULK operation to Supabase
+    async fn sync_assign_pit_teams_bulk(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let assignments = payload.get("assignments")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing assignments array"))?
+            .clone();
+
+        let count = assignments.len();
+        self.supabase.bulk_assign_pit_teams(event, &assignments).await?;
+        println!("[Sync] ✅ Bulk assigned {} pit teams to Supabase", count);
         Ok(())
     }
 

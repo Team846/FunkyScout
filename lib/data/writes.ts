@@ -940,3 +940,72 @@ export async function assignShiftsFromCycle(
     console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
   });
 }
+
+/**
+ * Bulk-assign pit scouting teams among scouters (desktop only).
+ * Updates the `assigned` column in event_team_data for each team.
+ * Writes to local SQLite first, then queues a single ASSIGN_PIT_TEAMS_BULK operation.
+ */
+export async function assignPitTeams(
+  eventKey: string,
+  assignments: { teamKey: string; uid: string; name: string }[],
+): Promise<void> {
+  if (!isTauri()) throw new Error("assignPitTeams is only supported on desktop");
+  if (assignments.length === 0) return;
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const now = Date.now();
+
+  const assignmentMap = new Map(assignments.map((a) => [a.teamKey, a]));
+
+  // Read current pit data, merge assignments
+  const allPitData = await invoke<any[]>("get_pit_scouting_data", { event: eventKey });
+  const existingTeams = new Set(allPitData.map((r: any) => r.team));
+
+  const updatedRows: any[] = [];
+  for (const row of allPitData) {
+    const a = assignmentMap.get(row.team);
+    if (a) {
+      updatedRows.push({ ...row, assigned: a.uid, last_modified: now });
+    }
+  }
+  // Create skeleton rows for teams not yet in pit data
+  for (const a of assignments) {
+    if (!existingTeams.has(a.teamKey)) {
+      updatedRows.push({
+        event: eventKey,
+        team: a.teamKey,
+        data: null,
+        team_name: null,
+        name: null,
+        uid: null,
+        assigned: a.uid,
+        timestamp: null,
+        last_modified: now,
+        deleted_at: null,
+      });
+    }
+  }
+
+  // 1. Cache locally (Tauri SQLite)
+  if (updatedRows.length > 0) {
+    await invoke("cache_pit_scouting_data", { data: updatedRows });
+  }
+
+  // 2. Queue a single bulk operation for Rust sync
+  await invoke("add_to_sync_queue", {
+    operation: "ASSIGN_PIT_TEAMS_BULK",
+    payload: {
+      event: eventKey,
+      assignments: assignments.map((a) => ({ team: a.teamKey, uid: a.uid })),
+      timestamp: now,
+    },
+  });
+
+  console.log(`[Writes] Desktop: Queued ASSIGN_PIT_TEAMS_BULK (${assignments.length} teams)`);
+
+  // 3. Trigger instant sync (fire-and-forget)
+  invoke("trigger_sync_now").catch((e) => {
+    console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+  });
+}

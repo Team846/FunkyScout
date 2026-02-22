@@ -130,7 +130,7 @@ function MatchCardSmall({
 
       {/* Scouter rows: team number */}
       {!isTeam && (
-        <div className="text-sm text-muted-foreground leading-none">
+        <div className="text-sm text-primary leading-none">
           {card.teamNumber}
         </div>
       )}
@@ -155,7 +155,11 @@ function MatchCardSmall({
               <span className="text-blue-400">{card.blueScore}</span>
             </div>
           )}
-          <div className="text-xs text-muted-foreground/70 leading-snug truncate">
+          <div
+            className={`text-xs leading-snug truncate ${
+              card.wasScouted ? "text-primary" : "text-muted-foreground/70"
+            }`}
+          >
             {card.wasScouted
               ? card.scoutedByName ?? "Scouted"
               : "No one scouted"}
@@ -179,7 +183,11 @@ function MatchCardSmall({
               <span className="text-blue-400/70">~{Math.round(card.predictedBlueScore ?? 0)}</span>
             </div>
           )}
-          <div className="text-xs text-muted-foreground/70 leading-snug truncate">
+          <div
+            className={`text-xs leading-snug truncate ${
+              card.assignedScouterName ? "text-primary" : "text-muted-foreground/70"
+            }`}
+          >
             {card.assignedScouterName ?? "No one assigned"}
           </div>
         </>
@@ -209,7 +217,7 @@ function MatchCardScroll({
           </div>
         ) : (
           cards.map((m) => (
-            <MatchCardSmall key={m.matchKey} card={m} type={type} />
+            <MatchCardSmall key={`${m.matchKey}-${m.team}`} card={m} type={type} />
           ))
         )}
       </div>

@@ -6,20 +6,32 @@ import { Label } from "@shadcn/ui/components/label.tsx";
 import { Checkbox } from "@shadcn/ui/components/checkbox.tsx";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { runCycleForEvent } from "@lib/schedule/runCycleForEvent";
-import { assignShiftsFromCycle } from "@lib/data/writes";
+import { assignShiftsFromCycle, assignPitTeams } from "@lib/data/writes";
 import type { CycleAssignment, Scouter } from "@lib/schedule/cycle";
 import { getMatchLabel } from "@lib/utils/match";
 import { fetchAllUserDetails } from "@lib/supabase/user";
 import { toast } from "sonner";
+import { invoke } from "@tauri-apps/api/core";
 
 export const Route = createFileRoute("/scheduler")({
   component: SchedulerPage,
 });
 
+// Module-level persistence — survives tab navigation within a session
+let _persistedSelectedUids: Set<string> | null = null;
+
 interface ScouterProfile {
   uid: string;
   name: string;
   role: string;
+}
+
+interface PitAssignment {
+  teamKey: string;
+  teamNumber: number;
+  teamName: string | null;
+  uid: string;
+  name: string;
 }
 
 function SchedulerPage() {
@@ -30,11 +42,23 @@ function SchedulerPage() {
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
 
-  // Scouter selection
+  // Scouter selection — initialized from persisted state if available
   const [allScouters, setAllScouters] = useState<ScouterProfile[]>([]);
-  const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
+  const [selectedUids, setSelectedUids] = useState<Set<string>>(
+    () => _persistedSelectedUids ?? new Set(),
+  );
   const [loadingScouters, setLoadingScouters] = useState(true);
   const [search, setSearch] = useState("");
+
+  // Pit team assignment
+  const [pitAssignments, setPitAssignments] = useState<PitAssignment[]>([]);
+  const [schedulingTeams, setSchedulingTeams] = useState(false);
+  const [applyingTeams, setApplyingTeams] = useState(false);
+
+  // Persist selectedUids to module-level on every change
+  useEffect(() => {
+    _persistedSelectedUids = selectedUids;
+  }, [selectedUids]);
 
   useEffect(() => {
     fetchAllUserDetails().then((profiles) => {
@@ -43,7 +67,10 @@ function SchedulerPage() {
         .filter((p) => p.role === "scouter" || p.role === "admin")
         .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: p.role ?? "scouter" }));
       setAllScouters(eligible);
-      setSelectedUids(new Set(eligible.map((s) => s.uid)));
+      // Only initialize selection if there's no saved state (first visit)
+      if (_persistedSelectedUids === null) {
+        setSelectedUids(new Set(eligible.map((s) => s.uid)));
+      }
       setLoadingScouters(false);
     });
   }, []);
@@ -99,8 +126,68 @@ function SchedulerPage() {
     }
   };
 
-  // Group by uid (always unique) for display
+  const handleScheduleTeams = async () => {
+    if (!currentEvent) return;
+    const selected = allScouters.filter((s) => selectedUids.has(s.uid));
+    if (selected.length === 0) {
+      toast.error("Select at least one scouter");
+      return;
+    }
+    setSchedulingTeams(true);
+    setPitAssignments([]);
+    try {
+      const teams = await invoke<{ team: string; team_name?: string | null }[]>(
+        "get_teams",
+        { event: currentEvent },
+      );
+      if (teams.length === 0) {
+        toast.error("No teams found for this event. Bootstrap the event first.");
+        return;
+      }
+      // Round-robin assignment
+      const result: PitAssignment[] = teams.map((t, i) => {
+        const scouter = selected[i % selected.length];
+        const teamNum = parseInt(t.team.replace("frc", ""), 10);
+        return {
+          teamKey: t.team,
+          teamNumber: isNaN(teamNum) ? 0 : teamNum,
+          teamName: t.team_name ?? null,
+          uid: scouter.uid,
+          name: scouter.name,
+        };
+      });
+      setPitAssignments(result);
+      toast.success(`Scheduled ${result.length} teams across ${selected.length} scouters`);
+    } catch (e: any) {
+      toast.error(`Failed to schedule teams: ${e.message ?? String(e)}`);
+    } finally {
+      setSchedulingTeams(false);
+    }
+  };
+
+  const handleApplyTeams = async () => {
+    if (!currentEvent || pitAssignments.length === 0) return;
+    setApplyingTeams(true);
+    try {
+      await assignPitTeams(
+        currentEvent,
+        pitAssignments.map((a) => ({ teamKey: a.teamKey, uid: a.uid, name: a.name })),
+      );
+      toast.success(`Applied ${pitAssignments.length} team assignments`);
+    } catch (e: any) {
+      toast.error(`Failed to apply team assignments: ${e.message ?? String(e)}`);
+    } finally {
+      setApplyingTeams(false);
+    }
+  };
+
+  // Group by uid for display
   const byUid = assignments.reduce<Record<string, CycleAssignment[]>>((acc, a) => {
+    (acc[a.uid] ??= []).push(a);
+    return acc;
+  }, {});
+
+  const pitByUid = pitAssignments.reduce<Record<string, PitAssignment[]>>((acc, a) => {
     (acc[a.uid] ??= []).push(a);
     return acc;
   }, {});
@@ -140,13 +227,21 @@ function SchedulerPage() {
           <p className="text-xs text-muted-foreground pb-2">
             Work {w} match{w !== 1 ? "es" : ""}, rest {r} match{r !== 1 ? "es" : ""}, repeat.
           </p>
-          <Button
-            onClick={handleGenerate}
-            disabled={generating || !currentEvent || selectedUids.size === 0}
-            className="ml-auto"
-          >
-            {generating ? "Generating..." : "Generate"}
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleScheduleTeams}
+              disabled={schedulingTeams || !currentEvent || selectedUids.size === 0}
+            >
+              {schedulingTeams ? "Scheduling..." : "Schedule Teams"}
+            </Button>
+            <Button
+              onClick={handleGenerate}
+              disabled={generating || !currentEvent || selectedUids.size === 0}
+            >
+              {generating ? "Generating..." : "Generate Shifts"}
+            </Button>
+          </div>
         </div>
 
         {/* Scouter selection */}
@@ -208,7 +303,55 @@ function SchedulerPage() {
           <p className="text-sm text-muted-foreground">Select an event to use the scheduler.</p>
         )}
 
-        {/* Results */}
+        {/* Pit team assignments */}
+        {pitAssignments.length > 0 && (
+          <>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {pitAssignments.length} teams across {Object.keys(pitByUid).length} scouters
+              </p>
+              <Button onClick={handleApplyTeams} disabled={applyingTeams}>
+                {applyingTeams ? "Applying..." : "Apply Team Assignments"}
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {Object.entries(pitByUid).map(([uid, rows]) => (
+                <div
+                  key={uid}
+                  className="rounded-lg border border-border bg-card overflow-hidden"
+                >
+                  <div className="px-4 py-2 bg-secondary/50 border-b border-border flex items-center gap-2">
+                    <span className="text-sm font-medium">{rows[0]?.name || uid}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({rows.length} team{rows.length !== 1 ? "s" : ""})
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 p-3">
+                    {rows
+                      .sort((a, b) => a.teamNumber - b.teamNumber)
+                      .map((a) => (
+                        <div
+                          key={a.teamKey}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary text-xs"
+                          title={a.teamName ?? a.teamKey}
+                        >
+                          <span className="font-medium text-foreground">{a.teamNumber}</span>
+                          {a.teamName && (
+                            <span className="text-muted-foreground max-w-[120px] truncate">
+                              {a.teamName}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Shift assignment results */}
         {assignments.length > 0 && (
           <>
             <div className="flex items-center justify-between">
@@ -216,7 +359,7 @@ function SchedulerPage() {
                 {assignments.length} assignments across {Object.keys(byUid).length} scouters
               </p>
               <Button onClick={handleApply} disabled={applying}>
-                {applying ? "Applying..." : "Apply Assignments"}
+                {applying ? "Applying..." : "Apply Shift Assignments"}
               </Button>
             </div>
 

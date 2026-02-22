@@ -113,6 +113,40 @@ impl StatboticsService {
         Ok(all_data)
     }
 
+    /// Fetch EPA data for all teams at a specific event (event-specific snapshot).
+    /// GET /team_events?event={event}
+    /// Returns pre-event EPA per team — more accurate than year-level for in-season events.
+    /// Returns empty Vec if the event is not indexed in Statbotics (off-season/unregistered).
+    pub async fn fetch_event_team_events(&self, event: &str) -> Result<Vec<Value>> {
+        let call_num = API_CALL_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+        let url = format!("{}/team_events?event={}&limit=100", self.base_url, event);
+
+        println!("[Statbotics] ⚡ API Call #{}: Fetching event-specific team EPAs for {}", call_num, event);
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to fetch team_events from Statbotics")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "Statbotics API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        let data: Vec<Value> = response
+            .json()
+            .await
+            .context("Failed to parse Statbotics team_events response")?;
+
+        println!("[Statbotics] Fetched {} event-specific team EPAs for {}", data.len(), event);
+        Ok(data)
+    }
+
     /// Fetch match predictions for an event
     /// GET /matches?event={event}
     /// Returns win probabilities and predicted scores

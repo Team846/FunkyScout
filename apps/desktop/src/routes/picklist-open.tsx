@@ -69,6 +69,13 @@ export const Route = createFileRoute("/picklist-open")({
   }),
 });
 
+// ─── Module-level UI state persistence (survives tab navigation) ─────────────
+interface PicklistUIState {
+  selectedTeams: string[];
+  activeMetrics: string[];
+}
+const _picklistUIState = new Map<string, PicklistUIState>();
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const TYPE_CYCLE = ["private", "public", "default"] as const;
@@ -901,8 +908,12 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
 
   // ── State ──
   const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
-  const [selectedTeams, setSelectedTeams] = useState<string[]>([]); // index 0 = newest slot
-  const [activeMetrics, setActiveMetrics] = useState<string[]>([]);
+  const [selectedTeams, setSelectedTeams] = useState<string[]>(
+    () => _picklistUIState.get(picklistId)?.selectedTeams ?? [],
+  );
+  const [activeMetrics, setActiveMetrics] = useState<string[]>(
+    () => _picklistUIState.get(picklistId)?.activeMetrics ?? [],
+  );
   const [showPercentiles, setShowPercentiles] = useState<
     Record<string, boolean>
   >({});
@@ -915,6 +926,11 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+
+  // Persist selected teams + metrics for this picklist across navigation
+  useEffect(() => {
+    _picklistUIState.set(picklistId, { selectedTeams, activeMetrics });
+  }, [picklistId, selectedTeams, activeMetrics]);
 
   // ── Selected picklist ──
   const selectedPicklist = picklists.find((p) => p.id === picklistId);
