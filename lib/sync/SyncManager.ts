@@ -241,12 +241,12 @@ export class SyncManager {
    * Fetches existing data, merges pit data with TBA stats, then upserts
    */
   private async syncTeamData(payload: PutTeamDataPayload): Promise<void> {
-    const { event, team, data, name, uid } = payload;
+    const { event, team, data, name, uid, teamName } = payload;
 
-    // 1. Fetch existing data to preserve TBA stats
+    // 1. Fetch existing data to preserve TBA stats and team_name
     const { data: existing, error: fetchError } = await this.supabaseClient
       .from("event_team_data")
-      .select("data")
+      .select("data, team_name")
       .eq("event", event)
       .eq("team", team)
       .maybeSingle();
@@ -266,7 +266,10 @@ export class SyncManager {
       };
     }
 
-    // 3. Upsert merged data
+    // 3. Preserve existing team_name from TBA bootstrap if not provided
+    const finalTeamName = teamName || existing?.team_name || null;
+
+    // 4. Upsert merged data
     const { error } = await this.supabaseClient
       .from("event_team_data")
       .upsert(
@@ -274,6 +277,7 @@ export class SyncManager {
           event,
           team,
           data: mergedData,
+          team_name: finalTeamName,
           name,
           uid,
         },
@@ -343,28 +347,39 @@ export class SyncManager {
    * Sync match data (match scouting) to Supabase
    */
   private async syncMatchData(payload: PutMatchDataPayload): Promise<void> {
-    const { event, match, team, alliance, dataRaw, data, name, uid, timestamp } =
+    const { event, match, team, alliance, dataRaw, name, uid, timestamp } =
       payload;
+
+    // Validate alliance is provided
+    if (!alliance) {
+      console.error('[Sync] Alliance is null/undefined for match data:', payload);
+      throw new Error('Alliance is required for match data');
+    }
+
+    // CRITICAL FIX: Build upsert payload dynamically - only include name if defined
+    // This prevents null overwrites when editing match data without name/uid
+    const upsertPayload: Record<string, unknown> = {
+      event,
+      match,
+      team,
+      alliance,
+      data_raw: dataRaw,
+      data: "{}",
+      uid,
+      timestamp: new Date(timestamp).toISOString(), // Convert milliseconds to ISO string
+      last_modified: new Date().toISOString(), // Convert to ISO string for PostgreSQL
+    };
+
+    // Only include name if it's defined in the payload (prevents null overwrite)
+    if (name !== undefined) {
+      upsertPayload.name = name;
+    }
 
     const { error } = await this.supabaseClient
       .from("event_match_data")
-      .upsert(
-        {
-          event,
-          match,
-          team,
-          alliance,
-          data_raw: dataRaw,
-          data: "{}",
-          name,
-          uid,
-          timestamp: new Date(timestamp).toISOString(), // Convert milliseconds to ISO string
-          last_modified: new Date().toISOString(), // Convert to ISO string for PostgreSQL
-        },
-        {
-          onConflict: "event,match,team",
-        },
-      );
+      .upsert(upsertPayload, {
+        onConflict: "event,match,team",
+      });
 
     if (error) {
       throw error;
@@ -382,7 +397,7 @@ export class SyncManager {
     const { error } = await this.supabaseClient
       .from("event_match_data")
       .update({
-        deleted_at: Date.now(),
+        deleted_at: new Date().toISOString(),
       })
       .eq("event", event)
       .eq("match", match)
@@ -406,7 +421,7 @@ export class SyncManager {
       .update({
         uid,
         name,
-        last_modified: Date.now(),
+        last_modified: new Date().toISOString(),
       })
       .eq("event", event)
       .eq("team", team);
@@ -424,14 +439,14 @@ export class SyncManager {
   ): Promise<void> {
     const { id, event, title, entries, uid, uname, type, timestamp } = payload;
 
-    // Insert picklist header
+    // Insert picklist with embedded entries in picklist JSONB column
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .upsert({
         id,
         event,
         title,
-        picklist: [], // deprecated field - send empty array
+        picklist: entries, // entries embedded in JSONB column
         uname,
         uid,
         type,
@@ -443,27 +458,6 @@ export class SyncManager {
       console.error("[SyncManager] Picklist creation error:", picklistError);
       throw picklistError;
     }
-
-    // Insert picklist entries
-    if (entries.length > 0) {
-      const { error: entriesError } = await this.supabaseClient
-        .from("event_picklist_entries")
-        .upsert(
-          entries.map((entry) => ({
-            event,
-            id,
-            team: entry.team,
-            rank: entry.rank,
-            flags: entry.flags,
-            last_modified: new Date().toISOString(),
-          }))
-        );
-
-      if (entriesError) {
-        console.error("[SyncManager] Picklist entries error:", entriesError);
-        throw entriesError;
-      }
-    }
   }
 
   /**
@@ -474,48 +468,23 @@ export class SyncManager {
   ): Promise<void> {
     const { id, event, title, entries, type } = payload;
 
-    // Update picklist header
+    const now = new Date().toISOString();
+
+    console.log(`[SyncManager] Updating picklist ${id} in Supabase with timestamp:`, now);
+
+    // Update picklist with embedded entries in picklist JSONB column
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
         title,
+        picklist: entries, // entries embedded in JSONB column
         ...(type ? { type } : {}),
-        last_modified: new Date().toISOString(),
+        last_modified: now,
       })
       .eq("id", id);
 
     if (picklistError) {
       throw picklistError;
-    }
-
-    // Delete existing entries
-    const { error: deleteError } = await this.supabaseClient
-      .from("event_picklist_entries")
-      .delete()
-      .eq("id", id);
-
-    if (deleteError) {
-      throw deleteError;
-    }
-
-    // Insert new entries
-    if (entries.length > 0) {
-      const { error: entriesError } = await this.supabaseClient
-        .from("event_picklist_entries")
-        .upsert(
-          entries.map((entry) => ({
-            event,
-            id,
-            team: entry.team,
-            rank: entry.rank,
-            flags: entry.flags,
-            last_modified: new Date().toISOString(),
-          }))
-        );
-
-      if (entriesError) {
-        throw entriesError;
-      }
     }
   }
 
@@ -527,7 +496,7 @@ export class SyncManager {
   ): Promise<void> {
     const { id } = payload;
 
-    // Soft delete picklist
+    // Soft delete picklist (entries are embedded — no separate entries operation needed)
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
@@ -537,18 +506,6 @@ export class SyncManager {
 
     if (picklistError) {
       throw picklistError;
-    }
-
-    // Soft delete entries
-    const { error: entriesError } = await this.supabaseClient
-      .from("event_picklist_entries")
-      .update({
-        deleted_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (entriesError) {
-      throw entriesError;
     }
   }
 }

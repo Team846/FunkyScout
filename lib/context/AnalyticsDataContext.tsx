@@ -25,7 +25,7 @@ import {
 } from "@lib/db";
 import {
   PollingController,
-  DEFAULT_POLLING_CONFIG,
+  LIVE_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
 
 interface AnalyticsDataContextType {
@@ -155,12 +155,15 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
       pollingController.current = new PollingController(
         "Analytics",
         fetchAnalyticsStable,
-        DEFAULT_POLLING_CONFIG,
+        LIVE_POLLING_CONFIG, // 5min — Statbotics EPA/match predictions change slowly
       );
       pollingController.current.start();
     }
 
-    return () => pollingController.current?.stop();
+    return () => {
+      pollingController.current?.stop();
+      pollingController.current = null;
+    };
   }, [dbInitialized, fetchAnalyticsStable]);
 
   // Handle event changes - fetch data immediately
@@ -185,7 +188,8 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     console.log("[AnalyticsDataContext] Refresh callback triggered");
-    // Use ref to call current fetch function without changing callback identity
+    // Use ref to call current fetch function without changing callback identity.
+    // forceRefresh() is NOT called — that would duplicate this fetch.
     if (fetchAnalyticsRef.current) {
       await fetchAnalyticsRef.current();
     }

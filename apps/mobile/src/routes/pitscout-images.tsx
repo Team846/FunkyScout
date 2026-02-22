@@ -10,6 +10,7 @@ import { useEvent } from "@lib/context/EventContext";
 import { useSync } from "@lib/context/SyncContext";
 import { putTeamDataWithImages } from "@lib/data/writes";
 import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 import { toast } from "sonner";
 
 type ImagesSearch = {
@@ -82,9 +83,10 @@ function PitScoutImagesPage() {
     setSyncStatus("submitting");
 
     try {
-      // Get user session
+      // Get user session and local user data
       const session = await getSession();
-      const userName = session?.user?.email || "Unknown";
+      const localUser = getLocalUserData();
+      const userName = localUser.name || session?.user?.email || "Unknown";
       const userId = session?.user?.id || "unknown";
 
       // Prepare full data with images metadata

@@ -9,7 +9,7 @@
 // ============== ENUMS ==============
 
 export type Alliance = "red" | "blue";
-export type Role = "user" | "scouter" | "lead";
+export type Role = "user" | "scouter" | "admin";
 export type PickType = "public" | "default" | "private";
 export type InviteCodeType = "promote.scouter" | "promote.admin";
 export type Permission =
@@ -92,36 +92,30 @@ export interface EventMatchData {
 }
 
 /**
+ * Embedded picklist entry (stored as JSON array in event_picklist.picklist column)
+ */
+export interface PicklistEntry {
+  team: string;
+  rank: number;
+  flags: Record<string, unknown> | null;
+}
+
+/**
  * event_picklist
  * PK: id
  * Each row is one picklist for an event
- * NOTE: picklist jsonb column is DEPRECATED - use event_picklist_entries instead
+ * NOTE: picklist JSONB column stores embedded entries as [{ team, rank, flags }]
+ *       event_picklist_entries table is no longer used
  */
 export interface EventPicklist {
   id: string;
   event: string;
   title: string;
-  picklist: unknown; // jsonb - DEPRECATED, do not use
+  picklist: PicklistEntry[]; // jsonb - embedded entries array
   uname: string; // creator username
   uid: string; // creator uuid
   type: PickType;
   timestamp: string;
-  last_modified: string;
-  deleted_at: string | null;
-}
-
-/**
- * event_picklist_entries
- * PK: (event, id, team)
- * Each row is one team's position in a picklist
- * Links to event_picklist via id
- */
-export interface EventPicklistEntry {
-  event: string;
-  id: string; // FK to event_picklist.id
-  team: string;
-  rank: number; // position in picklist
-  flags: Record<string, unknown> | null; // jsonb - custom flags
   last_modified: string;
   deleted_at: string | null;
 }

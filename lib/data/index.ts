@@ -1,7 +1,7 @@
 // Data layer for Supabase operations
 // Schema reference: ./schema.ts
 
-export { bootstrapEvent, getEvents } from "./events";
+export { bootstrapEvent, getEvents, syncTeamNames } from "./events";
 export { getTeams } from "./teams";
 export { refreshSchedule, getSchedule } from "./schedule";
 export { bootstrapMatchData, getMatchData, syncShiftAssignments } from "./match-data";

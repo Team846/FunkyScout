@@ -342,11 +342,10 @@ export function Match() {
               size="icon"
               disabled={!(selectedMatch && selectedTeam)}
               onClick={() => {
-                let selectedAlliance = null;
-                redTeamsInMatch.forEach((item) => {
-                  if (JSON.stringify(item.team) == JSON.stringify(selectedTeam))
-                    selectedAlliance = item.alliance;
-                });
+                // Find the alliance for the selected team (check both red and blue)
+                const teamEntry = teamsInMatch.find((item) => item.team === selectedTeam);
+                const selectedAlliance = teamEntry?.alliance || null;
+
                 navigate({
                   to: "/match_start",
                   search: {

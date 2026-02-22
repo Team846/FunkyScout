@@ -15,7 +15,7 @@ export function useOrientation(preferredOrientation: 'landscape' | 'portrait') {
     const lockOrientation = async () => {
       try {
         if ('orientation' in screen && 'lock' in screen.orientation) {
-          await screen.orientation.lock(preferredOrientation);
+          await (screen.orientation.lock as any)(preferredOrientation);
           console.log(`[Orientation] Locked to ${preferredOrientation}`);
         }
       } catch (error) {

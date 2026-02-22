@@ -18,21 +18,36 @@ import {
   cacheEventTeamData,
   cacheEventMatchData,
   cacheEventSchedule,
-  cacheEventPicklists,
-  cacheEventPicklistEntries,
+  insertPicklistToCache,
+  updatePicklistCache,
+  softDeletePicklistCache,
   getEventSchedule,
   getEventMatchData,
-  getEventPicklistEntries,
   getTbaTeams,
   type EventTeamData,
   type EventMatchData,
   type EventScheduleEntry,
   type EventPicklist,
-  type EventPicklistEntry,
 } from "@lib/db";
 import { addToImageQueue } from "@lib/storage/imageQueue";
 import { compressImage } from "@lib/utils/imageCompression";
 import { isTauri } from "@lib/utils/platform";
+import supabase from "@lib/supabase/supabase";
+
+/**
+ * Get user's JWT token for desktop sync operations
+ * Returns null if not authenticated or on mobile
+ */
+async function getUserJWT(): Promise<string | null> {
+  if (!isTauri()) return null;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Global sync trigger - set by SyncContext
@@ -86,7 +101,50 @@ export async function putTeamData(
 
   const now = Date.now();
 
-  // 1. Write to local SQLite immediately (optimistic)
+  if (isTauri()) {
+    // DESKTOP: Use Tauri commands
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    const teamData = {
+      event: eventKey,
+      team: teamNumber,
+      data: data,
+      team_name: options?.teamName,
+      name: options?.name,
+      uid: options?.uid,
+      timestamp: now,
+      last_modified: now,
+      deleted_at: null,
+    };
+
+    // 1. Cache locally (Tauri SQLite)
+    await invoke("cache_team_data", { data: [teamData] });
+
+    // 2. Add to sync queue
+    await invoke("add_to_sync_queue", {
+      operation: "PUT_TEAM_DATA",
+      payload: {
+        event: eventKey,
+        team: teamNumber,
+        data: data,
+        teamName: options?.teamName,
+        name: options?.name,
+        uid: options?.uid,
+        timestamp: now,
+      },
+    });
+
+    console.log(`[Writes] Desktop: Queued team data for ${teamNumber} in ${eventKey}`);
+
+    // 3. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Use WASM SQLite
   const teamData: EventTeamData = {
     event: eventKey,
     team: teamNumber,
@@ -98,7 +156,8 @@ export async function putTeamData(
     last_modified: now,
   };
 
-  await cacheEventTeamData([teamData]);
+  // 1. Write to local SQLite immediately (optimistic)
+  await cacheEventTeamData(eventKey, [teamData]);
 
   // 2. Queue for background sync
   await addToSyncQueue("PUT_TEAM_DATA", {
@@ -111,7 +170,7 @@ export async function putTeamData(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued team data for ${teamNumber} in ${eventKey}`);
+  console.log(`[Writes] Mobile: Queued team data for ${teamNumber} in ${eventKey}`);
 
   // 3. Trigger instant sync if online
   await triggerInstantSync();
@@ -132,9 +191,66 @@ export async function putMatchData(
     name?: string;
   },
 ): Promise<void> {
+  // Validate alliance is provided and valid
+  if (!alliance || (alliance !== "red" && alliance !== "blue")) {
+    throw new Error(
+      `Alliance is required for match data. Received: ${alliance}. ` +
+      `This likely means the team's alliance was not properly determined from the schedule. ` +
+      `Match: ${matchNumber}, Team: ${teamNumber}`
+    );
+  }
+
   const now = Date.now();
 
-  // 1. Write to local SQLite
+  if (isTauri()) {
+    // DESKTOP: Use Tauri commands
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    const matchData = {
+      event: eventKey,
+      match: matchNumber,
+      team: teamNumber,
+      alliance: alliance,
+      data_raw: dataRaw,
+      data: null, // unused field
+      name: options?.name,
+      uid: uid,
+      timestamp: now,
+      last_modified: now,
+      deleted_at: null,
+    };
+
+    // 1. Cache locally (Tauri SQLite)
+    await invoke("cache_match_scouting_data", { data: [matchData] });
+
+    // 2. Add to sync queue (include user JWT so Rust can write to Supabase with auth)
+    const user_jwt = await getUserJWT();
+    await invoke("add_to_sync_queue", {
+      operation: "PUT_MATCH_DATA",
+      payload: {
+        event: eventKey,
+        match: matchNumber,
+        team: teamNumber,
+        alliance: alliance,
+        dataRaw: dataRaw,
+        ...(options?.name ? { name: options.name } : {}), // Only include if defined
+        uid: uid,
+        timestamp: now,
+        user_jwt,
+      },
+    });
+
+    console.log(`[Writes] Desktop: Queued match data for ${teamNumber} in match ${matchNumber}`);
+
+    // 3. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Use WASM SQLite
   const matchData: EventMatchData = {
     event: eventKey,
     match: matchNumber,
@@ -142,28 +258,29 @@ export async function putMatchData(
     alliance: alliance,
     data_raw: dataRaw,
     data: null, // unused field
-    name: options?.name,
+    name: options?.name, // Local cache can have undefined
     uid: uid,
     timestamp: now,
     last_modified: now,
   };
 
-  await cacheEventMatchData([matchData]);
+  // 1. Write to local SQLite
+  await cacheEventMatchData(eventKey, [matchData]);
 
-  // 2. Queue for sync
+  // 2. Queue for sync - CRITICAL: Only include name if defined to prevent null overwrites
   await addToSyncQueue("PUT_MATCH_DATA", {
     event: eventKey,
     match: matchNumber,
     team: teamNumber,
     alliance: alliance,
     dataRaw: dataRaw,
-    name: options?.name,
+    ...(options?.name ? { name: options.name } : {}), // Only include if defined
     uid: uid,
     timestamp: now,
   });
 
   console.log(
-    `[Writes] Queued match data for ${teamNumber} in match ${matchNumber}`,
+    `[Writes] Mobile: Queued match data for ${teamNumber} in match ${matchNumber}`,
   );
 
   // 3. Trigger instant sync if online
@@ -182,11 +299,62 @@ export async function deleteMatchData(
 ): Promise<void> {
   const now = Date.now();
 
-  // Soft delete in local cache
+  if (isTauri()) {
+    // DESKTOP: Update local cache immediately (optimistic), then queue for sync
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    // 1. Get existing match data from local cache
+    const allMatchData = await invoke<any[]>("get_match_scouting_data", { event: eventKey });
+    const matchData = allMatchData.find(
+      (m) => m.match === matchNumber && m.team === teamNumber && m.uid === uid
+    );
+
+    if (!matchData) {
+      console.warn(`[Writes] Match data not found for deletion: ${teamNumber} in ${matchNumber}`);
+      return;
+    }
+
+    // Store original timestamp for Supabase query
+    const originalTimestamp = matchData.timestamp;
+
+    console.log(
+      `[Writes] Deleting match data: match=${matchNumber}, team=${teamNumber}, uid=${uid}, originalTimestamp=${originalTimestamp}, type=${typeof originalTimestamp}`
+    );
+
+    // 2. Update local cache with deleted_at (optimistic update)
+    matchData.deleted_at = now;
+    matchData.last_modified = now;
+    await invoke("cache_match_scouting_data", { data: [matchData] });
+
+    // 3. Queue for sync (will push to Supabase when online)
+    // CRITICAL: Use original timestamp for Supabase query to match the record
+    await invoke("add_to_sync_queue", {
+      operation: "DELETE_MATCH_DATA",
+      payload: {
+        event: eventKey,
+        match: matchNumber,
+        team: teamNumber,
+        uid: uid,
+        timestamp: originalTimestamp, // Use original timestamp, not now
+      },
+    });
+
+    console.log(`[Writes] Desktop: Deleted match data for ${teamNumber} in ${matchNumber} (local + queued for Supabase, timestamp=${originalTimestamp})`);
+
+    // 4. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Update local cache then queue for sync
   const existing = await getEventMatchData(eventKey, matchNumber, teamNumber);
   if (existing.length > 0) {
     const toDelete = existing.filter((e: EventMatchData) => e.uid === uid);
     await cacheEventMatchData(
+      eventKey,
       toDelete.map((e: EventMatchData) => ({ ...e, deleted_at: now })),
     );
   }
@@ -201,7 +369,7 @@ export async function deleteMatchData(
   });
 
   console.log(
-    `[Writes] Queued delete match data for ${teamNumber} in match ${matchNumber}`,
+    `[Writes] Mobile: Queued delete match data for ${teamNumber} in match ${matchNumber}`,
   );
 
   // Trigger instant sync if online
@@ -219,12 +387,48 @@ export async function assignShift(
 ): Promise<void> {
   const now = Date.now();
 
+  if (isTauri()) {
+    // DESKTOP: Use Tauri commands
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    // Get schedule and update assignment
+    const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
+    const updated = schedule.map((s: EventScheduleEntry) =>
+      s.team === teamNumber ? { ...s, uid, name, last_modified: now } : s,
+    );
+
+    // 1. Cache locally (Tauri SQLite)
+    await invoke("cache_schedule", { schedule: updated });
+
+    // 2. Add to sync queue
+    await invoke("add_to_sync_queue", {
+      operation: "ASSIGN_SHIFT",
+      payload: {
+        event: eventKey,
+        team: teamNumber,
+        uid: uid,
+        name: name,
+        timestamp: now,
+      },
+    });
+
+    console.log(`[Writes] Desktop: Queued shift assignment for ${teamNumber}`);
+
+    // 3. Trigger instant sync (fire-and-forget)
+    invoke("trigger_sync_now").catch((e) => {
+      console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+    });
+
+    return;
+  }
+
+  // MOBILE: Use WASM SQLite
   // Update local schedule cache
   const schedule = await getEventSchedule(eventKey);
   const updated = schedule.map((s: EventScheduleEntry) =>
     s.team === teamNumber ? { ...s, uid, name, last_modified: now } : s,
   );
-  await cacheEventSchedule(updated);
+  await cacheEventSchedule(eventKey, updated);
 
   // Queue for sync
   await addToSyncQueue("ASSIGN_SHIFT", {
@@ -235,7 +439,7 @@ export async function assignShift(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued shift assignment for ${teamNumber}`);
+  console.log(`[Writes] Mobile: Queued shift assignment for ${teamNumber}`);
 
   // Trigger instant sync if online
   await triggerInstantSync();
@@ -266,7 +470,7 @@ export async function createPicklist(
         id,
         event: eventKey,
         title,
-        picklist: null,
+        picklist: entries,
         uname,
         uid,
         type,
@@ -274,18 +478,11 @@ export async function createPicklist(
         last_modified: now,
       };
 
-      const picklistEntries = entries.map((e) => ({
-        event: eventKey,
-        id,
-        team: e.team,
-        rank: e.rank,
-        flags: e.flags,
-        last_modified: now,
-      }));
-
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
-      await invoke("cache_picklist_entries", { entries: picklistEntries });
+
+      // Get user JWT for proper authentication
+      const user_jwt = await getUserJWT();
 
       // Queue for Rust background sync
       await invoke("add_to_sync_queue", {
@@ -296,6 +493,7 @@ export async function createPicklist(
           title,
           entries,
           uid,
+          user_jwt,
           uname,
           type,
           timestamp: now,
@@ -321,7 +519,7 @@ export async function createPicklist(
     id,
     event: eventKey,
     title,
-    picklist: null, // deprecated field
+    picklist: entries,
     uname,
     uid,
     type,
@@ -330,23 +528,17 @@ export async function createPicklist(
     deleted_at: undefined,
   };
 
-  await cacheEventPicklists([picklist]);
+  // Use insertPicklistToCache (upsert) instead of cacheEventPicklists (DELETE-all + INSERT)
+  // so we don't wipe other picklists from the local cache
+  await insertPicklistToCache(picklist);
 
-  const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
-    event: eventKey,
-    id,
-    team: e.team,
-    rank: e.rank,
-    flags: e.flags,
-    last_modified: now,
-    deleted_at: undefined,
-  }));
-
-  await cacheEventPicklistEntries(picklistEntries);
+  // Get user JWT for proper authentication
+  const user_jwt = await getUserJWT();
 
   await addToSyncQueue("CREATE_PICKLIST", {
     id,
     event: eventKey,
+    user_jwt,
     title,
     entries,
     uid,
@@ -374,30 +566,67 @@ export async function updatePicklist(
 ): Promise<void> {
   const now = Date.now();
 
-  // Update picklist header locally (just the title and last_modified)
-  const picklist: Partial<EventPicklist> & { id: string; event: string } = {
-    id,
-    event: eventKey,
-    title,
-    ...(type ? { type } : {}),
-    picklist: null,
-    last_modified: now,
-  };
+  if (isTauri()) {
+    try {
+      console.log("[Writes] Desktop mode - using Tauri commands for update");
 
-  await cacheEventPicklists([picklist as EventPicklist]);
+      // DESKTOP: Use Tauri invoke directly
+      const { invoke } = await import("@tauri-apps/api/core");
 
-  // Delete old entries and cache new ones
-  const picklistEntries: EventPicklistEntry[] = entries.map((e) => ({
-    event: eventKey,
-    id,
-    team: e.team,
-    rank: e.rank,
-    flags: e.flags,
-    last_modified: now,
-    deleted_at: undefined,
-  }));
+      const picklist: Partial<EventPicklist> & { id: string; event: string } = {
+        id,
+        event: eventKey,
+        title,
+        ...(type ? { type } : {}),
+        picklist: entries,
+        last_modified: now,
+      };
 
-  await cacheEventPicklistEntries(picklistEntries);
+      // Cache locally (Tauri SQLite) - invoke commands directly
+      await invoke("cache_picklists", { picklists: [picklist] });
+      console.log("[Writes] Desktop: ✓ Cached picklist with entries");
+
+      // Get user JWT for proper authentication
+      const user_jwt = await getUserJWT();
+
+      // Queue for Rust background sync
+      await invoke("add_to_sync_queue", {
+        operation: "UPDATE_PICKLIST",
+        payload: {
+          id,
+          event: eventKey,
+          title,
+          entries,
+          user_jwt,
+          ...(type ? { type } : {}),
+          timestamp: now,
+        },
+      });
+
+      console.log(`[Writes] Desktop: ✓ Queued for sync: ${title}`);
+
+      // Trigger instant sync and wait for it to complete
+      // This prevents background polling from overwriting local changes before sync finishes
+      try {
+        console.log("[Writes] Desktop: Triggering instant sync...");
+        await invoke("trigger_sync_now");
+        console.log("[Writes] Desktop: ✅ Sync completed successfully");
+      } catch (e) {
+        console.warn("[Writes] Desktop: ⚠️ Instant sync trigger failed (will sync in next cycle):", e);
+      }
+
+      console.log("[Writes] Desktop: updatePicklist complete");
+      return;
+    } catch (error) {
+      console.error("[Writes] Desktop path failed:", error);
+      throw error;
+    }
+  }
+
+  // MOBILE: Use WASM SQLite + IndexedDB queue
+  // Use updatePicklistCache (targeted UPDATE) instead of cacheEventPicklists (DELETE-all + INSERT)
+  // to avoid wiping uid, uname, timestamp, and other fields we're not changing
+  await updatePicklistCache(eventKey, id, title, entries, type);
 
   // Queue for sync
   await addToSyncQueue("UPDATE_PICKLIST", {
@@ -409,7 +638,7 @@ export async function updatePicklist(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued picklist update: ${title}`);
+  console.log(`[Writes] Mobile: Queued picklist update: ${title}`);
 
   // Trigger instant sync if online
   await triggerInstantSync();
@@ -424,25 +653,56 @@ export async function deletePicklist(
 ): Promise<void> {
   const now = Date.now();
 
-  // Soft delete picklist locally
-  const picklist: Partial<EventPicklist> & { id: string; event: string } = {
-    id,
-    event: eventKey,
-    deleted_at: now,
-    last_modified: now,
-  };
+  if (isTauri()) {
+    try {
+      console.log("[Writes] Desktop mode - using Tauri commands for delete");
 
-  await cacheEventPicklists([picklist as EventPicklist]);
+      // DESKTOP: Use Tauri invoke directly
+      const { invoke } = await import("@tauri-apps/api/core");
 
-  // Soft delete entries locally
-  const existingEntries = await getEventPicklistEntries(eventKey, id);
-  const deletedEntries = existingEntries.map((e: EventPicklistEntry) => ({
-    ...e,
-    deleted_at: now,
-    last_modified: now,
-  }));
+      // Soft delete picklist locally (entries are embedded, no separate entries table)
+      const picklist: Partial<EventPicklist> & { id: string; event: string } = {
+        id,
+        event: eventKey,
+        deleted_at: now,
+        last_modified: now,
+      };
 
-  await cacheEventPicklistEntries(deletedEntries);
+      // Cache locally (Tauri SQLite) - invoke commands directly
+      await invoke("cache_picklists", { picklists: [picklist] });
+
+      // Get user JWT for proper authentication
+      const user_jwt = await getUserJWT();
+
+      // Queue for Rust background sync
+      await invoke("add_to_sync_queue", {
+        operation: "DELETE_PICKLIST",
+        payload: {
+          id,
+          event: eventKey,
+          user_jwt,
+          timestamp: now,
+        },
+      });
+
+      console.log(`[Writes] Desktop: Queued picklist deletion: ${id}`);
+
+      // Trigger instant sync (non-blocking, fire-and-forget)
+      invoke("trigger_sync_now").catch((e) => {
+        console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+      });
+
+      return;
+    } catch (error) {
+      console.error("[Writes] Desktop path failed:", error);
+      throw error;
+    }
+  }
+
+  // MOBILE: Use WASM SQLite + IndexedDB queue
+  // Use softDeletePicklistCache (targeted UPDATE) instead of cacheEventPicklists (DELETE-all + INSERT)
+  // to avoid wiping other picklists from the local cache
+  await softDeletePicklistCache(eventKey, id);
 
   // Queue for sync
   await addToSyncQueue("DELETE_PICKLIST", {
@@ -451,7 +711,7 @@ export async function deletePicklist(
     timestamp: now,
   });
 
-  console.log(`[Writes] Queued picklist deletion: ${id}`);
+  console.log(`[Writes] Mobile: Queued picklist deletion: ${id}`);
 
   // Trigger instant sync if online
   await triggerInstantSync();
@@ -532,7 +792,7 @@ export async function putTeamDataWithImages(
     last_modified: now,
   };
 
-  await cacheEventTeamData([teamData]);
+  await cacheEventTeamData(eventKey, [teamData]);
 
   // 4. Queue for background sync with image upload
   await addToSyncQueue("PUT_TEAM_DATA_WITH_IMAGES", {

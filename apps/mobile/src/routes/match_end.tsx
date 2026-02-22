@@ -1,11 +1,18 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { getMatchLabel } from "@lib/utils/match";
 import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
+
+
+import { getEventTeamData } from "@lib/db";
+import { useEvent } from "@lib/context/EventContext";
+import { AutoPathDisplay } from "../components/AutoPathDisplay";
+
+
 
 type MatchEndType = {
   teamNum?: string | null;
@@ -53,6 +60,11 @@ function MatchEnd() {
     setIsRotated(!isRotated);
   };
 
+
+  
+
+
+  
   return (
     <>
       {isWrongOrientation && <RotateDevicePrompt />}

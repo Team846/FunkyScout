@@ -18,8 +18,11 @@ import type {
 import { getActiveToggles } from "@lib/types/matchScouting";
 import { putMatchData } from "@lib/data/writes";
 import { transformMatchData } from "@lib/data/matchDataTransform";
+import { reverseTransformMatchData } from "@lib/data/matchDataTransform";
 import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 import { useEvent } from "@lib/context/EventContext";
+import { getMatchData } from "@lib/data/match-data";
 import { toast } from "sonner";
 
 type MatchEditStatsType = {
@@ -27,6 +30,7 @@ type MatchEditStatsType = {
   matchNum?: string | null;
   alliance?: string | null;
   practice?: boolean | null;
+  fromView?: string | null; // "scouting" or "teamView" - determines home button behavior
 };
 
 export const Route = createFileRoute("/match_edit_stats")({
@@ -37,52 +41,208 @@ export const Route = createFileRoute("/match_edit_stats")({
       matchNum: search.matchNum as string | undefined | null,
       alliance: search.alliance as string | undefined | null,
       practice: search.practice as boolean | undefined | null,
+      fromView: search.fromView as string | undefined | null,
     };
   },
 });
 
 function MatchEditStats() {
-  const { isWrongOrientation } = useOrientation('portrait');
+  const { isWrongOrientation } = useOrientation("portrait");
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance, practice } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice, fromView } = Route.useSearch();
   const { currentEvent } = useEvent();
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load match data from sessionStorage
+  // Load match data - check both sessionStorage (from match_play) and Supabase (for editing)
   useEffect(() => {
-    const saved = sessionStorage.getItem("currentMatchData");
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        setMatchData(data);
-        setNotes(data.notes || "");
-      } catch (error) {
-        console.error("Failed to load match data:", error);
+    async function loadMatchData() {
+      // Use match-specific sessionStorage key to prevent interference between matches
+      const sessionKey = matchNum && teamNum
+        ? `matchData_${matchNum}_${teamNum}`
+        : "currentMatchData";
+
+      console.log("[MatchEditStats] Loading match data:", {
+        currentEvent,
+        teamNum,
+        matchNum,
+        alliance,
+        fromView,
+        sessionKey,
+        hasSessionStorage: !!sessionStorage.getItem(sessionKey),
+      });
+
+      // First try sessionStorage (for new match flow from match_play)
+      const saved = sessionStorage.getItem(sessionKey);
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          console.log("[MatchEditStats] Loaded from sessionStorage:", {
+            sessionKey,
+            hasPresetActions: Array.isArray(data.presetActions),
+            presetActionsCount: data.presetActions?.length ?? 0,
+            hasRatings: !!data.postMatch?.ratings,
+            notesLength: data.notes?.length ?? 0,
+          });
+          setMatchData(data);
+          setNotes(data.notes || "");
+          return;
+        } catch (error) {
+          console.error(
+            "[MatchEditStats] Failed to load match data from sessionStorage:",
+            error
+          );
+        }
+      }
+
+      // If no sessionStorage and we have route params, decide whether to load from Supabase or start fresh
+      if (currentEvent && teamNum && matchNum) {
+        try {
+          // If from team view, load existing data for editing
+          // Otherwise (scouting flow), start with fresh form for new scout
+          if (fromView === "teamView") {
+            console.log(
+              "[MatchEditStats] Team view edit - loading existing data from Supabase"
+            );
+
+            const allMatchData = await getMatchData(currentEvent);
+            const existingData = allMatchData.find(
+              (m) => m.team === teamNum && m.match === matchNum
+            );
+
+            console.log("[MatchEditStats] Supabase query result:", {
+              totalMatches: allMatchData.length,
+              foundMatch: !!existingData,
+              hasDataRaw: !!existingData?.data_raw,
+              dataRawKeys: existingData?.data_raw
+                ? Object.keys(existingData.data_raw)
+                : [],
+            });
+
+            // Check if data_raw exists and is not empty (ignore EPA/OPR - that's in team_data)
+            if (
+              existingData?.data_raw &&
+              Object.keys(existingData.data_raw).length > 0
+            ) {
+              // Has actual scouting data - pre-populate form for editing
+              const uiData = reverseTransformMatchData(existingData.data_raw);
+              console.log("[MatchEditStats] Pre-populating form with existing data");
+              setMatchData(uiData);
+              setNotes(uiData.notes || "");
+            } else {
+              // No existing data - initialize empty form
+              console.log(
+                "[MatchEditStats] No existing data found, initializing empty form"
+              );
+              setMatchData({
+                presetActions: [],
+                locationActions: [],
+                toggleActions: [],
+                postMatch: {
+                  ratings: {},
+                },
+                notes: "",
+              });
+              setNotes("");
+            }
+          } else {
+            // Scouting flow - always start fresh (even if previous data exists)
+            console.log(
+              "[MatchEditStats] Scouting flow - starting with fresh form (re-scout)"
+            );
+            setMatchData({
+              presetActions: [],
+              locationActions: [],
+              toggleActions: [],
+              postMatch: {
+                ratings: {},
+              },
+              notes: "",
+            });
+            setNotes("");
+          }
+        } catch (error) {
+          console.error(
+            "[MatchEditStats] Failed to load match data from Supabase:",
+            error
+          );
+          toast.error("Failed to load match data");
+        }
       }
     }
-  }, []);
+
+    loadMatchData();
+  }, [currentEvent, teamNum, matchNum]);
 
   const handleBack = () => {
-    navigate({
-      to: "/match_end",
-      search: { teamNum, matchNum, alliance, practice },
-    });
+    // Home button behavior depends on context:
+    // - If from team view: go to dashboard (user is editing, not scouting)
+    // - If from scouting flow: go to match end screen (user can resume scouting)
+    if (fromView === "teamView") {
+      navigate({ to: "/" }); // Dashboard
+    } else {
+      navigate({
+        to: "/match_end",
+        search: { teamNum, matchNum, alliance, practice },
+      });
+    }
   };
 
   const handleSubmit = async () => {
+    // CRITICAL: Log submission attempt for debugging null overwrite bug
+    console.log("[MatchEditStats] Submit attempt:", {
+      hasMatchData: !!matchData,
+      currentEvent,
+      teamNum,
+      matchNum,
+      alliance,
+      fromView,
+      sessionStorageExists: !!sessionStorage.getItem("currentMatchData"),
+    });
+
     if (!matchData || !currentEvent || !teamNum || !matchNum) {
       toast.error("Missing match data");
+      console.error("[MatchEditStats] Missing required data:", {
+        hasMatchData: !!matchData,
+        currentEvent,
+        teamNum,
+        matchNum,
+      });
+      return;
+    }
+
+    // Validate parameters are valid strings, not empty
+    if (
+      typeof teamNum !== "string" ||
+      typeof matchNum !== "string" ||
+      teamNum.trim() === "" ||
+      matchNum.trim() === ""
+    ) {
+      toast.error("Invalid match or team parameters");
+      console.error("[MatchEditStats] Invalid parameters:", {
+        teamNum,
+        matchNum,
+      });
+      return;
+    }
+
+    // Validate alliance is not null
+    if (!alliance || (alliance !== "red" && alliance !== "blue")) {
+      toast.error(
+        "Alliance information is missing. Please restart from the match selection screen."
+      );
+      console.error("[MatchEditStats] Alliance is invalid:", alliance);
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Get user session
+      // Get user session and local user data
       const session = await getSession();
-      const scoutName = session?.user?.email || "Unknown";
+      const localUser = getLocalUserData();
+      const scoutName = localUser.name || session?.user?.email || "Unknown";
       const scoutUid = session?.user?.id || "unknown";
 
       // Complete match data with notes
@@ -96,7 +256,36 @@ function MatchEditStats() {
       // Transform to database format
       const transformedData = transformMatchData(completeMatchData, 2025);
 
-      // Upload via offline-first pattern
+      // CRITICAL: Validate transformed data is not empty before submitting
+      if (!transformedData || Object.keys(transformedData).length === 0) {
+        toast.error(
+          "Match data is empty. Please ensure all fields are filled."
+        );
+        console.error("[MatchEditStats] Transformed data is empty:", {
+          matchData,
+          transformedData,
+        });
+        return;
+      }
+
+      // CRITICAL: Log the exact data being submitted
+      console.log("[MatchEditStats] Submitting data:", {
+        event: currentEvent,
+        match: matchNum,
+        team: teamNum,
+        alliance,
+        scoutName,
+        scoutUid,
+        transformedDataKeys: Object.keys(transformedData),
+        hasPresetActions: Array.isArray(matchData.presetActions),
+        presetActionsCount: matchData.presetActions?.length ?? 0,
+        hasRatings: !!matchData.postMatch?.ratings,
+        ratingsKeys: matchData.postMatch?.ratings
+          ? Object.keys(matchData.postMatch.ratings)
+          : [],
+      });
+
+      // Upload via offline-first pattern (alliance is validated above)
       await putMatchData(
         currentEvent,
         matchNum,
@@ -107,15 +296,21 @@ function MatchEditStats() {
         { name: scoutName }
       );
 
-      // Clear sessionStorage
-      sessionStorage.removeItem("currentMatchData");
+      console.log("[MatchEditStats] Upload successful");
+
+      // Clear match-specific sessionStorage
+      const sessionKey = matchNum && teamNum
+        ? `matchData_${matchNum}_${teamNum}`
+        : "currentMatchData";
+      sessionStorage.removeItem(sessionKey);
+      console.log("[MatchEditStats] Cleared sessionStorage key:", sessionKey);
 
       toast.success("Match data uploaded!");
 
-      // Navigate back to home page
-      navigate({ to: "/home" });
+      // After successful submission, ALWAYS go to dashboard
+      navigate({ to: "/" });
     } catch (error) {
-      console.error("Failed to upload:", error);
+      console.error("[MatchEditStats] Failed to upload:", error);
       toast.error("Failed to upload match data");
     } finally {
       setIsSubmitting(false);
@@ -125,7 +320,7 @@ function MatchEditStats() {
   // Check if form is complete (all ratings filled and notes not empty)
   const isFormComplete =
     matchData?.postMatch?.ratings?.ground !== undefined &&
-    matchData?.postMatch?.ratings?.station !== undefined &&
+    matchData?.postMatch?.ratings?.shooting !== undefined &&
     matchData?.postMatch?.ratings?.passing !== undefined &&
     matchData?.postMatch?.ratings?.driver !== undefined &&
     notes.trim() !== "";
@@ -152,9 +347,17 @@ function MatchEditStats() {
     phase: "auto" | "teleop"
   ) => {
     if (!matchData) return;
-    const index = matchData.presetActions.findLastIndex(
-      (a) => a.type === fuelType && a.phase === phase
-    );
+    // Find last index manually (findLastIndex requires ES2023)
+    let index = -1;
+    for (let i = matchData.presetActions.length - 1; i >= 0; i--) {
+      if (
+        matchData.presetActions[i].type === fuelType &&
+        matchData.presetActions[i].phase === phase
+      ) {
+        index = i;
+        break;
+      }
+    }
     if (index !== -1) {
       const newActions = [...matchData.presetActions];
       newActions.splice(index, 1);
@@ -187,9 +390,17 @@ function MatchEditStats() {
     phase: "auto" | "teleop"
   ) => {
     if (!matchData) return;
-    const index = matchData.locationActions.findLastIndex(
-      (a) => a.type === actionType && a.phase === phase
-    );
+    // Find last index manually (findLastIndex requires ES2023)
+    let index = -1;
+    for (let i = matchData.locationActions.length - 1; i >= 0; i--) {
+      if (
+        matchData.locationActions[i].type === actionType &&
+        matchData.locationActions[i].phase === phase
+      ) {
+        index = i;
+        break;
+      }
+    }
     if (index !== -1) {
       const newActions = [...matchData.locationActions];
       newActions.splice(index, 1);
@@ -212,26 +423,37 @@ function MatchEditStats() {
   ) => {
     if (!matchData) return;
 
-    // Use activeToggles to get current state across all phases
-    const currentlyActive = activeToggles[actionType];
+    // For climb actions, check phase-specific state (auto and teleop climbs are independent).
+    // Use last-event-wins: get the final event for this type+phase, check if it's active.
+    // For non-climb toggles (disable, defend), use cross-phase activeToggles.
+    const currentlyActive = actionType.startsWith("climb_")
+      ? (matchData.toggleActions.filter((a) => a.type === actionType && a.phase === phase).at(-1)?.active ?? false)
+      : activeToggles[actionType];
 
-    // Handle climb exclusivity - only one climb level can be active at a time
+    // Handle climb exclusivity - only one climb level can be active at a time PER PHASE
+    // Auto climb (L1 in auto) and teleop climb (L1/L2/L3 in endgame) are independent
     const newActions: ToggleAction[] = [];
     if (actionType.startsWith("climb_") && !currentlyActive) {
-      // Deactivate any other active climb levels
+      // Deactivate any other active climb levels IN THE SAME PHASE
       const climbTypes: ToggleActionType[] = [
         "climb_L1",
         "climb_L2",
         "climb_L3",
       ];
       climbTypes.forEach((climbType) => {
-        if (climbType !== actionType && activeToggles[climbType]) {
-          newActions.push({
-            type: climbType,
-            timestamp: Date.now(),
-            active: false,
-            phase,
-          });
+        if (climbType !== actionType) {
+          // Check if this climb type is active in the CURRENT phase (last-event-wins)
+          const isActiveInSamePhase = matchData?.toggleActions.filter(
+            (a) => a.type === climbType && a.phase === phase
+          ).at(-1)?.active ?? false;
+          if (isActiveInSamePhase) {
+            newActions.push({
+              type: climbType,
+              timestamp: Date.now(),
+              active: false,
+              phase,
+            });
+          }
         }
       });
     }
@@ -250,18 +472,6 @@ function MatchEditStats() {
   };
 
   // Calculate stats
-  const autoStation =
-    matchData?.presetActions.filter(
-      (a) => a.type === "station_intake" && a.phase === "auto"
-    ).length || 0;
-  const teleopStation =
-    matchData?.presetActions.filter(
-      (a) => a.type === "station_intake" && a.phase === "teleop"
-    ).length || 0;
-  const autoStocking =
-    matchData?.presetActions.filter(
-      (a) => a.type === "stocking" && a.phase === "auto"
-    ).length || 0;
   const teleopStocking =
     matchData?.presetActions.filter(
       (a) => a.type === "stocking" && a.phase === "teleop"
@@ -291,81 +501,28 @@ function MatchEditStats() {
       (a) => a.type === "shoot" && a.phase === "teleop"
     ).length || 0;
 
-  // Use activeToggles for state (checks across all phases)
+  // Use last-event-wins for phase-specific climb state
   const hasAutoClimb =
-    matchData?.toggleActions.some(
-      (a) => a.type === "climb_L1" && a.active && a.phase === "auto"
-    ) || false;
+    matchData?.toggleActions.filter(
+      (a) => a.type === "climb_L1" && a.phase === "auto"
+    ).at(-1)?.active ?? false;
   const wasDisabled = activeToggles.disable;
   const didDefend = activeToggles.defend;
 
-  // For climb level, check which climb is active (L1, L2, or L3)
-  const climbLevel = activeToggles.climb_L3
-    ? "3"
-    : activeToggles.climb_L2
-      ? "2"
-      : activeToggles.climb_L1
-        ? "1"
-        : null;
+  // For climb level, check which endgame climb is active (L1, L2, or L3).
+  // Use last-event-wins per level: get final event for each type+phase=endgame.
+  const lastL3 = matchData?.toggleActions.filter(
+    (a) => a.type === "climb_L3" && a.phase === "endgame"
+  ).at(-1)?.active;
+  const lastL2 = matchData?.toggleActions.filter(
+    (a) => a.type === "climb_L2" && a.phase === "endgame"
+  ).at(-1)?.active;
+  const lastL1 = matchData?.toggleActions.filter(
+    (a) => a.type === "climb_L1" && a.phase === "endgame"
+  ).at(-1)?.active;
+  const climbLevel = lastL3 ? "3" : lastL2 ? "2" : lastL1 ? "1" : null;
 
   // Direct value setters for preset actions
-  const setAutoStation = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "station_intake" && a.phase === "auto")
-    );
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "station_intake",
-        timestamp: Date.now(),
-        phase: "auto",
-      });
-    }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
-  };
-
-  const setTeleopStation = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "station_intake" && a.phase === "teleop")
-    );
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "station_intake",
-        timestamp: Date.now(),
-        phase: "teleop",
-      });
-    }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
-  };
-
-  const setAutoStocking = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "stocking" && a.phase === "auto")
-    );
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "stocking",
-        timestamp: Date.now(),
-        phase: "auto",
-      });
-    }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
-  };
-
   const setTeleopStocking = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
@@ -507,581 +664,721 @@ function MatchEditStats() {
 
   return (
     <>
-      {isWrongOrientation && <RotateDevicePrompt message="Please rotate to portrait mode to edit match data" />}
+      {isWrongOrientation && (
+        <RotateDevicePrompt message="Please rotate to portrait mode to edit match data" />
+      )}
       <div className="flex flex-col w-screen h-screen gap-5 p-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <svg
-            viewBox="0 0 25 20"
-            onClick={handleBack}
-            fill="currentColor"
-            className="w-6 h-6 cursor-pointer"
-            xmlns="http://www.w3.org/2000/svg"
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <svg
+              viewBox="0 0 25 20"
+              onClick={handleBack}
+              fill="currentColor"
+              className="w-6 h-6 cursor-pointer"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fill="#CDA745"
+                d="M12.1688 5.04384L4.16666 11.6345V18.7478C4.16666 18.932 4.23983 19.1086 4.37006 19.2389C4.50029 19.3691 4.67693 19.4423 4.8611 19.4423L9.72482 19.4297C9.9084 19.4288 10.0841 19.3552 10.2136 19.2251C10.3431 19.0949 10.4158 18.9188 10.4158 18.7352V14.5812C10.4158 14.397 10.489 14.2204 10.6192 14.0901C10.7494 13.9599 10.9261 13.8867 11.1102 13.8867H13.888C14.0722 13.8867 14.2488 13.9599 14.3791 14.0901C14.5093 14.2204 14.5825 14.397 14.5825 14.5812V18.7322C14.5822 18.8236 14.5999 18.9141 14.6347 18.9986C14.6695 19.0831 14.7206 19.1599 14.7851 19.2247C14.8496 19.2894 14.9263 19.3407 15.0106 19.3758C15.095 19.4108 15.1855 19.4288 15.2769 19.4288L20.1389 19.4423C20.3231 19.4423 20.4997 19.3691 20.6299 19.2389C20.7602 19.1086 20.8333 18.932 20.8333 18.7478V11.6298L12.8329 5.04384C12.7388 4.96802 12.6217 4.92668 12.5009 4.92668C12.3801 4.92668 12.2629 4.96802 12.1688 5.04384ZM24.809 9.52344L21.1805 6.53255V0.520833C21.1805 0.3827 21.1257 0.250224 21.028 0.152549C20.9303 0.0548735 20.7978 0 20.6597 0H18.2292C18.091 0 17.9585 0.0548735 17.8609 0.152549C17.7632 0.250224 17.7083 0.3827 17.7083 0.520833V3.67231L13.8225 0.47526C13.4496 0.168394 12.9816 0.000613431 12.4987 0.000613431C12.0158 0.000613431 11.5478 0.168394 11.1749 0.47526L0.188362 9.52344C0.135623 9.56703 0.0919888 9.62058 0.0599541 9.68104C0.0279193 9.7415 0.00811156 9.80768 0.00166252 9.8758C-0.00478653 9.94392 0.00224954 10.0126 0.0223687 10.078C0.0424879 10.1434 0.0752958 10.2042 0.118918 10.2569L1.22569 11.6024C1.26919 11.6553 1.3227 11.6991 1.38315 11.7313C1.44361 11.7635 1.50981 11.7835 1.57799 11.79C1.64616 11.7966 1.71496 11.7897 1.78045 11.7696C1.84593 11.7496 1.90682 11.7168 1.95963 11.6732L12.1688 3.26432C12.2629 3.18851 12.3801 3.14717 12.5009 3.14717C12.6217 3.14717 12.7388 3.18851 12.8329 3.26432L23.0425 11.6732C23.0952 11.7168 23.156 11.7496 23.2214 11.7697C23.2868 11.7898 23.3556 11.7969 23.4237 11.7904C23.4918 11.784 23.558 11.7642 23.6184 11.7321C23.6789 11.7001 23.7324 11.6565 23.776 11.6037L24.8828 10.2582C24.9264 10.2052 24.9591 10.1441 24.9789 10.0784C24.9988 10.0128 25.0055 9.94379 24.9987 9.8755C24.9918 9.80722 24.9715 9.74096 24.939 9.68054C24.9064 9.62012 24.8623 9.56673 24.809 9.52344Z"
+              />
+            </svg>
+            <div className="text-outfit">
+              <p className="text-[#CDA745] text-sm">
+                {matchNum ? getMatchLabel(matchNum) : ""}
+              </p>
+              <p className="text-foreground text-xs">
+                {teamNum?.substring(teamNum.indexOf("frc") + 3)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto pb-20">
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Data Table */}
+            <div className="rounded-2xl bg-muted p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-primary">Match Data</h2>
+
+              {/* Table */}
+              <div className="space-y-3">
+                {/* Header Row */}
+                <div className="grid grid-cols-3 gap-4 pb-2 border-b border-border">
+                  <div className="text-sm font-semibold text-muted-foreground">
+                    Metric
+                  </div>
+                  <div className="text-sm font-semibold text-[#CDA745] text-center">
+                    Autonomous
+                  </div>
+                  <div className="text-sm font-semibold text-[#CDA745] text-center">
+                    Teleop
+                  </div>
+                </div>
+
+                {/* Stocking Row (teleop only) */}
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  <div className="text-sm text-foreground">Stocking</div>
+                  <div className="flex items-center justify-center">
+                    <span className="text-sm text-muted-foreground">—</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={teleopStocking}
+                      onChange={(e) =>
+                        setTeleopStocking(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopStocking(teleopStocking + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopStocking(teleopStocking - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ground Intakes Row */}
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  <div className="text-sm text-foreground">Intake</div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={autoIntakes}
+                      onChange={(e) =>
+                        setAutoIntakes(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAutoIntakes(autoIntakes + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAutoIntakes(autoIntakes - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={teleopIntakes}
+                      onChange={(e) =>
+                        setTeleopIntakes(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopIntakes(teleopIntakes + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopIntakes(teleopIntakes - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Passes Row */}
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  <div className="text-sm text-foreground">Passing</div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={autoPasses}
+                      onChange={(e) =>
+                        setAutoPasses(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAutoPasses(autoPasses + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAutoPasses(autoPasses - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={teleopPasses}
+                      onChange={(e) =>
+                        setTeleopPasses(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopPasses(teleopPasses + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopPasses(teleopPasses - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Shoots Row */}
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  <div className="text-sm text-foreground">Shooting</div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={autoShoots}
+                      onChange={(e) =>
+                        setAutoShoots(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAutoShoots(autoShoots + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAutoShoots(autoShoots - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={teleopShoots}
+                      onChange={(e) =>
+                        setTeleopShoots(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopShoots(teleopShoots + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopShoots(teleopShoots - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 12 12"
+                          fill="currentColor"
+                        >
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Toggle Actions */}
+            <div className="rounded-2xl bg-muted p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-primary">
+                Endgame & Status
+              </h2>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Autonomous
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      variant={hasAutoClimb ? "default" : "outline"}
+                      onClick={() => toggleAction("climb_L1", "auto")}
+                      className={
+                        hasAutoClimb
+                          ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90"
+                          : ""
+                      }
+                    >
+                      {hasAutoClimb ? "Auto Climb ✓" : "Auto Climb"}
+                    </Button>
+                    <Button
+                      variant={matchData?.postMatch?.autoClimbFailed ? "destructive" : "outline"}
+                      onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, autoClimbFailed: !matchData?.postMatch?.autoClimbFailed } })}
+                    >
+                      {matchData?.postMatch?.autoClimbFailed ? "Fail ✓" : "Fail"}
+                    </Button>
+                  </div>
+                  {/* Auto climb orientation */}
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-muted-foreground">Auto Climb Orientation</p>
+                    <div className="flex gap-2">
+                      {([undefined, 'left', 'center', 'right'] as const).map((o) => (
+                        <Button
+                          key={o ?? 'na'}
+                          size="sm"
+                          variant={matchData?.postMatch?.autoClimbOrientation === o ? "default" : "outline"}
+                          onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, autoClimbOrientation: o } })}
+                          className={`flex-1 ${matchData?.postMatch?.autoClimbOrientation === o ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
+                        >
+                          {o === undefined ? "N/A" : o.charAt(0).toUpperCase() + o.slice(1)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Teleop & Endgame
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      variant={didDefend ? "default" : "outline"}
+                      onClick={() => toggleAction("defend", "teleop")}
+                      className={
+                        didDefend
+                          ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90"
+                          : ""
+                      }
+                    >
+                      {didDefend ? "Defense ✓" : "Defense"}
+                    </Button>
+
+                    <Button
+                      variant={wasDisabled ? "destructive" : "outline"}
+                      onClick={() => toggleAction("disable", "teleop")}
+                    >
+                      {wasDisabled ? "Disabled ✓" : "Disabled"}
+                    </Button>
+
+                    <Button
+                      variant={climbLevel === "1" ? "default" : "outline"}
+                      onClick={() => toggleAction("climb_L1", "endgame")}
+                      className={
+                        climbLevel === "1"
+                          ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90"
+                          : ""
+                      }
+                    >
+                      {climbLevel === "1" ? "Climb L1 ✓" : "Climb L1"}
+                    </Button>
+
+                    <Button
+                      variant={climbLevel === "2" ? "default" : "outline"}
+                      onClick={() => toggleAction("climb_L2", "endgame")}
+                      className={
+                        climbLevel === "2"
+                          ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90"
+                          : ""
+                      }
+                    >
+                      {climbLevel === "2" ? "Climb L2 ✓" : "Climb L2"}
+                    </Button>
+
+                    <Button
+                      variant={climbLevel === "3" ? "default" : "outline"}
+                      onClick={() => toggleAction("climb_L3", "endgame")}
+                      className={
+                        climbLevel === "3"
+                          ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90"
+                          : ""
+                      }
+                    >
+                      {climbLevel === "3" ? "Climb L3 ✓" : "Climb L3"}
+                    </Button>
+                  </div>
+
+                  {/* Failed teleop climb toggle */}
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      variant={(matchData?.postMatch?.teleopFailedClimbCount || 0) >= 1 ? "destructive" : "outline"}
+                      onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, teleopFailedClimbCount: (matchData?.postMatch?.teleopFailedClimbCount || 0) >= 1 ? 0 : 1 } })}
+                      className="w-full"
+                    >
+                      {(matchData?.postMatch?.teleopFailedClimbCount || 0) >= 1 ? "Fail Climb ✓" : "Fail Climb"}
+                    </Button>
+                  </div>
+
+                  {/* Teleop climb orientation */}
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-muted-foreground">Teleop Climb Orientation</p>
+                    <div className="flex gap-2">
+                      {([undefined, 'left', 'center', 'right'] as const).map((o) => (
+                        <Button
+                          key={o ?? 'na'}
+                          size="sm"
+                          variant={matchData?.postMatch?.teleopClimbOrientation === o ? "default" : "outline"}
+                          onClick={() => setMatchData({ ...matchData!, postMatch: { ...matchData!.postMatch, teleopClimbOrientation: o } })}
+                          className={`flex-1 ${matchData?.postMatch?.teleopClimbOrientation === o ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
+                        >
+                          {o === undefined ? "N/A" : o.charAt(0).toUpperCase() + o.slice(1)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            {/* Ratings */}
+            <div className="rounded-2xl bg-muted p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-primary">
+                Ratings (1-5)
+              </h2>
+              <div className="space-y-4">
+                {/* Ground Rating */}
+                <div className="space-y-2">
+                  <p className="text-sm text-foreground">Intake</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <Button
+                        key={rating}
+                        size="sm"
+                        variant={
+                          matchData?.postMatch?.ratings?.ground === rating
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => {
+                          setMatchData({
+                            ...matchData!,
+                            postMatch: {
+                              ...matchData!.postMatch,
+                              ratings: {
+                                ...matchData!.postMatch?.ratings,
+                                ground: rating as 1 | 2 | 3 | 4 | 5,
+                              },
+                            },
+                          });
+                        }}
+                        className={`flex-1 ${matchData?.postMatch?.ratings?.ground === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
+                      >
+                        {rating}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Shooting Rating */}
+                <div className="space-y-2">
+                  <p className="text-sm text-foreground">Shooting</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <Button
+                        key={rating}
+                        size="sm"
+                        variant={
+                          matchData?.postMatch?.ratings?.shooting === rating
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => {
+                          setMatchData({
+                            ...matchData!,
+                            postMatch: {
+                              ...matchData!.postMatch,
+                              ratings: {
+                                ...matchData!.postMatch?.ratings,
+                                shooting: rating as 1 | 2 | 3 | 4 | 5,
+                              },
+                            },
+                          });
+                        }}
+                        className={`flex-1 ${matchData?.postMatch?.ratings?.shooting === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
+                      >
+                        {rating}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Passing Rating */}
+                <div className="space-y-2">
+                  <p className="text-sm text-foreground">Passing</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <Button
+                        key={rating}
+                        size="sm"
+                        variant={
+                          matchData?.postMatch?.ratings?.passing === rating
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => {
+                          setMatchData({
+                            ...matchData!,
+                            postMatch: {
+                              ...matchData!.postMatch,
+                              ratings: {
+                                ...matchData!.postMatch?.ratings,
+                                passing: rating as 1 | 2 | 3 | 4 | 5,
+                              },
+                            },
+                          });
+                        }}
+                        className={`flex-1 ${matchData?.postMatch?.ratings?.passing === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
+                      >
+                        {rating}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Driver Rating */}
+                <div className="space-y-2">
+                  <p className="text-sm text-foreground">Driver</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <Button
+                        key={rating}
+                        size="sm"
+                        variant={
+                          matchData?.postMatch?.ratings?.driver === rating
+                            ? "default"
+                            : "outline"
+                        }
+                        onClick={() => {
+                          setMatchData({
+                            ...matchData!,
+                            postMatch: {
+                              ...matchData!.postMatch,
+                              ratings: {
+                                ...matchData!.postMatch?.ratings,
+                                driver: rating as 1 | 2 | 3 | 4 | 5,
+                              },
+                            },
+                          });
+                        }}
+                        className={`flex-1 ${matchData?.postMatch?.ratings?.driver === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
+                      >
+                        {rating}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Capabilities */}
+            <div className="rounded-2xl bg-muted py-6 px-5 space-y-4">
+              <h2 className="text-lg font-semibold text-primary">
+                Capabilities
+              </h2>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { key: 'bump', label: 'Bump' },
+                  { key: 'through', label: 'Trough' },
+                  { key: 'canStation', label: 'Station' },
+                  { key: 'canGround', label: 'Ground' },
+                ] as const).map(({ key, label }) => {
+                  const active = !!(matchData?.postMatch as Record<string, unknown>)?.[key];
+                  return (
+                    <Button
+                      key={key}
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      onClick={() => {
+                        setMatchData({
+                          ...matchData!,
+                          postMatch: {
+                            ...matchData!.postMatch,
+                            [key]: !active,
+                          },
+                        });
+                      }}
+                      className={`flex-1 ${active ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="rounded-2xl bg-muted p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-primary">Notes</h2>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add any additional observations..."
+                className="min-h-[120px] bg-background border-border"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Submit Button - Fixed at bottom */}
+        <div className="fixed bottom-4 left-4 right-4 z-40">
+          <Button
+            onClick={handleSubmit}
+            disabled={!isFormComplete || isSubmitting}
+            className="w-full h-12 bg-[#CDA745] hover:bg-[#CDA745]/90 text-black disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <path
-              fill="#CDA745"
-              d="M12.1688 5.04384L4.16666 11.6345V18.7478C4.16666 18.932 4.23983 19.1086 4.37006 19.2389C4.50029 19.3691 4.67693 19.4423 4.8611 19.4423L9.72482 19.4297C9.9084 19.4288 10.0841 19.3552 10.2136 19.2251C10.3431 19.0949 10.4158 18.9188 10.4158 18.7352V14.5812C10.4158 14.397 10.489 14.2204 10.6192 14.0901C10.7494 13.9599 10.9261 13.8867 11.1102 13.8867H13.888C14.0722 13.8867 14.2488 13.9599 14.3791 14.0901C14.5093 14.2204 14.5825 14.397 14.5825 14.5812V18.7322C14.5822 18.8236 14.5999 18.9141 14.6347 18.9986C14.6695 19.0831 14.7206 19.1599 14.7851 19.2247C14.8496 19.2894 14.9263 19.3407 15.0106 19.3758C15.095 19.4108 15.1855 19.4288 15.2769 19.4288L20.1389 19.4423C20.3231 19.4423 20.4997 19.3691 20.6299 19.2389C20.7602 19.1086 20.8333 18.932 20.8333 18.7478V11.6298L12.8329 5.04384C12.7388 4.96802 12.6217 4.92668 12.5009 4.92668C12.3801 4.92668 12.2629 4.96802 12.1688 5.04384ZM24.809 9.52344L21.1805 6.53255V0.520833C21.1805 0.3827 21.1257 0.250224 21.028 0.152549C20.9303 0.0548735 20.7978 0 20.6597 0H18.2292C18.091 0 17.9585 0.0548735 17.8609 0.152549C17.7632 0.250224 17.7083 0.3827 17.7083 0.520833V3.67231L13.8225 0.47526C13.4496 0.168394 12.9816 0.000613431 12.4987 0.000613431C12.0158 0.000613431 11.5478 0.168394 11.1749 0.47526L0.188362 9.52344C0.135623 9.56703 0.0919888 9.62058 0.0599541 9.68104C0.0279193 9.7415 0.00811156 9.80768 0.00166252 9.8758C-0.00478653 9.94392 0.00224954 10.0126 0.0223687 10.078C0.0424879 10.1434 0.0752958 10.2042 0.118918 10.2569L1.22569 11.6024C1.26919 11.6553 1.3227 11.6991 1.38315 11.7313C1.44361 11.7635 1.50981 11.7835 1.57799 11.79C1.64616 11.7966 1.71496 11.7897 1.78045 11.7696C1.84593 11.7496 1.90682 11.7168 1.95963 11.6732L12.1688 3.26432C12.2629 3.18851 12.3801 3.14717 12.5009 3.14717C12.6217 3.14717 12.7388 3.18851 12.8329 3.26432L23.0425 11.6732C23.0952 11.7168 23.156 11.7496 23.2214 11.7697C23.2868 11.7898 23.3556 11.7969 23.4237 11.7904C23.4918 11.784 23.558 11.7642 23.6184 11.7321C23.6789 11.7001 23.7324 11.6565 23.776 11.6037L24.8828 10.2582C24.9264 10.2052 24.9591 10.1441 24.9789 10.0784C24.9988 10.0128 25.0055 9.94379 24.9987 9.8755C24.9918 9.80722 24.9715 9.74096 24.939 9.68054C24.9064 9.62012 24.8623 9.56673 24.809 9.52344Z"
-            />
-          </svg>
-          <div className="text-outfit">
-            <p className="text-[#CDA745] text-sm">
-              {matchNum ? getMatchLabel(matchNum) : ""}
-            </p>
-            <p className="text-foreground text-xs">
-              {teamNum?.substring(teamNum.indexOf("frc") + 3)}
-            </p>
-          </div>
+            {isSubmitting ? "Uploading..." : "Submit"}
+          </Button>
         </div>
       </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-auto pb-20">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Data Table */}
-          <div className="rounded-2xl bg-muted p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-primary">Match Data</h2>
-
-            {/* Table */}
-            <div className="space-y-3">
-              {/* Header Row */}
-              <div className="grid grid-cols-3 gap-4 pb-2 border-b border-border">
-                <div className="text-sm font-semibold text-muted-foreground">
-                  Metric
-                </div>
-                <div className="text-sm font-semibold text-[#CDA745] text-center">
-                  Autonomous
-                </div>
-                <div className="text-sm font-semibold text-[#CDA745] text-center">
-                  Teleop
-                </div>
-              </div>
-
-              {/* Station Intake Row */}
-              <div className="grid grid-cols-3 gap-4 items-center">
-                <div className="text-sm text-foreground">Station Intake</div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={autoStation}
-                    onChange={(e) => setAutoStation(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setAutoStation(autoStation + 1)}
-                      className="h-4.5 w-7 p-0 flex items-center justify-center"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
-                        <path d="M6 3L9 7H3L6 3Z" />
-                      </svg>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setAutoStation(autoStation - 1)}
-                      className="h-4.5 w-7 p-0 flex items-center justify-center"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
-                        <path d="M6 9L3 5H9L6 9Z" />
-                      </svg>
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={teleopStation}
-                    onChange={(e) =>
-                      setTeleopStation(parseInt(e.target.value) || 0)
-                    }
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setTeleopStation(teleopStation + 1)}
-                      className="h-4.5 w-7 p-0 flex items-center justify-center"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
-                        <path d="M6 3L9 7H3L6 3Z" />
-                      </svg>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setTeleopStation(teleopStation - 1)}
-                      className="h-4.5 w-7 p-0 flex items-center justify-center"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
-                        <path d="M6 9L3 5H9L6 9Z" />
-                      </svg>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Stocking Row */}
-              <div className="grid grid-cols-3 gap-4 items-center">
-                <div className="text-sm text-foreground">Stocking</div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={autoStocking}
-                    onChange={(e) => setAutoStocking(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setAutoStocking(autoStocking + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setAutoStocking(autoStocking - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={teleopStocking}
-                    onChange={(e) => setTeleopStocking(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setTeleopStocking(teleopStocking + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setTeleopStocking(teleopStocking - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Ground Intakes Row */}
-              <div className="grid grid-cols-3 gap-4 items-center">
-                <div className="text-sm text-foreground">Ground Intake</div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={autoIntakes}
-                    onChange={(e) => setAutoIntakes(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setAutoIntakes(autoIntakes + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setAutoIntakes(autoIntakes - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={teleopIntakes}
-                    onChange={(e) => setTeleopIntakes(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setTeleopIntakes(teleopIntakes + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setTeleopIntakes(teleopIntakes - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Passes Row */}
-              <div className="grid grid-cols-3 gap-4 items-center">
-                <div className="text-sm text-foreground">Passing</div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={autoPasses}
-                    onChange={(e) => setAutoPasses(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setAutoPasses(autoPasses + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setAutoPasses(autoPasses - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={teleopPasses}
-                    onChange={(e) => setTeleopPasses(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setTeleopPasses(teleopPasses + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setTeleopPasses(teleopPasses - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Shoots Row */}
-              <div className="grid grid-cols-3 gap-4 items-center">
-                <div className="text-sm text-foreground">Shooting</div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={autoShoots}
-                    onChange={(e) => setAutoShoots(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setAutoShoots(autoShoots + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setAutoShoots(autoShoots - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <Input
-                    type="number"
-                    value={teleopShoots}
-                    onChange={(e) => setTeleopShoots(parseInt(e.target.value) || 0)}
-                    className="h-8 w-16 text-center bg-background border-border"
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <Button size="sm" variant="outline" onClick={() => setTeleopShoots(teleopShoots + 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 3L9 7H3L6 3Z" /></svg>
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setTeleopShoots(teleopShoots - 1)} className="h-4.5 w-7 p-0 flex items-center justify-center">
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor"><path d="M6 9L3 5H9L6 9Z" /></svg>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Toggle Actions */}
-          <div className="rounded-2xl bg-muted p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-primary">
-              Endgame & Status
-            </h2>
-
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">Autonomous</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    variant={hasAutoClimb ? "default" : "outline"}
-                    onClick={() => toggleAction("climb_L1", "auto")}
-                    className={hasAutoClimb ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}
-                  >
-                    {hasAutoClimb ? "Auto Climb ✓" : "Auto Climb"}
-                  </Button>
-                  <Button
-                    variant={activeToggles.climb_dismount ? "default" : "outline"}
-                    onClick={() => toggleAction("climb_dismount", "auto")}
-                    className={activeToggles.climb_dismount ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}
-                  >
-                    {activeToggles.climb_dismount ? "Climb Dismount ✓" : "Climb Dismount"}
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Teleop & Endgame
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    variant={didDefend ? "default" : "outline"}
-                    onClick={() => toggleAction("defend", "teleop")}
-                    className={didDefend ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}
-                  >
-                    {didDefend ? "Defense ✓" : "Defense"}
-                  </Button>
-
-                  <Button
-                    variant={wasDisabled ? "destructive" : "outline"}
-                    onClick={() => toggleAction("disable", "teleop")}
-                  >
-                    {wasDisabled ? "Disabled ✓" : "Disabled"}
-                  </Button>
-
-                  <Button
-                    variant={climbLevel === "1" ? "default" : "outline"}
-                    onClick={() => toggleAction("climb_L1", "endgame")}
-                    className={climbLevel === "1" ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}
-                  >
-                    {climbLevel === "1" ? "Climb L1 ✓" : "Climb L1"}
-                  </Button>
-
-                  <Button
-                    variant={climbLevel === "2" ? "default" : "outline"}
-                    onClick={() => toggleAction("climb_L2", "endgame")}
-                    className={climbLevel === "2" ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}
-                  >
-                    {climbLevel === "2" ? "Climb L2 ✓" : "Climb L2"}
-                  </Button>
-
-                  <Button
-                    variant={climbLevel === "3" ? "default" : "outline"}
-                    onClick={() => toggleAction("climb_L3", "endgame")}
-                    className={climbLevel === "3" ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}
-                  >
-                    {climbLevel === "3" ? "Climb L3 ✓" : "Climb L3"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Ratings */}
-          <div className="rounded-2xl bg-muted p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-primary">Ratings (1-5)</h2>
-            <div className="space-y-4">
-              {/* Ground Rating */}
-              <div className="space-y-2">
-                <p className="text-sm text-foreground">Ground Intake</p>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                    <Button
-                      key={rating}
-                      size="sm"
-                      variant={matchData?.postMatch?.ratings?.ground === rating ? "default" : "outline"}
-                      onClick={() => {
-                        setMatchData({
-                          ...matchData!,
-                          postMatch: {
-                            ...matchData!.postMatch,
-                            ratings: {
-                              ...matchData!.postMatch?.ratings,
-                              ground: rating as 1 | 2 | 3 | 4 | 5,
-                            },
-                          },
-                        });
-                      }}
-                      className={`flex-1 ${matchData?.postMatch?.ratings?.ground === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
-                    >
-                      {rating}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Station Rating */}
-              <div className="space-y-2">
-                <p className="text-sm text-foreground">Station Intake</p>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                    <Button
-                      key={rating}
-                      size="sm"
-                      variant={matchData?.postMatch?.ratings?.station === rating ? "default" : "outline"}
-                      onClick={() => {
-                        setMatchData({
-                          ...matchData!,
-                          postMatch: {
-                            ...matchData!.postMatch,
-                            ratings: {
-                              ...matchData!.postMatch?.ratings,
-                              station: rating as 1 | 2 | 3 | 4 | 5,
-                            },
-                          },
-                        });
-                      }}
-                      className={`flex-1 ${matchData?.postMatch?.ratings?.station === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
-                    >
-                      {rating}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Passing Rating */}
-              <div className="space-y-2">
-                <p className="text-sm text-foreground">Passing</p>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                    <Button
-                      key={rating}
-                      size="sm"
-                      variant={matchData?.postMatch?.ratings?.passing === rating ? "default" : "outline"}
-                      onClick={() => {
-                        setMatchData({
-                          ...matchData!,
-                          postMatch: {
-                            ...matchData!.postMatch,
-                            ratings: {
-                              ...matchData!.postMatch?.ratings,
-                              passing: rating as 1 | 2 | 3 | 4 | 5,
-                            },
-                          },
-                        });
-                      }}
-                      className={`flex-1 ${matchData?.postMatch?.ratings?.passing === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
-                    >
-                      {rating}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Driver Rating */}
-              <div className="space-y-2">
-                <p className="text-sm text-foreground">Driver</p>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                    <Button
-                      key={rating}
-                      size="sm"
-                      variant={matchData?.postMatch?.ratings?.driver === rating ? "default" : "outline"}
-                      onClick={() => {
-                        setMatchData({
-                          ...matchData!,
-                          postMatch: {
-                            ...matchData!.postMatch,
-                            ratings: {
-                              ...matchData!.postMatch?.ratings,
-                              driver: rating as 1 | 2 | 3 | 4 | 5,
-                            },
-                          },
-                        });
-                      }}
-                      className={`flex-1 ${matchData?.postMatch?.ratings?.driver === rating ? "bg-[#CDA745] text-black hover:bg-[#CDA745]/90" : ""}`}
-                    >
-                      {rating}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Capabilities */}
-          <div className="rounded-2xl bg-muted py-6 px-5 space-y-4">
-            <h2 className="text-lg font-semibold text-primary">Capabilities</h2>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              <Button
-                size="sm"
-                variant={matchData?.postMatch?.depot ? "default" : "outline"}
-                onClick={() => {
-                  setMatchData({
-                    ...matchData!,
-                    postMatch: {
-                      ...matchData!.postMatch,
-                      depot: !matchData?.postMatch?.depot,
-                    },
-                  });
-                }}
-                className={`flex-1 ${matchData?.postMatch?.depot ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-              >
-                Depot
-              </Button>
-              <Button
-                size="sm"
-                variant={matchData?.postMatch?.through ? "default" : "outline"}
-                onClick={() => {
-                  setMatchData({
-                    ...matchData!,
-                    postMatch: {
-                      ...matchData!.postMatch,
-                      through: !matchData?.postMatch?.through,
-                    },
-                  });
-                }}
-                className={`flex-1 ${matchData?.postMatch?.through ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-              >
-                Trough
-              </Button>
-              <Button
-                size="sm"
-                variant={matchData?.postMatch?.climb_orientation === 'left' ? "default" : "outline"}
-                onClick={() => {
-                  setMatchData({
-                    ...matchData!,
-                    postMatch: {
-                      ...matchData!.postMatch,
-                      climb_orientation: matchData?.postMatch?.climb_orientation === 'left' ? undefined : 'left',
-                    },
-                  });
-                }}
-                className={`flex-1 ${matchData?.postMatch?.climb_orientation === 'left' ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-              >
-                Climb Left
-              </Button>
-              <Button
-                size="sm"
-                variant={matchData?.postMatch?.climb_orientation === 'right' ? "default" : "outline"}
-                onClick={() => {
-                  setMatchData({
-                    ...matchData!,
-                    postMatch: {
-                      ...matchData!.postMatch,
-                      climb_orientation: matchData?.postMatch?.climb_orientation === 'right' ? undefined : 'right',
-                    },
-                  });
-                }}
-                className={`flex-1 ${matchData?.postMatch?.climb_orientation === 'right' ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-              >
-                Climb Right
-              </Button>
-              <Button
-                size="sm"
-                variant={matchData?.postMatch?.climb_orientation === 'center' ? "default" : "outline"}
-                onClick={() => {
-                  setMatchData({
-                    ...matchData!,
-                    postMatch: {
-                      ...matchData!.postMatch,
-                      climb_orientation: matchData?.postMatch?.climb_orientation === 'center' ? undefined : 'center',
-                    },
-                  });
-                }}
-                className={`flex-1 ${matchData?.postMatch?.climb_orientation === 'center' ? "bg-[#4ADE80] text-black hover:bg-[#4ADE80]/90" : ""}`}
-              >
-                Climb Center
-              </Button>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div className="rounded-2xl bg-muted p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-primary">Notes</h2>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add any additional observations..."
-              className="min-h-[120px] bg-background border-border"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Submit Button - Fixed at bottom */}
-      <div className="fixed bottom-4 left-4 right-4 z-40">
-        <Button
-          onClick={handleSubmit}
-          disabled={!isFormComplete || isSubmitting}
-          className="w-full h-12 bg-[#CDA745] hover:bg-[#CDA745]/90 text-black disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isSubmitting ? "Uploading..." : "Submit"}
-        </Button>
-      </div>
-    </div>
     </>
   );
 }

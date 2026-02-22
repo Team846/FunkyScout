@@ -68,7 +68,7 @@ export interface MatchAction {
   /** References ActionDefinition.id from schema */
   actionId: string;
 
-  /** Milliseconds since match start (0-160000) */
+  /** Milliseconds since match start (0-163000: 20s auto + 3s transition + 140s teleop) */
   timestamp: number;
 
   /** Location in normalized coordinates 0-1 - user-provided (Type 1) or from schema (Type 2/3) */
@@ -85,22 +85,37 @@ export interface PostMatchData {
   /** Did robot cross trough? */
   trough?: boolean;
 
-  /** Did robot get bumped? */
+  /** Did robot demonstrate bump capability? */
   bump?: boolean;
 
-  /** Where did robot climb? */
-  climbOrientation?: "left" | "right" | "center";
+  /** Did robot demonstrate station intake this match? */
+  canStation?: boolean;
+
+  /** Did robot demonstrate ground intake this match? */
+  canGround?: boolean;
+
+  /** Where did robot climb during auto? */
+  autoClimbOrientation?: "left" | "right" | "center";
+
+  /** Did the auto climb attempt fail? */
+  autoClimbFailed?: boolean;
+
+  /** Where did robot climb during teleop? */
+  teleopClimbOrientation?: "left" | "right" | "center";
+
+  /** Dismount time in seconds from teleop start (11 = timed out at 10s) */
+  teleopDismountTime?: number;
+
+  /** Number of failed teleop climb attempts */
+  teleopFailedClimbCount?: number;
 
   /** Performance ratings (1-5 scale) */
   ratings?: {
     /** How well did ground intake work? */
     groundIntake?: number;
 
-    /** How well did station intake work? */
-    stationIntake?: number;
-
-    /** How well did station stocking work? */
-    stationStocking?: number;
+    /** How well did shooting work? */
+    shooting?: number;
 
     /** How well did passing work? */
     passing?: number;

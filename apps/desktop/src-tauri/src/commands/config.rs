@@ -1,5 +1,5 @@
 use crate::store::AppConfig;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 /// Save app configuration to store
@@ -8,19 +8,30 @@ pub async fn save_config(
     state: State<'_, Mutex<crate::AppState>>,
     config: AppConfig,
 ) -> Result<(), String> {
-    let app_state = state.lock().unwrap();
+    let event_arc = {
+        let app_state = state.lock().unwrap();
 
-    // Save to store
-    app_state
-        .app_store
-        .store
-        .set("config", serde_json::to_value(&config).unwrap());
+        // Save to store
+        app_state
+            .app_store
+            .store
+            .set("config", serde_json::to_value(&config).unwrap());
 
-    app_state
-        .app_store
-        .store
-        .save()
-        .map_err(|e| e.to_string())?;
+        app_state
+            .app_store
+            .store
+            .save()
+            .map_err(|e| e.to_string())?;
+
+        // Clone Arc before releasing lock so we can update it without holding the mutex
+        Arc::clone(&app_state.current_event_shared)
+    };
+
+    // Update the shared event key so SyncService picks it up on the next sync cycle
+    if !config.event_key.is_empty() {
+        *event_arc.write().unwrap() = config.event_key.clone();
+        println!("[Config] Updated current_event_shared to: {}", config.event_key);
+    }
 
     println!("[Config] Saved: {:?}", config);
     Ok(())
@@ -31,4 +42,23 @@ pub async fn save_config(
 pub async fn get_config(state: State<'_, Mutex<crate::AppState>>) -> Result<AppConfig, String> {
     let app_state = state.lock().unwrap();
     Ok(app_state.app_store.get_config())
+}
+
+/// Set user JWT token for Supabase authentication
+/// Writes to the shared Arc so the background SyncService can use it for RLS-authenticated writes
+#[tauri::command]
+pub async fn set_user_jwt(
+    state: State<'_, Mutex<crate::AppState>>,
+    jwt: String,
+) -> Result<(), String> {
+    // Clone the Arc while holding the Mutex briefly, then release it
+    let jwt_arc = {
+        let app_state = state.lock().unwrap();
+        Arc::clone(&app_state.user_jwt_shared)
+    }; // Mutex released here — safe to await
+
+    // Write the JWT to the shared Arc (accessible by SupabaseService without holding AppState mutex)
+    *jwt_arc.write().unwrap() = Some(jwt);
+    println!("[Auth] User JWT token updated (shared with SyncService)");
+    Ok(())
 }

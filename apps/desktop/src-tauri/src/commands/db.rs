@@ -4,7 +4,7 @@
 use crate::AppState;
 use sea_orm::sqlx::{self, Row};
 use serde_json::Value as JsonValue;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 /// Team data from SQLite cache
@@ -36,7 +36,7 @@ pub struct ScheduleEntry {
     pub last_modified: i64,
 }
 
-/// Picklist from SQLite cache
+/// Picklist from SQLite cache (entries embedded as JSON array in `picklist` field)
 #[derive(Debug, serde::Serialize)]
 pub struct Picklist {
     pub event: String,
@@ -44,17 +44,10 @@ pub struct Picklist {
     pub title: String,
     pub uname: String,
     pub uid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+    pub picklist: serde_json::Value,  // JSON array of embedded entries
     pub timestamp: i64,
-    pub last_modified: i64,
-}
-
-/// Picklist entry from SQLite cache
-#[derive(Debug, serde::Serialize)]
-pub struct PicklistEntry {
-    pub event: String,
-    pub id: String,
-    pub team: String,
-    pub rank: i64,
     pub last_modified: i64,
 }
 
@@ -163,7 +156,7 @@ pub async fn get_picklists(
     }; // MutexGuard dropped here
 
     let rows = sqlx::query(
-        "SELECT event, id, title, uname, uid, timestamp, last_modified
+        "SELECT event, id, title, picklist, uname, uid, type, timestamp, last_modified
          FROM event_picklist
          WHERE event = ? AND deleted_at IS NULL
          ORDER BY timestamp DESC"
@@ -175,52 +168,22 @@ pub async fn get_picklists(
 
     Ok(rows
         .into_iter()
-        .map(|row| Picklist {
-            event: row.try_get("event").unwrap_or_default(),
-            id: row.try_get("id").unwrap_or_default(),
-            title: row.try_get("title").unwrap_or_default(),
-            uname: row.try_get("uname").unwrap_or_default(),
-            uid: row.try_get("uid").unwrap_or_default(),
-            timestamp: row.try_get("timestamp").unwrap_or(0),
-            last_modified: row.try_get("last_modified").unwrap_or(0),
-        })
-        .collect())
-}
-
-#[tauri::command]
-pub async fn get_picklist_entries(
-    state: State<'_, Mutex<AppState>>,
-    event: String,
-) -> Result<Vec<PicklistEntry>, String> {
-    let pool = {
-        let app_state = state.lock().unwrap();
-        app_state
-            .database
-            .as_ref()
-            .ok_or("Database not initialized")?
-            .get_sqlx_pool()
-            .clone()
-    }; // MutexGuard dropped here
-
-    let rows = sqlx::query(
-        "SELECT event, id, team, rank, last_modified
-         FROM event_picklist_entries
-         WHERE event = ? AND deleted_at IS NULL
-         ORDER BY rank"
-    )
-    .bind(&event)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| format!("Failed to query picklist entries: {}", e))?;
-
-    Ok(rows
-        .into_iter()
-        .map(|row| PicklistEntry {
-            event: row.try_get("event").unwrap_or_default(),
-            id: row.try_get("id").unwrap_or_default(),
-            team: row.try_get("team").unwrap_or_default(),
-            rank: row.try_get("rank").unwrap_or(0),
-            last_modified: row.try_get("last_modified").unwrap_or(0),
+        .map(|row| {
+            let picklist_str: Option<String> = row.try_get("picklist").ok();
+            let picklist = picklist_str
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::json!([]));
+            Picklist {
+                event: row.try_get("event").unwrap_or_default(),
+                id: row.try_get("id").unwrap_or_default(),
+                title: row.try_get("title").unwrap_or_default(),
+                r#type: row.try_get("type").ok(),
+                picklist,
+                uname: row.try_get("uname").unwrap_or_default(),
+                uid: row.try_get("uid").unwrap_or_default(),
+                timestamp: row.try_get("timestamp").unwrap_or(0),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
         })
         .collect())
 }
@@ -241,6 +204,20 @@ pub async fn cache_schedule(
             .get_sqlx_pool()
             .clone()
     };
+
+    // CRITICAL: Ensure event exists in event_list first (for foreign key constraint)
+    sqlx::query(
+        "INSERT INTO event_list (event, alias, date, last_modified)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+    )
+    .bind(&event)
+    .bind(&event)
+    .bind("")
+    .bind(chrono::Utc::now().timestamp_millis())
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to ensure event exists: {}", e))?;
 
     for record in schedule {
         let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
@@ -308,6 +285,30 @@ pub async fn cache_picklists(
             .clone()
     };
 
+    // CRITICAL: Ensure all events exist in event_list first (for foreign key constraint)
+    // Extract unique events from picklists
+    let mut events: Vec<String> = picklists
+        .iter()
+        .filter_map(|p| p.get("event").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    events.sort();
+    events.dedup();
+
+    for event in events {
+        sqlx::query(
+            "INSERT INTO event_list (event, alias, date, last_modified)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+        )
+        .bind(&event)
+        .bind(&event)
+        .bind("")
+        .bind(chrono::Utc::now().timestamp_millis())
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to ensure event {} exists: {}", event, e))?;
+    }
+
     for record in picklists {
         let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
         let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
@@ -315,29 +316,38 @@ pub async fn cache_picklists(
         let uname = record.get("uname").and_then(|v| v.as_str()).unwrap_or("");
         let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
         let picklist_type = record.get("type").and_then(|v| v.as_str()).unwrap_or("public");
+        // Serialize embedded entries array to TEXT for SQLite storage
+        let picklist_json = record.get("picklist")
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "[]".to_string());
         let timestamp = record.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
 
         sqlx::query(
-            "INSERT INTO event_picklist (id, event, title, uname, uid, type, timestamp, last_modified)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO event_picklist (id, event, title, picklist, uname, uid, type, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                event = excluded.event,
                title = excluded.title,
-               uname = excluded.uname,
-               uid = excluded.uid,
+               picklist = excluded.picklist,
+               uname = CASE WHEN excluded.uname != '' THEN excluded.uname ELSE event_picklist.uname END,
+               uid = CASE WHEN excluded.uid != '' THEN excluded.uid ELSE event_picklist.uid END,
                type = excluded.type,
-               timestamp = excluded.timestamp,
-               last_modified = excluded.last_modified"
+               timestamp = CASE WHEN excluded.timestamp != 0 THEN excluded.timestamp ELSE event_picklist.timestamp END,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
         )
         .bind(id)
         .bind(event)
         .bind(title)
+        .bind(&picklist_json)
         .bind(uname)
         .bind(uid)
         .bind(picklist_type)
         .bind(timestamp)
         .bind(last_modified)
+        .bind(deleted_at)
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to cache picklist {}: {}", id, e))?;
@@ -346,10 +356,381 @@ pub async fn cache_picklists(
     Ok(())
 }
 
-/// Cache picklist entries to SQLite (called by frontend after Supabase fetch)
+/// User profile from SQLite cache
+#[derive(Debug, serde::Serialize)]
+pub struct UserProfile {
+    pub uid: String,
+    pub name: String,
+    pub role: String,
+    pub settings: Option<JsonValue>,
+    pub last_modified: i64,
+}
+
 #[tauri::command]
-pub async fn cache_picklist_entries(
+pub async fn get_user_profiles(
     state: State<'_, Mutex<AppState>>,
+    uids: Option<Vec<String>>,
+) -> Result<Vec<UserProfile>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    // Handle filtering based on uids parameter
+    let rows = if let Some(uid_list) = uids {
+        if uid_list.is_empty() {
+            // Empty list - fetch all profiles
+            sqlx::query(
+                "SELECT uid, name, role, settings, last_modified
+                 FROM user_profiles
+                 WHERE deleted_at IS NULL
+                 ORDER BY name"
+            )
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("Failed to query user profiles: {}", e))?
+        } else {
+            // Build IN clause with placeholders
+            let placeholders = uid_list.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let query_str = format!(
+                "SELECT uid, name, role, settings, last_modified
+                 FROM user_profiles
+                 WHERE uid IN ({}) AND deleted_at IS NULL
+                 ORDER BY name",
+                placeholders
+            );
+
+            let mut query = sqlx::query(&query_str);
+            for uid in &uid_list {
+                query = query.bind(uid);
+            }
+
+            query
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| format!("Failed to query user profiles: {}", e))?
+        }
+    } else {
+        // No filter - fetch all profiles
+        sqlx::query(
+            "SELECT uid, name, role, settings, last_modified
+             FROM user_profiles
+             WHERE deleted_at IS NULL
+             ORDER BY name"
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| format!("Failed to query user profiles: {}", e))?
+    };
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let settings_str: Option<String> = row.try_get("settings").ok();
+            UserProfile {
+                uid: row.try_get("uid").unwrap_or_default(),
+                name: row.try_get("name").unwrap_or_default(),
+                role: row.try_get("role").unwrap_or_default(),
+                settings: settings_str.and_then(|s| serde_json::from_str(&s).ok()),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
+        })
+        .collect())
+}
+
+/// Cache user profiles to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_user_profiles(
+    state: State<'_, Mutex<AppState>>,
+    profiles: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in profiles {
+        let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+        let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let role = record.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+        let settings = record.get("settings").cloned().unwrap_or(serde_json::json!({}));
+        let settings_str = settings.to_string();
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+
+        sqlx::query(
+            "INSERT INTO user_profiles (uid, name, role, settings, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(uid) DO UPDATE SET
+               name = excluded.name,
+               role = excluded.role,
+               settings = excluded.settings,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(uid)
+        .bind(name)
+        .bind(role)
+        .bind(&settings_str)
+        .bind(last_modified)
+        .bind(deleted_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache user profile {}: {}", uid, e))?;
+    }
+
+    Ok(())
+}
+
+/// Pit scouting data from SQLite cache
+#[derive(Debug, serde::Serialize)]
+pub struct PitScoutingData {
+    pub event: String,
+    pub team: String,
+    pub data: Option<JsonValue>,
+    pub team_name: Option<String>,
+    pub name: Option<String>,
+    pub uid: Option<String>,
+    pub assigned: Option<String>,
+    pub timestamp: Option<i64>,
+    pub last_modified: i64,
+}
+
+/// Fetch pit scouting data for an event from SQLite cache
+#[tauri::command]
+pub async fn get_pit_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+) -> Result<Vec<PitScoutingData>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let rows = sqlx::query(
+        "SELECT event, team, data, team_name, name, uid, assigned, timestamp, last_modified
+         FROM event_team_data
+         WHERE event = ? AND deleted_at IS NULL
+         ORDER BY team"
+    )
+    .bind(&event)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query pit scouting data: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let data_str: Option<String> = row.try_get("data").ok();
+            PitScoutingData {
+                event: row.try_get("event").unwrap_or_default(),
+                team: row.try_get("team").unwrap_or_default(),
+                data: data_str.and_then(|d| serde_json::from_str(&d).ok()),
+                team_name: row.try_get("team_name").ok(),
+                name: row.try_get("name").ok(),
+                uid: row.try_get("uid").ok(),
+                assigned: row.try_get("assigned").ok(),
+                timestamp: row.try_get("timestamp").ok(),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
+        })
+        .collect())
+}
+
+/// Cache pit scouting data to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_pit_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    data: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in data {
+        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let data_json = record.get("data").cloned();
+        let data_str = data_json.map(|d| d.to_string());
+        let team_name = record.get("team_name").and_then(|v| v.as_str());
+        let name = record.get("name").and_then(|v| v.as_str());
+        let uid = record.get("uid").and_then(|v| v.as_str());
+        let assigned = record.get("assigned").and_then(|v| v.as_str());
+        let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+
+        sqlx::query(
+            "INSERT INTO event_team_data (event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(event, team) DO UPDATE SET
+               data = excluded.data,
+               team_name = excluded.team_name,
+               name = excluded.name,
+               uid = excluded.uid,
+               assigned = excluded.assigned,
+               timestamp = excluded.timestamp,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(event)
+        .bind(team)
+        .bind(data_str)
+        .bind(team_name)
+        .bind(name)
+        .bind(uid)
+        .bind(assigned)
+        .bind(timestamp)
+        .bind(last_modified)
+        .bind(deleted_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache pit scouting data for {}/{}: {}", event, team, e))?;
+    }
+
+    Ok(())
+}
+
+/// Match scouting data from SQLite cache
+#[derive(Debug, serde::Serialize)]
+pub struct MatchScoutingData {
+    pub event: String,
+    #[serde(rename = "match")]
+    pub match_key: String,
+    pub team: String,
+    pub alliance: String,
+    pub data_raw: Option<JsonValue>,
+    pub data: Option<JsonValue>,
+    pub name: Option<String>,
+    pub uid: Option<String>,
+    pub timestamp: Option<i64>,
+    pub last_modified: i64,
+}
+
+/// Fetch match scouting data for an event from SQLite cache
+#[tauri::command]
+pub async fn get_match_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+) -> Result<Vec<MatchScoutingData>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let rows = sqlx::query(
+        "SELECT event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified
+         FROM event_match_data
+         WHERE event = ? AND deleted_at IS NULL
+         ORDER BY match, team"
+    )
+    .bind(&event)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query match scouting data: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let data_raw_str: Option<String> = row.try_get("data_raw").ok();
+            let data_str: Option<String> = row.try_get("data").ok();
+            MatchScoutingData {
+                event: row.try_get("event").unwrap_or_default(),
+                match_key: row.try_get("match").unwrap_or_default(),
+                team: row.try_get("team").unwrap_or_default(),
+                alliance: row.try_get("alliance").unwrap_or_default(),
+                data_raw: data_raw_str.and_then(|d| serde_json::from_str(&d).ok()),
+                data: data_str.and_then(|d| serde_json::from_str(&d).ok()),
+                name: row.try_get("name").ok(),
+                uid: row.try_get("uid").ok(),
+                timestamp: row.try_get("timestamp").ok(),
+                last_modified: row.try_get("last_modified").unwrap_or(0),
+            }
+        })
+        .collect())
+}
+
+/// TBA climb entry (per team per match)
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TbaClimbEntry {
+    pub event: String,
+    pub match_key: String,
+    pub team: String,
+    pub auto_climb: Option<String>,   // "L1", "L2", "L3", or null
+    pub teleop_climb: Option<String>, // "L1", "L2", "L3", or null
+}
+
+/// Fetch cached TBA climb data for an event
+#[tauri::command]
+pub async fn get_tba_climb_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
+) -> Result<Vec<TbaClimbEntry>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let rows = sqlx::query(
+        "SELECT event, match_key, team, auto_climb, teleop_climb
+         FROM tba_match_climb
+         WHERE event = ?
+         ORDER BY match_key, team"
+    )
+    .bind(&event)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query TBA climb data: {}", e))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| TbaClimbEntry {
+            event: row.try_get("event").unwrap_or_default(),
+            match_key: row.try_get("match_key").unwrap_or_default(),
+            team: row.try_get("team").unwrap_or_default(),
+            auto_climb: row.try_get("auto_climb").ok().flatten(),
+            teleop_climb: row.try_get("teleop_climb").ok().flatten(),
+        })
+        .collect())
+}
+
+/// Cache TBA climb data to SQLite (called by sync service after fetch_match_breakdowns)
+#[tauri::command]
+pub async fn cache_tba_climb_data(
+    state: State<'_, Mutex<AppState>>,
+    event: String,
     entries: Vec<serde_json::Value>,
 ) -> Result<(), String> {
     let pool = {
@@ -363,28 +744,92 @@ pub async fn cache_picklist_entries(
     };
 
     for record in entries {
-        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
-        let id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let match_key = record.get("match_key").and_then(|v| v.as_str()).unwrap_or("");
         let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
-        let rank = record.get("rank").and_then(|v| v.as_i64()).unwrap_or(0);
-        let last_modified = record.get("last_modified").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let auto_climb = record.get("auto_climb").and_then(|v| v.as_str());
+        let teleop_climb = record.get("teleop_climb").and_then(|v| v.as_str());
 
         sqlx::query(
-            "INSERT INTO event_picklist_entries (event, id, team, rank, last_modified)
+            "INSERT INTO tba_match_climb (event, match_key, team, auto_climb, teleop_climb)
              VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(event, id, team) DO UPDATE SET
-               rank = excluded.rank,
-               last_modified = excluded.last_modified"
+             ON CONFLICT(event, match_key, team) DO UPDATE SET
+               auto_climb = excluded.auto_climb,
+               teleop_climb = excluded.teleop_climb"
         )
-        .bind(event)
-        .bind(id)
+        .bind(&event)
+        .bind(match_key)
         .bind(team)
-        .bind(rank)
-        .bind(last_modified)
+        .bind(auto_climb)
+        .bind(teleop_climb)
         .execute(&pool)
         .await
-        .map_err(|e| format!("Failed to cache picklist entry: {}", e))?;
+        .map_err(|e| format!("Failed to cache TBA climb entry for {}/{}/{}: {}", event, match_key, team, e))?;
     }
 
     Ok(())
 }
+
+/// Cache match scouting data to SQLite (called by frontend after Supabase fetch)
+#[tauri::command]
+pub async fn cache_match_scouting_data(
+    state: State<'_, Mutex<AppState>>,
+    data: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    for record in data {
+        let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
+        let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
+        let alliance = record.get("alliance").and_then(|v| v.as_str()).unwrap_or("");
+        let data_raw_json = record.get("data_raw").cloned();
+        let data_raw_str = data_raw_json.map(|d| d.to_string());
+        let data_json = record.get("data").cloned();
+        let data_str = data_json.map(|d| d.to_string());
+        let name = record.get("name").and_then(|v| v.as_str());
+        let uid = record.get("uid").and_then(|v| v.as_str());
+        let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
+        let last_modified = record.get("last_modified").and_then(|v| v.as_i64())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+
+        sqlx::query(
+            "INSERT INTO event_match_data (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(event, match, team) DO UPDATE SET
+               alliance = excluded.alliance,
+               data_raw = excluded.data_raw,
+               data = excluded.data,
+               name = excluded.name,
+               uid = excluded.uid,
+               timestamp = excluded.timestamp,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(event)
+        .bind(match_key)
+        .bind(team)
+        .bind(alliance)
+        .bind(data_raw_str)
+        .bind(data_str)
+        .bind(name)
+        .bind(uid)
+        .bind(timestamp)
+        .bind(last_modified)
+        .bind(deleted_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache match scouting data for {}/{}/{}: {}", event, match_key, team, e))?;
+    }
+
+    Ok(())
+}
+

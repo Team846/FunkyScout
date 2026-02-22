@@ -16,10 +16,20 @@ export const DEFAULT_POLLING_CONFIG: PollingConfig = {
   backoffFactor: 1.5,
 };
 
+// Polling config: Development uses slower polling to conserve Supabase limits.
+// Production uses 240s (4 min) same as 2024 + realtime for instant updates.
+const isDevelopment = import.meta.env.DEV;
+
 export const LIVE_POLLING_CONFIG: PollingConfig = {
-  baseInterval: 15_000,
-  maxInterval: 60_000,
+  baseInterval: 300_000, // 5min for both dev and prod (incremental sync reduces per-poll egress)
+  maxInterval: 600_000, // 10min max for backoff headroom
   backoffFactor: 2,
+};
+
+export const BACKUP_API_POLLING_CONFIG: PollingConfig = {
+  baseInterval: 120_000, // 2min for backup external APIs (TBA rankings, etc.)
+  maxInterval: 300_000,
+  backoffFactor: 1.5,
 };
 
 /**

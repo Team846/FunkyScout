@@ -14,7 +14,6 @@ import {
   getTeams as getSQLiteTeams,
   type EventTeamData,
 } from "../lib/db";
-import supabase from "@lib/supabase/supabase";
 
 export interface Team {
   key: string;
@@ -62,68 +61,35 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Refs for stable access in callbacks
-  const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
   const fetchTeamsRef = useRef<(() => Promise<void>) | null>(null);
 
   /**
-   * Three-step fetch pattern:
-   * 1. Read from SQLite cache (fast, works offline)
-   * 2. Refresh from Supabase if online
-   * 3. Update SQLite cache with fresh data
+   * Read team data from local SQLite cache.
+   * Rust sync service (120s, incremental) is the sole Supabase reader —
+   * the frontend never calls Supabase directly for team data.
+   *
+   * Shows whatever SQLite has immediately (offline-safe). Rust sync updates
+   * SQLite in the background; subsequent polls pick up fresh data silently.
    */
   const fetchTeams = useCallback(async () => {
     if (!currentEvent) return;
 
-    const shouldSkipCache = skipCacheOnceRef.current;
-    if (shouldSkipCache) {
-      skipCacheOnceRef.current = false;
-    }
-
     try {
-      // Step 1: Read from SQLite cache (unless skipping)
-      if (!shouldSkipCache) {
-        const cached = await getSQLiteTeams(currentEvent);
-        if (cached.length > 0) {
-          processTeamData(cached);
-          hasLoadedDataRef.current = true;
-        }
-      }
-
-      // Step 2: Refresh from Supabase (desktop is always online)
-
-      // Only show loading on initial load or event change (prevents flickering on background refreshes)
-      const isInitialLoad = !hasLoadedDataRef.current;
-      if (isInitialLoad || shouldSkipCache) {
-        setLoading(true);
-      }
-
-      const { data: supabaseTeams, error } = await supabase
-        .from("event_team_data")
-        .select("event, team, team_name, data, last_modified")
-        .eq("event", currentEvent)
-        .is("deleted_at", null);
-
-      if (error) throw error;
-
-      if (supabaseTeams && supabaseTeams.length > 0) {
-        // Process and display fresh data
-        processTeamData(supabaseTeams as EventTeamData[]);
+      const cached = await getSQLiteTeams(currentEvent);
+      if (cached.length > 0) {
+        processTeamData(cached);
         hasLoadedDataRef.current = true;
-
-        // Note: Backend handles writing to SQLite from TBA
-        // Frontend just reads and displays the latest from Supabase
       }
     } catch (error) {
-      console.error("[DesktopTeamData] Fetch failed:", error);
+      console.error("[DesktopTeamData] Failed to read from SQLite:", error);
     } finally {
       setLoading(false);
     }
   }, [currentEvent]);
 
   /**
-   * Process team data from SQLite or Supabase into display format
+   * Process team data from SQLite into display format
    */
   const processTeamData = (teamData: EventTeamData[]) => {
     const sortedTeams = [...teamData].sort((a, b) => {
@@ -182,23 +148,53 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Skip cache when switching events (if has prior data)
+    // Show loading when switching events (if we had data from a prior event)
     if (hasLoadedDataRef.current) {
-      skipCacheOnceRef.current = true;
+      setLoading(true);
+      hasLoadedDataRef.current = false;
     }
 
+    // 1. Read SQLite immediately — shows cached/stale data (offline-safe)
     fetchTeams();
+
+    // 2. Re-read SQLite after Rust sync has had time to write.
+    //    DesktopCompetitionDataContext calls trigger_sync_now on event change
+    //    and re-reads at these same intervals — team data will be fresh from
+    //    the same Rust sync cycle.
+    const pollDelays = [5_000, 10_000, 20_000];
+    const timers = pollDelays.map((delay) =>
+      setTimeout(() => {
+        fetchTeamsRef.current?.();
+      }, delay)
+    );
+
+    return () => timers.forEach(clearTimeout);
   }, [currentEvent, fetchTeams]);
 
-  // Register refresh callback for realtime updates
+  // Every 135s: re-read SQLite.
+  // DesktopCompetitionDataContext triggers Rust sync every 120s + waits 15s
+  // before re-reading. We align to 135s so team data updates at the same
+  // cadence as schedule/picklist data (after each Rust sync cycle).
+  useEffect(() => {
+    if (!currentEvent) return;
+
+    const timer = setInterval(() => {
+      console.log("[DesktopTeamData] Post-sync SQLite refresh (135s)");
+      fetchTeamsRef.current?.();
+    }, 135_000);
+
+    return () => clearInterval(timer);
+  }, [currentEvent]);
+
+  // Register refresh callback for realtime updates (when realtime is re-enabled)
+  // and for manual sync button (via DesktopSyncContext.forceSyncNow)
   useEffect(() => {
     if (!currentEvent) return;
 
     const unregister = registerRefreshCallback(() => {
-      skipCacheOnceRef.current = true; // Skip cache, fetch from Supabase
-      if (fetchTeamsRef.current) {
-        fetchTeamsRef.current();
-      }
+      // Realtime change detected: re-read SQLite
+      // (Rust sync handles the actual Supabase pull via trigger_sync_now)
+      fetchTeamsRef.current?.();
     });
 
     return unregister;
@@ -210,7 +206,6 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
     () => ({ teams, tbaTeams, loading, refresh }),
     [teams, tbaTeams, loading, refresh]

@@ -105,8 +105,52 @@ CREATE INDEX IF NOT EXISTS idx_event_schedule_match
 
 CREATE INDEX IF NOT EXISTS idx_event_schedule_team
   ON event_schedule(event, team);
+`);
 
+      // Migration: Add columns to existing event_schedule tables
+      // These columns were added for TBA match data and Statbotics predictions
+      const scheduleColumns = [
+        'est_time INTEGER',
+        'red_score INTEGER',
+        'blue_score INTEGER',
+        'red_win_prob REAL',
+        'predicted_red_score INTEGER',
+        'predicted_blue_score INTEGER',
+      ];
 
+      for (const column of scheduleColumns) {
+        try {
+          db.exec(`ALTER TABLE event_schedule ADD COLUMN ${column}`);
+        } catch (e: any) {
+          // Ignore "duplicate column" errors - column already exists
+          if (!e.message?.includes('duplicate column')) {
+            console.warn(`[LocalDB] Migration warning for ${column}:`, e.message);
+          }
+        }
+      }
+
+      // Migration: Fix event_match_data schema to match Supabase (one entry per match-team)
+      // Old schema had PRIMARY KEY (event, match, team, uid, timestamp) - incorrect
+      // New schema has PRIMARY KEY (event, match, team) - matches Supabase UNIQUE constraint
+      try {
+        // Check if old schema exists by trying to query the table
+        const oldSchema = db.exec({
+          sql: "SELECT sql FROM sqlite_master WHERE type='table' AND name='event_match_data'",
+          rowMode: "object"
+        });
+
+        if (oldSchema.length > 0 && oldSchema[0].sql?.includes('uid, timestamp')) {
+          console.log('[LocalDB] Migrating event_match_data schema to match Supabase...');
+
+          // Drop old table (safe - this is just a cache, data can be refetched from Supabase)
+          db.exec('DROP TABLE IF EXISTS event_match_data');
+          console.log('[LocalDB] Dropped old event_match_data table');
+        }
+      } catch (e: any) {
+        console.warn('[LocalDB] event_match_data migration check failed:', e.message);
+      }
+
+      db.exec(`
 CREATE TABLE IF NOT EXISTS event_match_data (
   event TEXT NOT NULL,
   match TEXT NOT NULL,
@@ -117,12 +161,12 @@ CREATE TABLE IF NOT EXISTS event_match_data (
   data TEXT,              -- JSON
   name TEXT,
 
-  uid TEXT NOT NULL,
-  timestamp INTEGER NOT NULL,
+  uid TEXT,               -- Nullable - empty for unscout matches
+  timestamp INTEGER,      -- Nullable - empty for unscout matches
   last_modified INTEGER,
   deleted_at INTEGER,
 
-  PRIMARY KEY (event, match, team, uid, timestamp)
+  PRIMARY KEY (event, match, team)  -- Matches Supabase UNIQUE constraint
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_match_data_lookup

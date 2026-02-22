@@ -6,7 +6,7 @@ import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { toast } from "sonner";
 import { useEvent } from "@lib/context/EventContext";
-import { getEventTeamData, cacheEventTeamData } from "@lib/db";
+import { getEventMatchData, getEventTeamData, getEventSchedule, cacheEventTeamData, type EventMatchData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
 import { putTeamData } from "@lib/data/writes";
 import { getSession } from "@lib/supabase/auth";
@@ -14,6 +14,9 @@ import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import { MatchScoutingTab } from "../components/MatchScoutingTab";
 import type { DrawingData } from "../components/auto-path-drawer/types";
+import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
+import { calculateSingleMatchStats } from "@lib/data/matchStats"
+
 
 type TeamInfoSearch = {
   teamKey?: string;
@@ -30,13 +33,12 @@ interface PitData {
   teamNum: number;
   teamName: string;
   movement: {
-    depot: boolean;
+    bump: boolean;
     trough: boolean;
   };
   intake: {
     ground: boolean;
     station: boolean;
-    depot: boolean;
     stocking: boolean;
   };
   fuel: {
@@ -45,11 +47,14 @@ interface PitData {
     bps?: string;
     capacity?: string;
   };
-  climb: {
+  autoClimb: {
     level: string | null;
-    left: boolean;
-    right: boolean;
-    declimb: boolean;
+    orientation?: string | null;
+    declimbTime?: string;
+  };
+  teleopClimb: {
+    level: string | null;
+    orientation?: string | null;
   };
   autos: Array<{
     name?: string;
@@ -68,6 +73,50 @@ interface PitData {
   };
 }
 
+interface VerificationItem {
+  pitClaimed: boolean | string | null;
+  matchObserved: boolean | string | null;
+  verified: boolean; // true = matches
+}
+
+interface Verifications {
+  movement: {
+    bump: VerificationItem;
+    trough: VerificationItem;
+  };
+  intake: {
+    ground: VerificationItem;
+    station: VerificationItem;
+    stocking: VerificationItem;
+  };
+  fuel: {
+    shootMoving: VerificationItem;
+    passing: VerificationItem;
+  };
+  autoClimb: {
+    level: VerificationItem;
+    orientation: VerificationItem;
+  };
+  teleopClimb: {
+    level: VerificationItem;
+    orientation: VerificationItem;
+  };
+}
+function VerificationBadge({ item }: { item: VerificationItem }) {
+  // Only show a checkmark when the match confirmed it happened — no negative indicators
+  if (item.verified && item.matchObserved !== null && item.matchObserved !== false) {
+    return (
+      <span className="text-xs text-chart-2 bg-chart-2/10 px-2 py-0.5 rounded-full">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="9" fill="#64BA58" strokeWidth="1.2"/>
+        <path d="M8 12L11 15L16 9" stroke="#222" strokeWidth="1.2"/>
+        </svg>
+      </span>
+    );
+  }
+
+  return null;
+}
 function TeamInfoPage() {
   const navigate = useNavigate();
   const { teamKey } = Route.useSearch();
@@ -84,7 +133,14 @@ function TeamInfoPage() {
   const [autoNameValue, setAutoNameValue] = useState("");
   const [autoDescriptionValue, setAutoDescriptionValue] = useState("");
   const [autoClimbValue, setAutoClimbValue] = useState(false);
+  const [zoomImagePath, setZoomImagePath] = useState<string | null>(null);
+  const [mouseX, setMouseX] = useState<number>(50);
+  const [mouseY, setMouseY] = useState<number>(50);
+  const [isZoomed, setIsZoomed] = useState(false);
+  
 
+  const [matchData, setMatchData] = useState<EventMatchData[]>([]);
+  
   useEffect(() => {
     if (!currentEvent || !teamKey) {
       setLoading(false);
@@ -108,6 +164,110 @@ function TeamInfoPage() {
     });
   }, [currentEvent, teamKey]);
 
+
+  useEffect(() => {
+    if (!currentEvent || !teamKey) return;
+
+    Promise.all([
+      getEventMatchData(currentEvent, undefined, teamKey),
+      getEventTeamData(currentEvent),
+      getEventSchedule(currentEvent),
+    ]).then(([matchDataResult, teamDataResult, scheduleResult]) => {
+      console.log("Raw match data count:", matchDataResult.length);
+      console.log("Sample record:", matchDataResult[0]);
+      console.log("teamKey filter:", teamKey);
+      
+      const validData = matchDataResult.filter((d) => !d.deleted_at && d.name);
+      console.log("After filter:", validData.length);
+      console.log(validData)
+
+      console.log(pitData)
+      
+      setMatchData(validData);
+      console.log(matchData)
+    });
+  }, [currentEvent, teamKey]);
+
+  const computeVerifications = (
+  pit: PitData,
+  matches: EventMatchData[]
+): Verifications => {
+  // Aggregate match observations across all scouted matches
+  const observed = {
+    bump:         matches.some(m => m.data_raw?.postMatch?.bump),
+    trough:       matches.some(m => m.data_raw?.postMatch?.trough),
+    ground:       matches.some(m => m.data_raw?.postMatch?.canGround),
+    station:      matches.some(m => m.data_raw?.postMatch?.canStation),
+    stocking:     matches.some(m => m.data_raw?.postMatch?.canStocking),
+    shootMoving:  matches.some(m => m.data_raw?.postMatch?.shootMoving),
+    passing:      matches.some(m => m.data_raw?.postMatch?.canPass),
+    autoClimbLevel:       matches.some(m => !!m.data_raw?.auto?.climbLevel),
+    autoClimbOrientation: matches
+      .map(m => m.data_raw?.postMatch?.autoClimbOrientation)
+      .find(v => v != null) ?? null,
+    teleopClimbLevel: matches
+      .map(m => calculateSingleMatchStats(m)?.climb?.level)
+      .find(v => v != null) ?? null,
+    teleopClimbOrientation: matches
+      .map(m => m.data_raw?.postMatch?.teleopClimbOrientation)
+      .find(v => v != null) ?? null,
+  };
+
+  const boolItem = (pitVal: boolean, obsVal: boolean): VerificationItem => ({
+    pitClaimed: pitVal,
+    matchObserved: obsVal,
+    // Only flag discrepancy if pit said YES but match never showed it
+    // (pit said NO but match showed YES is also notable)
+    verified: pitVal === obsVal || (!pitVal && obsVal), 
+  });
+
+  const strItem = (
+    pitVal: string | null,
+    obsVal: string | null
+  ): VerificationItem => ({
+    pitClaimed: pitVal,
+    matchObserved: obsVal,
+    verified: obsVal == null || pitVal === obsVal,
+  });
+
+  return {
+    movement: {
+      bump:   boolItem(pit.movement?.bump ?? false, observed.bump),
+      trough: boolItem(pit.movement?.trough ?? false, observed.trough),
+    },
+    intake: {
+      ground:   boolItem(pit.intake?.ground ?? false, observed.ground),
+      station:  boolItem(pit.intake?.station ?? false, observed.station),
+      stocking: boolItem(pit.intake?.stocking ?? false, observed.stocking),
+    },
+    fuel: {
+      shootMoving: boolItem(pit.fuel?.shootMoving ?? false, observed.shootMoving),
+      passing:     boolItem(pit.fuel?.passing ?? false, observed.passing),
+    },
+    autoClimb: {
+      level:       boolItem(pit.autoClimb?.level != null, observed.autoClimbLevel),
+      orientation: strItem(pit.autoClimb?.orientation ?? null, observed.autoClimbOrientation),
+    },
+    teleopClimb: {
+      level:       strItem(pit.teleopClimb?.level ?? null, observed.teleopClimbLevel),
+      orientation: strItem(pit.teleopClimb?.orientation ?? null, observed.teleopClimbOrientation),
+    },
+  };
+  };
+  const [verifications, setVerifications] = useState<Verifications | null>(null);
+
+  
+  useEffect(() => {
+  if (pitData && matchData.length > 0) {
+    setVerifications(computeVerifications(pitData, matchData));
+  } else {
+    setVerifications(null);
+  }
+  }, [pitData, matchData]);
+
+  
+ 
+    
   const handleEditAuto = (index: number) => {
     setEditingAutoIndex(index);
     setDrawerOpen(true);
@@ -149,7 +309,7 @@ function TeamInfoPage() {
       };
 
       // Save to local DB
-      await cacheEventTeamData([
+      await cacheEventTeamData(currentEvent, [
         {
           event: currentEvent,
           team: teamKey,
@@ -233,7 +393,7 @@ function TeamInfoPage() {
       };
 
       // Save to local DB
-      await cacheEventTeamData([
+      await cacheEventTeamData(currentEvent, [
         {
           event: currentEvent,
           team: teamKey,
@@ -409,6 +569,37 @@ function TeamInfoPage() {
                   {pitData.teamName}
                 </p>
               </div>
+              {/* Image zoom */}
+              <Dialog open={zoomImagePath != null}
+              onOpenChange={() => (setZoomImagePath(null))}
+              >
+                <DialogContent
+                className="fixed w-full h-[40vh]"
+                
+                >
+                  <div className="flex w-full h-full p-2.5 overflow-hidden">
+                  {zoomImagePath &&
+                    <img
+                    src={zoomImagePath}
+                    className="w-full h-full object-cover transition-transform duration-300 ease-out hover:scale-150"
+                    crossOrigin="anonymous"
+                    style={{ transformOrigin: `${mouseX ?? 50}% ${mouseY ?? 50}%`, transform: `scale(${isZoomed ? 1.5 : 1})` }}
+                    onPointerMove={
+                      (event) => {
+                        const { left, top, width, height } = event.currentTarget.getBoundingClientRect();
+                        setMouseX(((event.clientX - left) / width) * 150);
+                        setMouseY(((event.clientY - top) / height) * 150)
+                      }
+                    }
+                    onPointerEnter={() => setIsZoomed(true)}
+                    onPointerLeave={() => setIsZoomed(false)}
+                    >
+                    </img>
+                  }
+                  </div>
+                </DialogContent>
+              </Dialog>
+
               {/* Images Section */}
               {pitData.images &&
                 pitData.images.files &&
@@ -427,6 +618,7 @@ function TeamInfoPage() {
                           >
                             <img
                               src={getImageUrl(img.path)}
+                              onClick={() => {setZoomImagePath(getImageUrl(img.path))}}
                               alt={`Team ${teamNum} - ${idx + 1}`}
                               className="w-full h-full object-cover"
                               crossOrigin="anonymous"
@@ -439,91 +631,92 @@ function TeamInfoPage() {
 
               {/* GENERATED:DISPLAY:START */}
 
-              {/* Movement Section */}
+                            {/* Movement Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  MOVEMENT
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">MOVEMENT</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Depot</p>
-                    <p
-                      className={`font-semibold ${pitData.movement?.depot ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.movement?.depot ? "Yes" : "No"}
-                    </p>
+                    <p className="text-foreground">Bump</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.movement?.bump ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.movement?.bump ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.movement.bump} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Trough</p>
-                    <p
-                      className={`font-semibold ${pitData.movement?.trough ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.movement?.trough ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.movement?.trough ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.movement?.trough ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.movement.trough} />}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Intake Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  INTAKE
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">INTAKE</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Ground</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.ground ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.ground ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.intake?.ground ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.ground ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.intake.ground} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Station</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.station ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.station ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.intake.station} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Stocking</p>
-                    <p
-                      className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.intake?.stocking ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.stocking ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.intake.stocking} />}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Fuel Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  FUEL
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">FUEL</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Shoot as moving</p>
-                    <p
-                      className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.fuel?.shootMoving ? "Yes" : "No"}
-                    </p>
+                    <p className="text-foreground">Shoot Moving</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.fuel?.shootMoving ? "Yes" : "No"}
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.fuel.shootMoving} />}
+                    </div>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Passing</p>
-                    <p
-                      className={`font-semibold ${pitData.fuel?.passing ? "text-chart-2" : "text-destructive"}`}
-                    >
-                      {pitData.fuel?.passing ? "Yes" : "No"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold ${pitData.fuel?.passing ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.fuel?.passing ? "Yes" : "No"}
+                        
+                      </p>
+                      {verifications && <VerificationBadge item={verifications.fuel.passing} />}
+                    </div>
                   </div>
-                  <div className="h-px bg-border my-2" />
                   {(pitData.fuel?.bps || pitData.fuel?.capacity) && (
                     <>
                       <div className="h-px bg-border my-2" />
@@ -531,17 +724,13 @@ function TeamInfoPage() {
                         {pitData.fuel?.bps && (
                           <div>
                             <p className="text-foreground text-sm mb-1">Balls Per Sec</p>
-                            <p className="font-semibold text-foreground">
-                              {pitData.fuel.bps}
-                            </p>
+                            <p className="font-semibold text-foreground">{pitData.fuel.bps}</p>
                           </div>
                         )}
                         {pitData.fuel?.capacity && (
                           <div>
                             <p className="text-foreground text-sm mb-1">Ball Capacity</p>
-                            <p className="font-semibold text-foreground">
-                              {pitData.fuel.capacity}
-                            </p>
+                            <p className="font-semibold text-foreground">{pitData.fuel.capacity}</p>
                           </div>
                         )}
                       </div>
@@ -550,20 +739,59 @@ function TeamInfoPage() {
                 </div>
               </div>
 
-              {/* Climb Section */}
+              {/* Auto Climb Section */}
               <div>
-                <p className="text-base text-primary font-semibold mb-3">
-                  CLIMB
-                </p>
+                <p className="text-base text-primary font-semibold mb-3">AUTO CLIMB</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
+                  {pitData.autoClimb?.declimbTime && (
+                    <>
+                      <div className="h-px bg-border my-2" />
+                      <div className="grid grid-cols-2 gap-4 py-2">
+                        <div>
+                          <p className="text-foreground text-sm mb-1">Declimb Time (s)</p>
+                          <p className="font-semibold text-foreground">{pitData.autoClimb.declimbTime}</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Max Level</p>
-                    <p className="font-semibold text-foreground">
-                      {pitData.climb?.level || "None"}
-                    </p>
+                    <p className="text-foreground">Auto Climb</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.autoClimb?.level || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.autoClimb.level} />}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Orientation</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.autoClimb?.orientation || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.autoClimb.orientation} />}
+                    </div>
                   </div>
                 </div>
               </div>
+
+              {/* Teleop Climb Section */}
+              <div>
+                <p className="text-base text-primary font-semibold mb-3">TELEOP CLIMB</p>
+                <div className="rounded-2xl bg-muted px-6 py-4">
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Climb Level</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.teleopClimb?.level || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.teleopClimb.level} />}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Orientation</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-foreground">{pitData.teleopClimb?.orientation || "None"}</p>
+                      {verifications && <VerificationBadge item={verifications.teleopClimb.orientation} />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
         {/* GENERATED:END */}
 
               {/* Autos Section */}

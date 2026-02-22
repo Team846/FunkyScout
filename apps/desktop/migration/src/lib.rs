@@ -3,6 +3,9 @@ pub use sea_orm_migration::prelude::*;
 mod m20251113_173514_init;
 mod m20260209_add_tba_columns;
 mod m20260210_sync_queue;
+mod m20260215_fix_user_roles;
+mod m20260219_add_tba_climb;
+mod m20260220_collapse_picklist_entries;
 
 pub struct Migrator;
 
@@ -13,6 +16,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20251113_173514_init::Migration),
             Box::new(m20260209_add_tba_columns::Migration),
             Box::new(m20260210_sync_queue::Migration),
+            Box::new(m20260215_fix_user_roles::Migration),
+            Box::new(m20260219_add_tba_climb::Migration),
+            Box::new(m20260220_collapse_picklist_entries::Migration),
         ]
     }
 }

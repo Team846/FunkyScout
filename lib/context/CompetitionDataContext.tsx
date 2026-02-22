@@ -10,22 +10,28 @@ import {
 } from "react";
 import { useEvent } from "./EventContext";
 import { useSync } from "./SyncContext";
-import { getSchedule, getMatchData, getPicklists, syncShiftAssignments } from "@lib/data";
+import {
+  getSchedule,
+  getMatchData,
+  getPicklists,
+  syncShiftAssignments,
+} from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
-import type { EventPicklist as SupabaseEventPicklist, EventPicklistEntry as SupabaseEventPicklistEntry } from "../data/schema";
+import type {
+  EventPicklist as SupabaseEventPicklist,
+} from "../data/schema";
 import {
   getEventSchedule,
   getTbaMatches,
   cacheTbaMatches,
   cacheEventPicklists,
-  cacheEventPicklistEntries,
   type TbaMatch,
 } from "@lib/db";
 import {
   PollingController,
-  DEFAULT_POLLING_CONFIG,
   LIVE_POLLING_CONFIG,
+  BACKUP_API_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
 import supabase from "@lib/supabase/supabase";
 
@@ -34,7 +40,7 @@ export interface ScheduleEntry {
   team: string;
   alliance: "red" | "blue";
   name?: string; // Assigned scout name
-  uid?: string;  // Assigned scout uid
+  uid?: string; // Assigned scout uid
   // Match timing & scores (from TBA via desktop)
   est_time?: number;
   red_score?: number | null;
@@ -84,11 +90,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const schedulePolling = useRef<PollingController | null>(null);
   const nexusPolling = useRef<PollingController | null>(null);
   const picklistPolling = useRef<PollingController | null>(null);
+  const matchDataPolling = useRef<PollingController | null>(null);
 
   // Refs for stable access in refresh callback
   const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
   const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
   const fetchPicklistsRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchMatchDataRef = useRef<(() => Promise<void>) | null>(null);
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
 
@@ -110,11 +118,13 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
       if (cachedSchedule.length > 0) {
         setSchedule(
-          cachedSchedule.map((s: { match: string; team: string; alliance: string }) => ({
-            match: s.match,
-            team: s.team,
-            alliance: s.alliance as "red" | "blue",
-          }))
+          cachedSchedule.map(
+            (s: { match: string; team: string; alliance: string }) => ({
+              match: s.match,
+              team: s.team,
+              alliance: s.alliance as "red" | "blue",
+            })
+          )
         );
         hasLoadedDataRef.current = true;
       }
@@ -148,10 +158,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           fetchTBAMatchSchedule(currentEvent),
         ]);
 
-        console.log(`[CompetitionData] getSchedule returned ${supabaseSchedule?.length ?? 0} entries`);
+        console.log(
+          `[CompetitionData] getSchedule returned ${supabaseSchedule?.length ?? 0} entries`
+        );
 
         // Check if desktop has synced match data
-        const hasMatchData = supabaseSchedule && supabaseSchedule.some((s: any) => s.est_time != null);
+        const hasMatchData =
+          supabaseSchedule &&
+          supabaseSchedule.some((s: any) => s.est_time != null);
 
         if (supabaseSchedule) {
           const entries = supabaseSchedule.map((s: any) => ({
@@ -175,14 +189,16 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             const matchData: Record<string, TBAMatchData> = {};
             entries.forEach((entry) => {
               if (!matchData[entry.match]) {
-                const matchEntries = entries.filter(e => e.match === entry.match);
+                const matchEntries = entries.filter(
+                  (e) => e.match === entry.match
+                );
                 matchData[entry.match] = {
                   redTeams: matchEntries
-                    .filter(e => e.alliance === "red")
-                    .map(e => e.team),
+                    .filter((e) => e.alliance === "red")
+                    .map((e) => e.team),
                   blueTeams: matchEntries
-                    .filter(e => e.alliance === "blue")
-                    .map(e => e.team),
+                    .filter((e) => e.alliance === "blue")
+                    .map((e) => e.team),
                   est_time: entry.est_time ?? 0,
                   redScore: entry.red_score ?? null,
                   blueScore: entry.blue_score ?? null,
@@ -194,7 +210,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             });
             setTbaSchedule(matchData);
           } else {
-            console.log("[CompetitionData] No match data from desktop, will use TBA fallback");
+            console.log(
+              "[CompetitionData] No match data from desktop, will use TBA fallback"
+            );
           }
           // Note: getSchedule() already handles caching with correct timestamp conversion
         }
@@ -268,32 +286,36 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       try {
         const data = await getPicklists(currentEvent);
 
-        if (data) {
-          // Convert Supabase schema (string timestamps) to local SQLite schema (number timestamps)
-          const localPicklists = data.picklists.map((p: SupabaseEventPicklist) => ({
-            ...p,
-            timestamp: p.timestamp ? new Date(p.timestamp).getTime() : undefined,
-            last_modified: p.last_modified ? new Date(p.last_modified).getTime() : undefined,
-            deleted_at: p.deleted_at ? new Date(p.deleted_at).getTime() : undefined,
-          }));
+        if (data && data.picklists.length > 0) {
+          console.log(`[CompetitionData] Received ${data.picklists.length} picklists (isIncremental=${data.isIncremental})`);
 
-          const localEntries = data.entries.map((e: SupabaseEventPicklistEntry) => ({
-            ...e,
-            last_modified: e.last_modified ? new Date(e.last_modified).getTime() : undefined,
-            deleted_at: e.deleted_at ? new Date(e.deleted_at).getTime() : undefined,
-          }));
-
-          // Cache picklists to local SQLite
-          await cacheEventPicklists(localPicklists);
-
-          // Cache picklist entries to local SQLite
-          if (localEntries.length > 0) {
-            await cacheEventPicklistEntries(localEntries);
+          if (data.isIncremental) {
+            // Incremental sync: getPicklists already called upsertEventPicklistsRows internally
+            // with correctly-converted timestamps. Nothing more to do here — do NOT call
+            // cacheEventPicklists (DELETE-all + INSERT) with a partial list.
+            console.log("[CompetitionData] ✅ Incremental: cache already updated by getPicklists");
+          } else {
+            // Full load: replace all local picklists with the complete Supabase result.
+            // Convert Supabase ISO timestamps → epoch ms for WASM SQLite INTEGER columns.
+            const localPicklists = data.picklists.map(
+              (p: SupabaseEventPicklist) => ({
+                ...p,
+                timestamp: p.timestamp
+                  ? new Date(p.timestamp).getTime()
+                  : undefined,
+                last_modified: p.last_modified
+                  ? new Date(p.last_modified).getTime()
+                  : undefined,
+                deleted_at: p.deleted_at
+                  ? new Date(p.deleted_at).getTime()
+                  : undefined,
+              })
+            );
+            await cacheEventPicklists(currentEvent, localPicklists);
+            console.log(
+              `[CompetitionData] ✅ Full load: cached ${localPicklists.length} picklists`
+            );
           }
-
-          console.log(
-            `[CompetitionData] Synced ${data.picklists.length} picklists with ${data.entries.length} entries from Supabase`,
-          );
         }
       } catch (error) {
         console.error("[CompetitionData] Failed to fetch picklists:", error);
@@ -306,14 +328,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchScheduleRef.current = fetchSchedule;
     fetchNexusRef.current = fetchNexus;
     fetchPicklistsRef.current = fetchPicklists;
-  }, [fetchSchedule, fetchNexus, fetchPicklists]);
-
-  // Initial fetch of match data when event loads
-  useEffect(() => {
-    if (currentEvent && dbInitialized && isOnline) {
-      fetchMatchData();
-    }
-  }, [currentEvent, dbInitialized, isOnline, fetchMatchData]);
+    fetchMatchDataRef.current = fetchMatchData;
+  }, [fetchSchedule, fetchNexus, fetchPicklists, fetchMatchData]);
 
   // Stable wrappers for polling - always call latest fetch functions
   const fetchScheduleStable = useCallback(async () => {
@@ -334,6 +350,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
   }, []); // Never changes!
 
+  const fetchMatchDataStable = useCallback(async () => {
+    if (fetchMatchDataRef.current) {
+      await fetchMatchDataRef.current();
+    }
+  }, []); // Never changes!
+
   // Start controllers once when dbInitialized (never stop/start on event changes)
   useEffect(() => {
     if (!dbInitialized) return;
@@ -342,7 +364,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       schedulePolling.current = new PollingController(
         "Schedule",
         fetchScheduleStable,
-        DEFAULT_POLLING_CONFIG
+        LIVE_POLLING_CONFIG // 2min dev, 4min prod polling for shift assignments
       );
       schedulePolling.current.start();
     }
@@ -350,7 +372,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       nexusPolling.current = new PollingController(
         "Nexus",
         fetchNexusStable,
-        LIVE_POLLING_CONFIG
+        BACKUP_API_POLLING_CONFIG // 2min — no rate limits, more realtime than Supabase polls
       );
       nexusPolling.current.start();
     }
@@ -358,17 +380,36 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       picklistPolling.current = new PollingController(
         "Picklists",
         fetchPicklistsStable,
-        DEFAULT_POLLING_CONFIG
+        LIVE_POLLING_CONFIG // 2min dev, 4min prod polling for picklists
       );
       picklistPolling.current.start();
+    }
+    if (!matchDataPolling.current) {
+      matchDataPolling.current = new PollingController(
+        "Match Data",
+        fetchMatchDataStable,
+        LIVE_POLLING_CONFIG // 2min dev, 4min prod polling for match scouting data
+      );
+      matchDataPolling.current.start();
     }
 
     return () => {
       schedulePolling.current?.stop();
+      schedulePolling.current = null;
       nexusPolling.current?.stop();
+      nexusPolling.current = null;
       picklistPolling.current?.stop();
+      picklistPolling.current = null;
+      matchDataPolling.current?.stop();
+      matchDataPolling.current = null;
     };
-  }, [dbInitialized, fetchScheduleStable, fetchNexusStable, fetchPicklistsStable]);
+  }, [
+    dbInitialized,
+    fetchScheduleStable,
+    fetchNexusStable,
+    fetchPicklistsStable,
+    fetchMatchDataStable,
+  ]);
 
   // Handle event changes - fetch data immediately
   useEffect(() => {
@@ -378,7 +419,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       setNexusMatches([]);
       setInitialLoading(false);
       hasLoadedDataRef.current = false;
-    return;
+      return;
     }
 
     if (dbInitialized) {
@@ -387,17 +428,37 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }
+      // Trigger one immediate fetch per data type.
+      // Pollers handle the 5-min periodic background refresh.
+      // forceRefresh() is NOT called here — that would duplicate these calls.
       fetchSchedule();
       fetchNexus();
       fetchPicklists();
+      fetchMatchData();
     }
-  }, [currentEvent, dbInitialized, fetchSchedule, fetchNexus, fetchPicklists, isOnline]);
+  }, [
+    currentEvent,
+    dbInitialized,
+    fetchSchedule,
+    fetchNexus,
+    fetchPicklists,
+    fetchMatchData,
+    isOnline,
+  ]);
 
   // Subscribe to Supabase realtime for schedule/match/picklist updates
   useEffect(() => {
     if (!currentEvent || !dbInitialized || !isOnline) return;
 
-    console.log('[Competition] Setting up realtime subscriptions');
+    // Disable realtime in development to save on Supabase free tier limits
+    if (import.meta.env.DEV) {
+      console.log(
+        "[Competition] Realtime subscriptions disabled in development mode"
+      );
+      return;
+    }
+
+    console.log("[Competition] Setting up realtime subscriptions");
 
     // Debounce timers to batch multiple realtime updates
     let scheduleDebounceTimer: NodeJS.Timeout | null = null;
@@ -407,20 +468,29 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
     const channel = supabase
       .channel(`competition-data-${currentEvent}`)
+      // Monitor channel status for debugging
+      .on("system", { event: "CHANNEL_STATE" }, (payload) => {
+        console.log("[Competition] Realtime channel state:", payload);
+      })
+      .on("system", { event: "CHANNEL_ERROR" }, (error) => {
+        console.error("[Competition] Realtime channel error:", error);
+      })
       // Listen for schedule changes (rare - manual updates by admin)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'event_schedule',
-          filter: `event=eq.${currentEvent}`
+          event: "*",
+          schema: "public",
+          table: "event_schedule",
+          filter: `event=eq.${currentEvent}`,
         },
         () => {
           scheduleUpdateCount++;
           if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
           scheduleDebounceTimer = setTimeout(async () => {
-            console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} schedule updates`);
+            console.log(
+              `[Competition] Realtime: Batched ${scheduleUpdateCount} schedule updates`
+            );
             scheduleUpdateCount = 0;
             fetchSchedule();
             // Sync shift assignments to match data
@@ -430,18 +500,20 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       )
       // Listen for match data changes (mobile scouts, desktop posts results)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'event_match_data',
-          filter: `event=eq.${currentEvent}`
+          event: "*",
+          schema: "public",
+          table: "event_match_data",
+          filter: `event=eq.${currentEvent}`,
         },
         () => {
           scheduleUpdateCount++;
           if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
           scheduleDebounceTimer = setTimeout(() => {
-            console.log(`[Competition] Realtime: Batched ${scheduleUpdateCount} match data updates`);
+            console.log(
+              `[Competition] Realtime: Batched ${scheduleUpdateCount} match data updates`
+            );
             scheduleUpdateCount = 0;
             fetchMatchData();
           }, 2000);
@@ -449,40 +521,59 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       )
       // Listen for picklist changes (desktop or other mobile users edit)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'event_picklist',
-          filter: `event=eq.${currentEvent}`
+          event: "*",
+          schema: "public",
+          table: "event_picklist",
+          filter: `event=eq.${currentEvent}`,
         },
         () => {
           picklistUpdateCount++;
           if (picklistDebounceTimer) clearTimeout(picklistDebounceTimer);
           picklistDebounceTimer = setTimeout(() => {
-            console.log(`[Competition] Realtime: Batched ${picklistUpdateCount} picklist updates`);
+            console.log(
+              `[Competition] Realtime: Batched ${picklistUpdateCount} picklist updates`
+            );
             picklistUpdateCount = 0;
             fetchPicklists();
           }, 2000);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[Competition] ✅ Realtime subscribed successfully");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("[Competition] ❌ Realtime subscription error:", err);
+        } else if (status === "TIMED_OUT") {
+          console.warn("[Competition] ⏱️ Realtime subscription timed out");
+        } else if (status === "CLOSED") {
+          console.log("[Competition] 🔌 Realtime channel closed");
+        }
+      });
 
     return () => {
-      console.log('[Competition] Cleaning up realtime subscriptions');
+      console.log("[Competition] Cleaning up realtime subscriptions");
       if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
       if (picklistDebounceTimer) clearTimeout(picklistDebounceTimer);
+
+      // Best practice: unsubscribe before removing
+      channel.unsubscribe();
       supabase.removeChannel(channel);
+
+      console.log("[Competition] ✅ Realtime channel removed");
     };
   }, [currentEvent, dbInitialized, isOnline, fetchSchedule, fetchPicklists]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");
-    // Use refs to call current fetch functions without changing callback identity
+    // Use refs to call current fetch functions without changing callback identity.
+    // forceRefresh() is NOT called — that would duplicate these fetches.
     const promises = [];
     if (fetchScheduleRef.current) promises.push(fetchScheduleRef.current());
     if (fetchNexusRef.current) promises.push(fetchNexusRef.current());
     if (fetchPicklistsRef.current) promises.push(fetchPicklistsRef.current());
+    if (fetchMatchDataRef.current) promises.push(fetchMatchDataRef.current());
     await Promise.all(promises);
   }, []); // Empty dependencies - callback never changes!
 
@@ -503,7 +594,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
 
   // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
-    () => ({ schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh }),
+    () => ({
+      schedule,
+      tbaSchedule,
+      nexusMatches,
+      loading,
+      initialLoading,
+      refresh,
+    }),
     [schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh]
   );
 

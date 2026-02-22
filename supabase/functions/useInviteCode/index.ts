@@ -87,6 +87,14 @@ Deno.serve(async (req) => {
          if (updateError) {
             throw new Error("Error updating user role");
          }
+
+         // Force user to re-authenticate to get fresh JWT with new role
+         console.log(`Signing out user ${userID.substring(0, 5)}... to refresh token`);
+         const { error: signOutError } = await supabase.auth.admin.signOut(userID);
+         if (signOutError) {
+            console.warn("Could not sign out user:", signOutError.message);
+            // Don't fail - user can manually sign out
+         }
       } else {
          throw new Error("Invalid code");
       }
@@ -94,7 +102,8 @@ Deno.serve(async (req) => {
       // Respond with success
       return new Response(
          JSON.stringify({
-            message: "Successfully updated your role",
+            message: "Successfully updated your role. Please sign in again.",
+            requiresReauth: true,
          }),
          {
             headers: { ...corsHeaders, "Content-Type": "application/json" },

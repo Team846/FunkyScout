@@ -280,8 +280,18 @@ function generateConditionalFields(sectionId: string, fields: SchemaField[]): st
     const isEven = condFields.length % 2 === 0;
 
     if (condFields.length === 1) {
-      // Single field, full width
-      jsx += generateFieldJsx(sectionId, condFields[0], "              ");
+      const singleField = condFields[0];
+      if (singleField.type === "select" && (singleField.options?.length ?? 0) > 1) {
+        // Select renders multiple adjacent toggle elements — wrap in a grid div
+        const optCount = singleField.options!.length;
+        const cols = optCount <= 2 ? "grid-cols-2" : optCount === 3 ? "grid-cols-3" : "grid-cols-4";
+        jsx += `              <div className="${cols} grid gap-3">\n`;
+        jsx += generateFieldJsx(sectionId, singleField, "                ");
+        jsx += "              </div>\n";
+      } else {
+        // Single non-select field, full width
+        jsx += generateFieldJsx(sectionId, singleField, "              ");
+      }
     } else if (isEven) {
       // Even number: all in grid-cols-2
       jsx += '              <div className="grid grid-cols-2 gap-3">\n';

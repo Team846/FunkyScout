@@ -20,16 +20,24 @@ import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { useAnalytics } from "@lib/context/AnalyticsDataContext";
+import { useSync } from "@lib/context/SyncContext";
 import { DashboardPage } from "../pages/home/DashboardPage";
 import { ShiftsPage } from "../pages/home/ShiftsPage";
 import { DataPage } from "../pages/home/DataPage";
 import { ScoutingPage } from "../pages/home/ScoutingPage";
 
+type PageType = "dashboard" | "shifts" | "data" | "scouting";
+
+type HomeSearch = {
+  tab?: PageType;
+};
+
 export const Route = createFileRoute("/home")({
   component: HomePage,
+  validateSearch: (search: Record<string, unknown>): HomeSearch => ({
+    tab: (search.tab as PageType | undefined),
+  }),
 });
-
-type PageType = "dashboard" | "shifts" | "data" | "scouting";
 
 const PAGE_TITLES: Record<PageType, string> = {
   dashboard: "Dashboard",
@@ -40,14 +48,16 @@ const PAGE_TITLES: Record<PageType, string> = {
 
 function HomePage() {
   const navigate = useNavigate();
+  const { tab } = Route.useSearch();
+  const currentPage: PageType = tab || "dashboard";
   const { currentEvent } = useEvent();
   const [userData, setUserData] = useState(getLocalUserData());
-  const [currentPage, setCurrentPage] = useState<PageType>("dashboard");
 
-  // Context refresh functions
-  const { refresh: refreshTeams } = useTeamData();
-  const { refresh: refreshCompetition } = useCompetition();
-  const { refresh: refreshAnalytics } = useAnalytics();
+  const setCurrentPage = (page: PageType) => {
+    navigate({ to: "/home", search: { tab: page }, replace: true });
+  };
+
+  const { forceSyncNow, lastSyncedAt } = useSync();
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -98,13 +108,20 @@ function HomePage() {
     try {
       const success = await useInviteCode(inviteCode.trim());
       if (success) {
-        toast.success("Invite code applied successfully!");
+        toast.success("Role updated! Please sign in again.");
         setInviteCode("");
-        // Refresh user data
+
+        // Check if user was signed out (role promotion requires re-auth)
         const profile = await fetchUserProfile();
-        if (profile) {
-          setUserData(profile);
+        if (!profile) {
+          // User was signed out, redirect to auth
+          setSettingsOpen(false);
+          navigate({ to: "/" });
+          return;
         }
+
+        // No sign out needed, just update local data
+        setUserData(profile);
       } else {
         toast.error("Failed to apply invite code");
       }
@@ -113,16 +130,21 @@ function HomePage() {
     }
   };
 
+  const REFRESH_THROTTLE_MS = 10 * 60 * 1000; // 10 minutes
+
   const handleRefresh = async () => {
     if (refreshing) return;
 
+    const timeSinceLast = lastSyncedAt ? Date.now() - lastSyncedAt : Infinity;
+    if (timeSinceLast < REFRESH_THROTTLE_MS) {
+      const minsAgo = Math.floor(timeSinceLast / 60_000);
+      toast.info(`Data is up to date (synced ${minsAgo}m ago)`);
+      return;
+    }
+
     setRefreshing(true);
     try {
-      await Promise.all([
-        refreshTeams(),
-        refreshCompetition(),
-        refreshAnalytics(),
-      ]);
+      await forceSyncNow();
       toast.success("Data refreshed successfully!");
     } catch (error) {
       console.error("Refresh failed:", error);
