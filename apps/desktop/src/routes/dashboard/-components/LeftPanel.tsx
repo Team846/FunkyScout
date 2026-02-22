@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Info, Trophy, Zap, BarChart3 } from "lucide-react";
+import { useTabContext } from "../../../contexts/TabContext";
 import { Progress } from "@shadcn/ui/components/progress.tsx";
 import type { ScheduleEntry } from "../../../contexts/DesktopCompetitionDataContext";
 import type { MatchScoutingData } from "../../../lib/db";
@@ -18,6 +19,7 @@ interface LeftPanelProps {
 }
 
 export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
+  const { tabs, setActiveTab } = useTabContext();
   const navigate = useNavigate();
 
   // Match Progress: unique qual matches with actual scores / total unique qual matches
@@ -154,7 +156,14 @@ export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
             Strategy
           </button>
           <button
-            onClick={() => navigate({ to: "/exclusion-test" })}
+            onClick={() => {
+              const picklistTabs = tabs.filter((t) => t.id.startsWith("picklist-"));
+              if (picklistTabs.length > 0) {
+                setActiveTab(picklistTabs[picklistTabs.length - 1].id);
+              } else {
+                navigate({ to: "/picklists" });
+              }
+            }}
             className="text-xs bg-secondary text-foreground rounded-lg p-3 text-center hover:bg-secondary/80 transition-colors border border-border flex flex-col items-center gap-1.5"
           >
             <Trophy className="w-4 h-4" />

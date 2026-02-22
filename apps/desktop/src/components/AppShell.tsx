@@ -66,10 +66,10 @@ interface EventListEntry {
 }
 
 const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Calendar, label: "Shifts", path: "/shifts" },
-  { icon: ListOrdered, label: "Picklists", path: "/exclusion-test" },
-  { icon: GitCompare, label: "Comparisons", path: null }, // Not yet implemented
+  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", activePaths: ["/dashboard"] },
+  { icon: Calendar, label: "Shifts", path: "/shifts", activePaths: ["/shifts"] },
+  { icon: ListOrdered, label: "Picklists", path: "/picklists", activePaths: ["/picklists", "/exclusion-test"] },
+  { icon: GitCompare, label: "Comparisons", path: null as string | null, activePaths: [] },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -209,7 +209,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         event: bootstrapEventKey.trim(),
       });
       setBootstrapMsg(
-        `Bootstrapped ${count} rows for ${bootstrapEventKey.trim()}`,
+        `Bootstrapped ${count} rows for ${bootstrapEventKey.trim()}`
       );
       setBootstrapEventKey("");
       setShowBootstrapDialog(false);
@@ -360,8 +360,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {/* Nav items */}
           <div className="flex flex-col items-center gap-1 flex-1">
-            {NAV_ITEMS.map(({ icon: Icon, label, path }) => {
-              const isActive = path ? currentPath.startsWith(path) : false;
+            {NAV_ITEMS.map(({ icon: Icon, label, path, activePaths }) => {
+              const isActive = activePaths.length > 0
+                ? activePaths.some((p) => currentPath.startsWith(p))
+                : false;
               const isDisabled = path === null;
 
               return (
@@ -369,7 +371,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => {
-                        if (!isDisabled && path) navigate({ to: path });
+                        if (isDisabled || !path) return;
+                        if (label === "Picklists") {
+                          const picklistTabs = tabs.filter((t) => t.id.startsWith("picklist-"));
+                          if (picklistTabs.length > 0) {
+                            setActiveTab(picklistTabs[picklistTabs.length - 1].id);
+                          } else {
+                            navigate({ to: "/picklists" });
+                          }
+                        } else {
+                          navigate({ to: path });
+                        }
                       }}
                       disabled={isDisabled}
                       className={[

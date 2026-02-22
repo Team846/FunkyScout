@@ -41,6 +41,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/exclusion-test")({
   component: PicklistEditorPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    id: (search.id as string) || "",
+  }),
 });
 
 interface SortableItemProps {
@@ -103,9 +106,12 @@ function SortableItem({ team, rank, excluded, onToggleExclude }: SortableItemPro
 }
 
 function PicklistEditorPage() {
+  const { id: initialId } = Route.useSearch();
   const { currentEvent } = useDesktopEvent();
   const { picklists } = useDesktopCompetitionData();
-  const [selectedPicklistId, setSelectedPicklistId] = useState<string | null>(null);
+  const [selectedPicklistId, setSelectedPicklistId] = useState<string | null>(
+    initialId || null
+  );
   const [excludedToBottom, setExcludedToBottom] = useState(true);
 
   // Find selected picklist and its entries

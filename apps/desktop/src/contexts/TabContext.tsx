@@ -12,12 +12,13 @@ export interface Tab {
   id: string;
   path: string;
   title: string;
+  search?: Record<string, string>;
 }
 
 interface TabContextType {
   tabs: Tab[];
   activeTabId: string;
-  addTab: (path: string, title: string) => void;
+  addTab: (path: string, title: string, search?: Record<string, string>, customId?: string) => void;
   closeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
 }
@@ -39,24 +40,25 @@ export function TabProvider({ children, router }: TabProviderProps) {
   const [tabs, setTabs] = useState<Tab[]>([DEFAULT_TAB]);
   const [activeTabId, setActiveTabIdState] = useState<string>("dashboard");
   // Store navigate fn via ref to avoid stale closures
-  const navigateRef = useRef<((path: string) => void) | null>(null);
+  const navigateRef = useRef<((path: string, search?: Record<string, string>) => void) | null>(null);
 
   // Register router navigate
   useEffect(() => {
-    navigateRef.current = (path: string) => {
-      router.navigate({ to: path });
+    navigateRef.current = (path: string, search?: Record<string, string>) => {
+      router.navigate({ to: path, search });
     };
   }, [router]);
 
-  const addTab = useCallback((path: string, title: string) => {
+  const addTab = useCallback((path: string, title: string, search?: Record<string, string>, customId?: string) => {
     setTabs((prev) => {
-      const existing = prev.find((t) => t.path === path);
+      const id = customId || path.replace(/\//g, "-").replace(/^-/, "") || "dashboard";
+      // Deduplicate by id (not path) so different picklists can coexist
+      const existing = prev.find((t) => t.id === id);
       if (existing) {
         setActiveTabIdState(existing.id);
         return prev;
       }
-      const id = path.replace(/\//g, "-").replace(/^-/, "") || "dashboard";
-      const newTab: Tab = { id, path, title };
+      const newTab: Tab = { id, path, title, search };
       setActiveTabIdState(id);
       return [...prev, newTab];
     });
@@ -74,7 +76,7 @@ export function TabProvider({ children, router }: TabProviderProps) {
           // Navigate to adjacent tab
           const nextTab = filtered[Math.max(0, idx - 1)];
           if (nextTab && navigateRef.current) {
-            navigateRef.current(nextTab.path);
+            navigateRef.current(nextTab.path, nextTab.search);
           }
           return nextTab?.id ?? filtered[0]?.id ?? "dashboard";
         });
@@ -89,7 +91,7 @@ export function TabProvider({ children, router }: TabProviderProps) {
     (id: string) => {
       const tab = tabs.find((t) => t.id === id);
       if (tab && navigateRef.current) {
-        navigateRef.current(tab.path);
+        navigateRef.current(tab.path, tab.search);
       }
       setActiveTabIdState(id);
     },
@@ -101,9 +103,10 @@ export function TabProvider({ children, router }: TabProviderProps) {
     const pathToTitle: Record<string, string> = {
       "/dashboard": "Event Dashboard",
       "/shifts": "Shifts",
-      "/exclusion-test": "Picklists",
+      "/picklists": "Picklists",
       "/match-edit-test": "Match Edit",
       "/scouter-ratings": "Scouter Ratings",
+      // "/exclusion-test" intentionally omitted — per-picklist tabs are added explicitly
     };
 
     const unsubscribe = router.subscribe("onBeforeLoad", (event: any) => {

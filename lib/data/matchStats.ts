@@ -704,3 +704,140 @@ function findMode<T>(arr: T[]): T | null {
   });
   return mode;
 }
+
+// ============ GRAPHABLE STATS ============
+
+/**
+ * A stat that can be extracted from a single match and graphed over time.
+ * getValue returns null when the stat is unavailable for a match (e.g. no rating submitted).
+ * normalize maps a raw value to [0, 1] given all observed values for the stat.
+ */
+export interface GraphableStat {
+  key: string;
+  label: string;
+  group: "Auto" | "Teleop" | "Combined" | "Climb" | "Ratings";
+  getValue: (stats: MatchStats) => number | null;
+  normalize: (value: number, allValues: number[]) => number;
+}
+
+/** Scale relative to the observed max. Safe when all values are 0. */
+function relativeNorm(value: number, allValues: number[]): number {
+  const max = Math.max(...allValues);
+  return max > 0 ? value / max : 0;
+}
+
+/** Scale within a fixed known range [min, max] → [0, 1]. */
+function absoluteNorm(min: number, max: number) {
+  return (value: number, _allValues: number[]) =>
+    max > min ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
+}
+
+export const GRAPHABLE_STATS: GraphableStat[] = [
+  // Auto
+  { key: "auto_shoots",           label: "Auto Shoots",           group: "Auto",     getValue: (s) => s.auto.shoots,          normalize: relativeNorm },
+  { key: "auto_ground_intakes",   label: "Auto Ground Intakes",   group: "Auto",     getValue: (s) => s.auto.groundIntakes,   normalize: relativeNorm },
+  { key: "auto_station_intakes",  label: "Auto Station Intakes",  group: "Auto",     getValue: (s) => s.auto.stationIntakes,  normalize: relativeNorm },
+  { key: "auto_passes",           label: "Auto Passes",           group: "Auto",     getValue: (s) => s.auto.passes,          normalize: relativeNorm },
+  {
+    key: "auto_total_actions", label: "Auto Total Actions", group: "Auto",
+    getValue: (s) => s.auto.groundIntakes + s.auto.stationIntakes + s.auto.passes + s.auto.shoots + s.auto.stocking,
+    normalize: relativeNorm,
+  },
+
+  // Teleop
+  { key: "teleop_shoots",          label: "Teleop Shoots",          group: "Teleop",  getValue: (s) => s.teleop.shoots,         normalize: relativeNorm },
+  { key: "teleop_ground_intakes",  label: "Teleop Ground Intakes",  group: "Teleop",  getValue: (s) => s.teleop.groundIntakes,  normalize: relativeNorm },
+  { key: "teleop_station_intakes", label: "Teleop Station Intakes", group: "Teleop",  getValue: (s) => s.teleop.stationIntakes, normalize: relativeNorm },
+  { key: "teleop_passes",          label: "Teleop Passes",          group: "Teleop",  getValue: (s) => s.teleop.passes,         normalize: relativeNorm },
+  {
+    key: "teleop_total_actions", label: "Teleop Total Actions", group: "Teleop",
+    getValue: (s) => s.teleop.groundIntakes + s.teleop.stationIntakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
+    normalize: relativeNorm,
+  },
+
+  // Combined
+  {
+    key: "total_shoots", label: "Total Shoots", group: "Combined",
+    getValue: (s) => s.auto.shoots + s.teleop.shoots,
+    normalize: relativeNorm,
+  },
+  {
+    key: "total_intakes", label: "Total Intakes", group: "Combined",
+    getValue: (s) => s.auto.groundIntakes + s.auto.stationIntakes + s.teleop.groundIntakes + s.teleop.stationIntakes,
+    normalize: relativeNorm,
+  },
+  {
+    key: "total_actions", label: "Total Actions", group: "Combined",
+    getValue: (s) =>
+      s.auto.groundIntakes + s.auto.stationIntakes + s.auto.passes + s.auto.shoots + s.auto.stocking +
+      s.teleop.groundIntakes + s.teleop.stationIntakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
+    normalize: relativeNorm,
+  },
+
+  // Climb
+  {
+    key: "climb_level", label: "Teleop Climb Level", group: "Climb",
+    getValue: (s) => s.climb.level === "L3" ? 3 : s.climb.level === "L2" ? 2 : s.climb.level === "L1" ? 1 : 0,
+    normalize: absoluteNorm(0, 3),
+  },
+  {
+    key: "auto_climb", label: "Auto Climb", group: "Climb",
+    getValue: (s) => s.climb.hasAutoClimb ? 1 : 0,
+    normalize: absoluteNorm(0, 1),
+  },
+  {
+    // Time on cage in auto (20s - press time). Null when no auto climb.
+    // Higher = started earlier = better.
+    key: "auto_climb_time", label: "Auto Climb Time (s)", group: "Climb",
+    getValue: (s) => s.climb.autoClimbTime,
+    normalize: absoluteNorm(0, 20),
+  },
+  {
+    // Time on cage in teleop (140s - press time). Null when no teleop climb.
+    // Higher = started earlier = better.
+    key: "teleop_climb_time", label: "Teleop Climb Time (s)", group: "Climb",
+    getValue: (s) => s.climb.teleopClimbTime,
+    normalize: absoluteNorm(0, 140),
+  },
+  {
+    // Seconds into teleop before dismount pressed. Null when no dismount.
+    // Inverted: higher bar = faster dismount (lower time = better).
+    key: "dismount_time", label: "Dismount Speed", group: "Climb",
+    getValue: (s) => s.climb.dismountTime,
+    normalize: (value, _) => 1 - absoluteNorm(0, 11)(value, _),
+  },
+
+  // Ratings (1-5 scale → 0-1)
+  { key: "rating_ground",    label: "Ground Intake Rating", group: "Ratings", getValue: (s) => s.ratings.ground,    normalize: absoluteNorm(1, 5) },
+  { key: "rating_shooting",  label: "Shooting Rating",      group: "Ratings", getValue: (s) => s.ratings.shooting,  normalize: absoluteNorm(1, 5) },
+  { key: "rating_passing",   label: "Passing Rating",       group: "Ratings", getValue: (s) => s.ratings.passing,   normalize: absoluteNorm(1, 5) },
+  { key: "rating_driver",    label: "Driver Rating",        group: "Ratings", getValue: (s) => s.ratings.driver,    normalize: absoluteNorm(1, 5) },
+];
+
+/**
+ * Extract normalized data points for one stat across a team's matches,
+ * ordered by match key. Matches where the stat is unavailable are omitted.
+ */
+export function getStatDataPoints(
+  statKey: string,
+  matchDataArray: EventMatchData[]
+): Array<{ matchKey: string; raw: number; normalized: number }> {
+  const stat = GRAPHABLE_STATS.find((s) => s.key === statKey);
+  if (!stat) return [];
+
+  const points: Array<{ matchKey: string; raw: number }> = [];
+  for (const matchData of matchDataArray) {
+    const stats = calculateSingleMatchStats(matchData);
+    if (!stats) continue;
+    const raw = stat.getValue(stats);
+    if (raw === null) continue;
+    points.push({ matchKey: matchData.match, raw });
+  }
+
+  const allValues = points.map((p) => p.raw);
+  return points.map((p) => ({
+    matchKey: p.matchKey,
+    raw: p.raw,
+    normalized: stat.normalize(p.raw, allValues),
+  }));
+}
