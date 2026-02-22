@@ -200,7 +200,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Sticky header */}
-      <div className="grid grid-cols-[100px_1fr_8px_1fr_180px] gap-0 px-3 py-2 border-b border-border bg-card/50 flex-shrink-0 relative z-10">
+      <div className="grid grid-cols-[100px_1fr_8px_1fr_180px] gap-0 px-3 py-3 bg-card/50 flex-shrink-0 relative z-10 border-b border-border/50">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Match</span>
         <span className="text-xs font-semibold text-destructive uppercase tracking-wide text-center">Red Alliance</span>
         <span />
@@ -217,11 +217,16 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
               {searchQuery ? "No matches found" : "No schedule data"}
             </div>
           ) : (
-            filteredRows.map((row) => (
+            filteredRows.map((row, index) => {
+              const isLastCompleted = index === lastCompletedIndex;
+              return (
               <div
                 key={row.matchKey}
                 data-match-row
-                className="grid grid-cols-[100px_1fr_8px_1fr_180px] gap-0 items-center px-3 py-2.5 border-b border-border/50 hover:bg-secondary/20 transition-colors"
+                className={[
+                  "grid grid-cols-[100px_1fr_8px_1fr_180px] gap-0 items-center px-3 py-2.5 hover:bg-secondary/20 transition-colors",
+                  isLastCompleted ? "border-b-2 border-primary" : "border-b border-border/50",
+                ].join(" ")}
               >
                 {/* Match label + time */}
                 <div className="flex flex-col px-3 py-1 rounded-md bg-primary/5 border-l-2 border-muted-foreground/40">
@@ -301,7 +306,8 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                   ) : null}
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

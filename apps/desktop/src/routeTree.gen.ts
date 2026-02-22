@@ -15,8 +15,8 @@ import { Route as ShiftsRouteImport } from './routes/shifts'
 import { Route as ScouterRatingsRouteImport } from './routes/scouter-ratings'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as PicklistsRouteImport } from './routes/picklists'
+import { Route as PicklistOpenRouteImport } from './routes/picklist-open'
 import { Route as MatchEditTestRouteImport } from './routes/match-edit-test'
-import { Route as ExclusionTestRouteImport } from './routes/exclusion-test'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AuthIndexRouteRouteImport } from './routes/auth/index.route'
@@ -51,14 +51,14 @@ const PicklistsRoute = PicklistsRouteImport.update({
   path: '/picklists',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PicklistOpenRoute = PicklistOpenRouteImport.update({
+  id: '/picklist-open',
+  path: '/picklist-open',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MatchEditTestRoute = MatchEditTestRouteImport.update({
   id: '/match-edit-test',
   path: '/match-edit-test',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ExclusionTestRoute = ExclusionTestRouteImport.update({
-  id: '/exclusion-test',
-  path: '/exclusion-test',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -79,8 +79,8 @@ const AuthIndexRouteRoute = AuthIndexRouteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/exclusion-test': typeof ExclusionTestRoute
   '/match-edit-test': typeof MatchEditTestRoute
+  '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
@@ -92,8 +92,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/exclusion-test': typeof ExclusionTestRoute
   '/match-edit-test': typeof MatchEditTestRoute
+  '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
@@ -106,8 +106,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/exclusion-test': typeof ExclusionTestRoute
   '/match-edit-test': typeof MatchEditTestRoute
+  '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
@@ -121,8 +121,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/exclusion-test'
     | '/match-edit-test'
+    | '/picklist-open'
     | '/picklists'
     | '/reset'
     | '/scouter-ratings'
@@ -134,8 +134,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/exclusion-test'
     | '/match-edit-test'
+    | '/picklist-open'
     | '/picklists'
     | '/reset'
     | '/scouter-ratings'
@@ -147,8 +147,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/exclusion-test'
     | '/match-edit-test'
+    | '/picklist-open'
     | '/picklists'
     | '/reset'
     | '/scouter-ratings'
@@ -161,8 +161,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ExclusionTestRoute: typeof ExclusionTestRoute
   MatchEditTestRoute: typeof MatchEditTestRoute
+  PicklistOpenRoute: typeof PicklistOpenRoute
   PicklistsRoute: typeof PicklistsRoute
   ResetRoute: typeof ResetRoute
   ScouterRatingsRoute: typeof ScouterRatingsRoute
@@ -217,18 +217,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PicklistsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/picklist-open': {
+      id: '/picklist-open'
+      path: '/picklist-open'
+      fullPath: '/picklist-open'
+      preLoaderRoute: typeof PicklistOpenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/match-edit-test': {
       id: '/match-edit-test'
       path: '/match-edit-test'
       fullPath: '/match-edit-test'
       preLoaderRoute: typeof MatchEditTestRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/exclusion-test': {
-      id: '/exclusion-test'
-      path: '/exclusion-test'
-      fullPath: '/exclusion-test'
-      preLoaderRoute: typeof ExclusionTestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -257,8 +257,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ExclusionTestRoute: ExclusionTestRoute,
   MatchEditTestRoute: MatchEditTestRoute,
+  PicklistOpenRoute: PicklistOpenRoute,
   PicklistsRoute: PicklistsRoute,
   ResetRoute: ResetRoute,
   ScouterRatingsRoute: ScouterRatingsRoute,

@@ -183,6 +183,7 @@ impl SyncService {
                 .into_iter()
                 .map(|team| {
                     let team_key = team.key.clone();
+                    let team_name = team.name.clone();
 
                     // Use TeamRank fields directly (already parsed from TBA)
                     let rank = team.rank as i64;
@@ -241,6 +242,7 @@ impl SyncService {
                     json!({
                         "event": self.current_event,
                         "team": team_key,
+                        "team_name": team_name,
                         "data": data,
                     })
                 })

@@ -106,7 +106,7 @@ export function TabProvider({ children, router }: TabProviderProps) {
       "/picklists": "Picklists",
       "/match-edit-test": "Match Edit",
       "/scouter-ratings": "Scouter Ratings",
-      // "/exclusion-test" intentionally omitted — per-picklist tabs are added explicitly
+      // "/picklist-open" intentionally omitted — per-picklist tabs are added explicitly
     };
 
     const unsubscribe = router.subscribe("onBeforeLoad", (event: any) => {

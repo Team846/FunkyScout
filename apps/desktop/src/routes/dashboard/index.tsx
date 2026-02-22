@@ -76,19 +76,19 @@ function DashboardPage() {
   );
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex overflow-hidden pb-3">
       {/* Left Panel */}
       <LeftPanel schedule={schedule} matchData={matchData} profiles={profiles} />
 
       {/* Middle Panel */}
-      <div className="flex-1 flex flex-col overflow-hidden border-l border-border">
+      <div className="flex-1 flex flex-col overflow-hidden pr-2">
         <Tabs
           value={activeTab}
           onValueChange={(v) => { setActiveTab(v); setSearchQuery(""); }}
           className="flex flex-col h-full gap-0"
         >
           {/* Tab header */}
-          <div className="flex items-center gap-3 px-3 py-2 border-b border-border flex-shrink-0 bg-background">
+          <div className="flex items-center gap-3 px-3 py-2 flex-shrink-0 bg-background">
             <TabsList className="h-8 bg-secondary/50">
               <TabsTrigger value="schedule" className="text-xs h-6 px-3">
                 Event Schedule
@@ -122,27 +122,31 @@ function DashboardPage() {
           </div>
 
           {/* Schedule tab */}
-          <TabsContent value="schedule" className="flex-1 m-0 data-[state=active]:flex data-[state=active]:flex-col overflow-hidden">
-            <ScheduleTable
-              ref={scheduleTableRef}
-              schedule={schedule}
-              tbaSchedule={tbaSchedule}
-              tbaTeams={tbaTeams}
-              searchQuery={searchQuery}
-              homeTeamKey={homeTeamKey}
-            />
+          <TabsContent value="schedule" className="flex-1 m-0 px-2 data-[state=active]:flex data-[state=active]:flex-col overflow-hidden">
+            <div className="flex-1 overflow-hidden rounded-lg border border-border">
+              <ScheduleTable
+                ref={scheduleTableRef}
+                schedule={schedule}
+                tbaSchedule={tbaSchedule}
+                tbaTeams={tbaTeams}
+                searchQuery={searchQuery}
+                homeTeamKey={homeTeamKey}
+              />
+            </div>
           </TabsContent>
 
           {/* Rankings tab */}
-          <TabsContent value="rankings" className="flex-1 m-0 data-[state=active]:flex data-[state=active]:flex-col overflow-hidden">
-            <RankingsTable
-              tbaTeams={tbaTeams}
-              matchData={matchData}
-              searchQuery={searchQuery}
-              tbaClimbData={tbaClimbData}
-              useTbaClimb={useTbaClimb}
-              homeTeamKey={homeTeamKey}
-            />
+          <TabsContent value="rankings" className="flex-1 m-0 px-2 data-[state=active]:flex data-[state=active]:flex-col overflow-hidden">
+            <div className="flex-1 overflow-hidden rounded-lg border border-border">
+              <RankingsTable
+                tbaTeams={tbaTeams}
+                matchData={matchData}
+                searchQuery={searchQuery}
+                tbaClimbData={tbaClimbData}
+                useTbaClimb={useTbaClimb}
+                homeTeamKey={homeTeamKey}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

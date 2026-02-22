@@ -217,7 +217,7 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
         </DialogContent>
       </Dialog>
 
-      <div className="w-[280px] flex-shrink-0 flex flex-col gap-3 overflow-y-auto p-3 border-l border-border">
+      <div className="w-[280px] flex-shrink-0 flex flex-col gap-3 overflow-y-auto p-3 pr-3">
         {/* Team Status */}
         <div className="bg-card rounded-lg border border-border p-3">
           <div className="flex items-center justify-between mb-3">

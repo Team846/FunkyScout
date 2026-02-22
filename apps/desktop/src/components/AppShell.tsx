@@ -68,7 +68,7 @@ interface EventListEntry {
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", activePaths: ["/dashboard"] },
   { icon: Calendar, label: "Shifts", path: "/shifts", activePaths: ["/shifts"] },
-  { icon: ListOrdered, label: "Picklists", path: "/picklists", activePaths: ["/picklists", "/exclusion-test"] },
+  { icon: ListOrdered, label: "Picklists", path: "/picklists", activePaths: ["/picklists", "/picklist-open"] },
   { icon: GitCompare, label: "Comparisons", path: null as string | null, activePaths: [] },
 ];
 
