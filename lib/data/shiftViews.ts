@@ -249,7 +249,7 @@ interface PitDataInput {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function extractScoutedClimbLevel(data_raw: unknown): "L1" | "L2" | "L3" | null {
-  const toggles: any[] = (data_raw as any)?.toggleActions ?? [];
+  const toggles: any[] = (data_raw as any)?.teleopActions ?? [];
   for (const level of ["L3", "L2", "L1"] as const) {
     const actionId = `climb_${level}`;
     const relevant = toggles.filter((a: any) => a.actionId === actionId);

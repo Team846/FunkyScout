@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -43,6 +43,7 @@ function MatchEditTestPage() {
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const hasLoadedRef = useRef(false);
   const [queueStatus, setQueueStatus] = useState<{ pending: number; processing: number; failed: number } | null>(null);
 
   const refreshQueueStatus = async () => {
@@ -61,12 +62,13 @@ function MatchEditTestPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load all match data when event changes or after a sync cycle
+  // Load all match data when event changes or after a sync cycle.
+  // Only shows spinner on first load — background refreshes update silently.
   useEffect(() => {
     if (!currentEvent) return;
 
     async function loadMatchData() {
-      setIsLoading(true);
+      if (!hasLoadedRef.current) setIsLoading(true);
       try {
         console.log("[MatchEditTest] Loading match data for event:", currentEvent);
         const data = await getMatchScoutingData(currentEvent);
@@ -76,12 +78,18 @@ function MatchEditTestPage() {
         console.error("[MatchEditTest] Failed to load match data:", error);
         toast.error("Failed to load match data");
       } finally {
+        hasLoadedRef.current = true;
         setIsLoading(false);
       }
     }
 
     loadMatchData();
   }, [currentEvent, lastDataRefreshAt]);
+
+  // Reset load flag when event changes
+  useEffect(() => {
+    hasLoadedRef.current = false;
+  }, [currentEvent]);
 
   // Load selected match data
   useEffect(() => {

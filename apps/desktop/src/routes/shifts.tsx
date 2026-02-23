@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   useState,
   useEffect,
+  useRef,
   useMemo,
   useCallback,
   type ReactNode,
@@ -91,7 +92,9 @@ function ClimbBadge({
         climbMatch ? "text-green-500" : "text-red-400"
       }`}
     >
-      {scouted ?? "none"} {climbMatch ? "✓" : `≠${tba ?? "none"}`}
+      {climbMatch
+        ? scouted != null ? `${scouted} ✓` : "no climb ✓"
+        : `${scouted ?? "none"} ≠ ${tba ?? "none"}`}
     </span>
   );
 }
@@ -252,7 +255,7 @@ function ScouterCard({
       {/* Row 2: stats */}
       <div className="text-xs text-muted-foreground leading-snug">
         {row.matchesScouted}/{row.matchesAssigned} scouted
-        {row.climbAccuracy != null && ` · ${row.climbAccuracy.toFixed(0)}% climb`}
+        {row.climbAccuracy != null && ` · ${row.climbAccuracy.toFixed(0)}% accuracy`}
       </div>
     </Card>
   );
@@ -353,6 +356,7 @@ function ShiftViewerPage() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [pitData, setPitData] = useState<PitScoutingData[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const [scouterSearch, setScouterSearch] = useState("");
   const [teamSearch, setTeamSearch] = useState("");
@@ -362,10 +366,11 @@ function ShiftViewerPage() {
   const [dirtyPriorities, setDirtyPriorities] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
 
-  // Load per-event data from local SQLite; refresh on every sync cycle
+  // Load per-event data from local SQLite; refresh on every sync cycle.
+  // Only shows spinner on first load — background refreshes update silently.
   useEffect(() => {
     if (!currentEvent) return;
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     Promise.all([
       getMatchScoutingData(currentEvent),
       getPitScoutingData(currentEvent),
@@ -377,12 +382,16 @@ function ShiftViewerPage() {
         setProfiles(prof);
       })
       .catch((e) => console.error("[Shifts] Failed to load data:", e))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        hasLoadedRef.current = true;
+        setLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentEvent, lastDataRefreshAt]);
 
-  // Clear dirty state when event changes
+  // Clear dirty state and reset load flag when event changes
   useEffect(() => {
+    hasLoadedRef.current = false;
     setDirtyRatings({});
     setDirtyPriorities({});
   }, [currentEvent]);

@@ -3,6 +3,12 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Textarea } from "@shadcn/ui/components/textarea.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@shadcn/ui/components/collapsible.tsx";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { getMatchLabel } from "@lib/utils/match";
 import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
@@ -31,6 +37,7 @@ type MatchEditStatsType = {
   alliance?: string | null;
   practice?: boolean | null;
   fromView?: string | null; // "scouting" or "teamView" - determines home button behavior
+  fromMatchEnd?: boolean | null; // true when navigating directly from match end screen
 };
 
 export const Route = createFileRoute("/match_edit_stats")({
@@ -42,6 +49,7 @@ export const Route = createFileRoute("/match_edit_stats")({
       alliance: search.alliance as string | undefined | null,
       practice: search.practice as boolean | undefined | null,
       fromView: search.fromView as string | undefined | null,
+      fromMatchEnd: search.fromMatchEnd as boolean | undefined | null,
     };
   },
 });
@@ -49,11 +57,22 @@ export const Route = createFileRoute("/match_edit_stats")({
 function MatchEditStats() {
   const { isWrongOrientation } = useOrientation("portrait");
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance, practice, fromView } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice, fromView, fromMatchEnd } = Route.useSearch();
   const { currentEvent } = useEvent();
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Actions and Endgame sections: start closed when from match end, open when from other routes
+  const sectionsStartOpen = fromMatchEnd !== true;
+  const [actionsOpen, setActionsOpen] = useState(sectionsStartOpen);
+  const [endgameOpen, setEndgameOpen] = useState(sectionsStartOpen);
+
+  useEffect(() => {
+    const open = fromMatchEnd !== true;
+    setActionsOpen(open);
+    setEndgameOpen(open);
+  }, [fromMatchEnd]);
 
   // Load match data - check both sessionStorage (from match_play) and Supabase (for editing)
   useEffect(() => {
@@ -703,12 +722,27 @@ function MatchEditStats() {
         {/* Content */}
         <div className="flex-1 overflow-auto pb-20">
           <div className="max-w-4xl mx-auto space-y-6">
-            {/* Data Table */}
-            <div className="rounded-2xl bg-muted p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-primary">Match Data</h2>
-
+            {/* Actions / Match Data */}
+            <Collapsible open={actionsOpen} onOpenChange={setActionsOpen}>
+              <div className="rounded-2xl bg-muted p-6 space-y-4">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between text-left"
+                  >
+                    <h2 className="text-lg font-semibold text-primary">
+                      Actions
+                    </h2>
+                    {actionsOpen ? (
+                      <ChevronUp className="size-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="size-5 text-muted-foreground" />
+                    )}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
               {/* Table */}
-              <div className="space-y-3">
+              <div className="space-y-3 pt-2">
                 {/* Header Row */}
                 <div className="grid grid-cols-3 gap-4 pb-2 border-b border-border">
                   <div className="text-sm font-semibold text-muted-foreground">
@@ -1039,15 +1073,30 @@ function MatchEditStats() {
                   </div>
                 </div>
               </div>
-            </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
 
-            {/* Toggle Actions */}
-            <div className="rounded-2xl bg-muted p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-primary">
-                Endgame & Status
-              </h2>
-
-              <div className="space-y-3">
+            {/* Endgame & Status */}
+            <Collapsible open={endgameOpen} onOpenChange={setEndgameOpen}>
+              <div className="rounded-2xl bg-muted p-6 space-y-4">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between text-left"
+                  >
+                    <h2 className="text-lg font-semibold text-primary">
+                      Endgame & Status
+                    </h2>
+                    {endgameOpen ? (
+                      <ChevronUp className="size-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="size-5 text-muted-foreground" />
+                    )}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+              <div className="space-y-3 pt-2">
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">
                     Autonomous
@@ -1183,7 +1232,9 @@ function MatchEditStats() {
 
                 </div>
               </div>
-            </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
 
             {/* Ratings */}
             <div className="rounded-2xl bg-muted p-6 space-y-4">

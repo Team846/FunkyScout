@@ -40,14 +40,15 @@ const RootLayout = () => {
       }
     });
 
-    // Keep JWT fresh on token refresh / re-login
+    // Keep JWT fresh on token refresh / re-login, and trigger sync so the
+    // new user sees fresh data immediately instead of waiting up to 2 minutes.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.access_token) {
-        invoke("set_user_jwt", { jwt: session.access_token }).catch(
-          console.error,
-        );
+        invoke("set_user_jwt", { jwt: session.access_token })
+          .then(() => invoke("trigger_sync_now"))
+          .catch(console.error);
         console.log("[Auth] Sent refreshed JWT to Rust backend");
       }
     });

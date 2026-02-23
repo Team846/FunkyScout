@@ -708,15 +708,46 @@ function findMode<T>(arr: T[]): T | null {
 // ============ GRAPHABLE STATS ============
 
 /**
+ * Optional context passed to GraphableStat.getValue for stats that need
+ * team-level information not present in per-match scouting data.
+ *
+ * tbaClimbData: Record<matchKey, Record<teamKey, { auto_climb, teleop_climb }>>
+ * Used by climb/fuel point stats to use TBA as the authoritative climb source.
+ */
+export interface GraphableStatContext {
+  epa?: number | null;
+  tbaClimbData?: Record<
+    string,
+    Record<string, { auto_climb: "L1" | "L2" | "L3" | null; teleop_climb: "L1" | "L2" | "L3" | null }>
+  >;
+}
+
+/** Shorthand for the TBA climb entry shape used in context and getTbaStatDataPoints. */
+type TbaClimbEntry = { auto_climb: "L1" | "L2" | "L3" | null; teleop_climb: "L1" | "L2" | "L3" | null };
+
+/**
  * A stat that can be extracted from a single match and graphed over time.
- * getValue returns null when the stat is unavailable for a match (e.g. no rating submitted).
- * normalize maps a raw value to [0, 1] given all observed values for the stat.
+ *
+ * source:
+ *   "scouting" (default) — computed from scouted MatchStats; use getStatDataPoints().
+ *                           Denominator = matches scouted.
+ *   "tba"                — computed from TBA climb data; use getTbaStatDataPoints().
+ *                           Denominator = all matches played (correct for TBA-sourced data).
+ *
+ * getValueFromTba: required when source === "tba". Takes a raw TBA climb entry and optional
+ *   EPA — no scouted MatchStats needed. getTbaStatDataPoints() calls this.
+ *
+ * getValue: always present. For "tba" stats this can be used as a fallback when passing
+ *   through getStatDataPoints() with tbaClimbData in context, but the denominator will be
+ *   matches-scouted rather than matches-played.
  */
 export interface GraphableStat {
   key: string;
   label: string;
   group: "Auto" | "Teleop" | "Combined" | "Climb" | "Ratings";
-  getValue: (stats: MatchStats) => number | null;
+  source?: "scouting" | "tba";
+  getValue: (stats: MatchStats, context?: GraphableStatContext) => number | null;
+  getValueFromTba?: (entry: TbaClimbEntry, epa?: number | null) => number | null;
   normalize: (value: number, allValues: number[]) => number;
 }
 
@@ -776,14 +807,73 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
 
   // Climb
   {
-    key: "climb_level", label: "Teleop Climb Level", group: "Climb",
-    getValue: (s) => s.climb.level === "L3" ? 3 : s.climb.level === "L2" ? 2 : s.climb.level === "L1" ? 1 : 0,
-    normalize: absoluteNorm(0, 3),
+    // source: "tba" — use getTbaStatDataPoints() so denominator = all played matches.
+    key: "avg_climb_points", label: "Avg Climb Points", group: "Climb",
+    source: "tba",
+    getValueFromTba: (entry) => {
+      let pts = entry.auto_climb != null ? 15 : 0;
+      if (entry.teleop_climb === "L1") pts += 10;
+      else if (entry.teleop_climb === "L2") pts += 20;
+      else if (entry.teleop_climb === "L3") pts += 30;
+      return pts;
+    },
+    // Fallback via getStatDataPoints (denominator = matches scouted — less accurate)
+    getValue: (s, ctx) => {
+      const tba = ctx?.tbaClimbData?.[s.matchKey]?.[s.team];
+      if (!tba) return null;
+      let pts = tba.auto_climb != null ? 15 : 0;
+      if (tba.teleop_climb === "L1") pts += 10;
+      else if (tba.teleop_climb === "L2") pts += 20;
+      else if (tba.teleop_climb === "L3") pts += 30;
+      return pts;
+    },
+    normalize: absoluteNorm(0, 45),
   },
   {
-    key: "auto_climb", label: "Auto Climb", group: "Climb",
-    getValue: (s) => s.climb.hasAutoClimb ? 1 : 0,
-    normalize: absoluteNorm(0, 1),
+    // source: "tba" — use getTbaStatDataPoints() so denominator = all played matches.
+    key: "avg_fuel_points", label: "Avg Fuel Points", group: "Climb",
+    source: "tba",
+    getValueFromTba: (entry, epa) => {
+      if (epa == null) return null;
+      let climbPts = entry.auto_climb != null ? 15 : 0;
+      if (entry.teleop_climb === "L1") climbPts += 10;
+      else if (entry.teleop_climb === "L2") climbPts += 20;
+      else if (entry.teleop_climb === "L3") climbPts += 30;
+      return epa - climbPts;
+    },
+    getValue: (s, ctx) => {
+      if (ctx?.epa == null) return null;
+      const tba = ctx?.tbaClimbData?.[s.matchKey]?.[s.team];
+      if (!tba) return null;
+      let climbPts = tba.auto_climb != null ? 15 : 0;
+      if (tba.teleop_climb === "L1") climbPts += 10;
+      else if (tba.teleop_climb === "L2") climbPts += 20;
+      else if (tba.teleop_climb === "L3") climbPts += 30;
+      return ctx.epa - climbPts;
+    },
+    normalize: relativeNorm,
+  },
+  {
+    // Teleop climb in points (L1=10, L2=20, L3=30) from TBA. source: "tba".
+    key: "climb_level", label: "Avg Teleop Climb Pts", group: "Climb",
+    source: "tba",
+    getValueFromTba: (entry) => {
+      if (entry.teleop_climb === "L1") return 10;
+      if (entry.teleop_climb === "L2") return 20;
+      if (entry.teleop_climb === "L3") return 30;
+      return 0;
+    },
+    getValue: (s) =>
+      s.climb.level === "L1" ? 10 : s.climb.level === "L2" ? 20 : s.climb.level === "L3" ? 30 : 0,
+    normalize: absoluteNorm(0, 30),
+  },
+  {
+    // Auto climb in points (15 if any level, 0 if none) from TBA. source: "tba".
+    key: "auto_climb", label: "Avg Auto Climb Pts", group: "Climb",
+    source: "tba",
+    getValueFromTba: (entry) => entry.auto_climb != null ? 15 : 0,
+    getValue: (s) => s.climb.hasAutoClimb ? 15 : 0,
+    normalize: absoluteNorm(0, 15),
   },
   {
     // Time on cage in auto (20s - press time). Null when no auto climb.
@@ -820,7 +910,8 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
  */
 export function getStatDataPoints(
   statKey: string,
-  matchDataArray: EventMatchData[]
+  matchDataArray: EventMatchData[],
+  context?: GraphableStatContext
 ): Array<{ matchKey: string; raw: number; normalized: number }> {
   const stat = GRAPHABLE_STATS.find((s) => s.key === statKey);
   if (!stat) return [];
@@ -829,9 +920,42 @@ export function getStatDataPoints(
   for (const matchData of matchDataArray) {
     const stats = calculateSingleMatchStats(matchData);
     if (!stats) continue;
-    const raw = stat.getValue(stats);
+    const raw = stat.getValue(stats, context);
     if (raw === null) continue;
     points.push({ matchKey: matchData.match, raw });
+  }
+
+  const allValues = points.map((p) => p.raw);
+  return points.map((p) => ({
+    matchKey: p.matchKey,
+    raw: p.raw,
+    normalized: stat.normalize(p.raw, allValues),
+  }));
+}
+
+/**
+ * For stats with source === "tba":
+ * Iterates ALL matches in tbaClimbData that have an entry for teamKey.
+ * Denominator = total matches played (from TBA), NOT matches scouted.
+ *
+ * Use this instead of getStatDataPoints() for avg_climb_points / avg_fuel_points.
+ */
+export function getTbaStatDataPoints(
+  statKey: string,
+  teamKey: string,
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>,
+  epa?: number | null
+): Array<{ matchKey: string; raw: number; normalized: number }> {
+  const stat = GRAPHABLE_STATS.find((s) => s.key === statKey);
+  if (!stat?.getValueFromTba) return [];
+
+  const points: Array<{ matchKey: string; raw: number }> = [];
+  for (const [matchKey, teamEntries] of Object.entries(tbaClimbData)) {
+    const entry = teamEntries[teamKey];
+    if (!entry) continue;
+    const raw = stat.getValueFromTba(entry, epa);
+    if (raw === null) continue;
+    points.push({ matchKey, raw });
   }
 
   const allValues = points.map((p) => p.raw);

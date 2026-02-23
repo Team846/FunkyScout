@@ -59,7 +59,7 @@ import { usePicklistEditor } from "@lib/hooks/usePicklistEditor";
 import { getMatchScoutingData } from "../lib/db";
 import type { MatchScoutingData } from "../lib/db";
 import { deletePicklist } from "@lib/data/writes";
-import { GRAPHABLE_STATS, getStatDataPoints, calculateSingleMatchStats } from "@lib/data/matchStats";
+import { GRAPHABLE_STATS, getStatDataPoints, getTbaStatDataPoints, calculateSingleMatchStats } from "@lib/data/matchStats";
 import type { PicklistEntry } from "@lib/data/schema";
 
 export const Route = createFileRoute("/picklist-open")({
@@ -141,28 +141,35 @@ function getClimbCounts(
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>,
   useTba: boolean,
 ): ClimbCounts {
-  const teamMatches = matchData.filter((m) => m.team === teamKey);
   const auto = { L1: 0, L2: 0, L3: 0, any: 0 };
   const teleop = { L1: 0, L2: 0, L3: 0 };
 
-  for (const m of teamMatches) {
-    const tba = useTba ? tbaClimbData[m.match]?.[teamKey] : undefined;
-    if (tba !== undefined) {
-      if (tba.auto_climb === "L1") { auto.L1++; auto.any++; }
-      else if (tba.auto_climb === "L2") { auto.L2++; auto.any++; }
-      else if (tba.auto_climb === "L3") { auto.L3++; auto.any++; }
-      if (tba.teleop_climb === "L1") teleop.L1++;
-      else if (tba.teleop_climb === "L2") teleop.L2++;
-      else if (tba.teleop_climb === "L3") teleop.L3++;
-    } else {
-      const stats = calculateSingleMatchStats(m as any);
-      if (stats?.climb.hasAutoClimb) auto.any++;
-      if (stats?.climb.level === "L1") teleop.L1++;
-      else if (stats?.climb.level === "L2") teleop.L2++;
-      else if (stats?.climb.level === "L3") teleop.L3++;
+  if (useTba) {
+    // Iterate ALL matches in TBA data for this team — correct denominator = matches played
+    let n = 0;
+    for (const matchEntries of Object.values(tbaClimbData)) {
+      const entry = matchEntries[teamKey];
+      if (!entry) continue;
+      n++;
+      if (entry.auto_climb === "L1") { auto.L1++; auto.any++; }
+      else if (entry.auto_climb === "L2") { auto.L2++; auto.any++; }
+      else if (entry.auto_climb === "L3") { auto.L3++; auto.any++; }
+      if (entry.teleop_climb === "L1") teleop.L1++;
+      else if (entry.teleop_climb === "L2") teleop.L2++;
+      else if (entry.teleop_climb === "L3") teleop.L3++;
     }
+    return { auto, teleop, n };
   }
 
+  // Scouting mode: iterate scouted matches only
+  const teamMatches = matchData.filter((m) => m.team === teamKey);
+  for (const m of teamMatches) {
+    const stats = calculateSingleMatchStats(m as any);
+    if (stats?.climb.hasAutoClimb) auto.any++;
+    if (stats?.climb.level === "L1") teleop.L1++;
+    else if (stats?.climb.level === "L2") teleop.L2++;
+    else if (stats?.climb.level === "L3") teleop.L3++;
+  }
   return { auto, teleop, n: teamMatches.length };
 }
 
@@ -170,27 +177,42 @@ function computeGraphData(
   metricKey: string,
   teams: string[],
   matchData: MatchScoutingData[],
-  tbaTeams: TBATeam[]
-): { raws: number[]; normalized: number[]; winnerIdx: number } {
-  const getRaw = (teamKey: string): number => {
+  tbaTeams: TBATeam[],
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>
+): { raws: (number | null)[]; normalized: number[]; winnerIdx: number } {
+  const stat = GRAPHABLE_STATS.find((s) => s.key === metricKey);
+
+  // Returns null when no data is available (distinct from 0 which means "genuinely zero")
+  const getRaw = (teamKey: string): number | null => {
     if (metricKey === "epa")
-      return (
-        tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? 0
-      );
+      return tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
     if (metricKey === "opr")
-      return tbaTeams.find((t) => t.key === teamKey)?.opr ?? 0;
-    return getTeamStatAvg(metricKey, teamKey, matchData);
+      return tbaTeams.find((t) => t.key === teamKey)?.opr ?? null;
+    // TBA-sourced stats: iterate all played matches (correct denominator)
+    if (stat?.source === "tba") {
+      const epa = tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+      const pts = getTbaStatDataPoints(metricKey, teamKey, tbaClimbData, epa);
+      if (!pts.length) return null; // No TBA data — not the same as zero
+      return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
+    }
+    // Scouting stats
+    const pts = getStatDataPoints(metricKey, matchData.filter((m) => m.team === teamKey) as any);
+    if (!pts.length) return null; // Not scouted — not the same as zero
+    return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
   };
 
   const raws = teams.map(getRaw);
-  const max = Math.max(...raws, 0.001);
-  const stat = GRAPHABLE_STATS.find((s) => s.key === metricKey);
-  const normalized = raws.map((r) =>
-    stat && metricKey !== "epa" && metricKey !== "opr"
-      ? stat.normalize(r, raws)
-      : r / max
-  );
-  const winnerIdx = raws.indexOf(Math.max(...raws));
+  const nonNullRaws = raws.filter((r): r is number => r !== null);
+  const max = Math.max(...nonNullRaws, 0.001);
+  const normalized = raws.map((r) => {
+    if (r === null) return 0;
+    return stat && metricKey !== "epa" && metricKey !== "opr"
+      ? stat.normalize(r, nonNullRaws)
+      : r / max;
+  });
+  const winnerIdx = nonNullRaws.length > 0
+    ? raws.indexOf(Math.max(...nonNullRaws))
+    : -1;
   return { raws, normalized, winnerIdx };
 }
 
@@ -492,7 +514,9 @@ function FullTeamPanel({
 
           {/* Match count */}
           <p className="text-[10px] text-muted-foreground/50 text-center">
-            {climb.n} match{climb.n !== 1 ? "es" : ""} scouted
+            {climb.n === 0
+              ? useTbaClimb ? "no TBA data" : "not scouted"
+              : `${climb.n} match${climb.n !== 1 ? "es" : ""} ${useTbaClimb ? "played" : "scouted"}`}
           </p>
         </div>
       </div>
@@ -659,6 +683,7 @@ interface GraphCardProps {
   teams: string[];
   matchData: MatchScoutingData[];
   tbaTeams: TBATeam[];
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   showPercentiles: boolean;
   onTogglePercentiles: () => void;
   onRemove: () => void;
@@ -669,6 +694,7 @@ function GraphCard({
   teams,
   matchData,
   tbaTeams,
+  tbaClimbData,
   showPercentiles,
   onTogglePercentiles,
   onRemove,
@@ -680,9 +706,9 @@ function GraphCard({
   const label = allMetrics.find((m) => m.key === metricKey)?.label ?? metricKey;
 
   const { raws, normalized, winnerIdx } = useMemo(
-    () => computeGraphData(metricKey, teams, matchData, tbaTeams),
+    () => computeGraphData(metricKey, teams, matchData, tbaTeams, tbaClimbData),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [metricKey, teams.join(","), matchData.length, tbaTeams.length]
+    [metricKey, teams.join(","), matchData.length, tbaTeams.length, tbaClimbData]
   );
 
   const maxBarHeight = BAR_HEIGHT_PX * 0.8;
@@ -726,10 +752,10 @@ function GraphCard({
           </span>
         ) : (
           teams.map((teamKey, i) => {
-            const isWinner = i === winnerIdx && raws[i] > 0;
+            const rawVal = raws[i]; // null = no data, 0 = genuinely zero
+            const isWinner = i === winnerIdx && rawVal != null && rawVal > 0;
             const normalizedVal = normalized[i] ?? 0;
             const barH = Math.max(4, Math.round(normalizedVal * maxBarHeight));
-            const rawVal = raws[i] ?? 0;
             const teamNum = getTeamNum(teamKey);
             const percentile = Math.round(normalizedVal * 100);
             const showPercentileInside = normalizedVal >= 0.25;
@@ -771,7 +797,7 @@ function GraphCard({
                   "text-[11px] font-medium mt-1 flex-shrink-0",
                   isWinner ? "text-primary" : "text-muted-foreground",
                 ].join(" ")}>
-                  {rawVal > 0 ? rawVal.toFixed(1) : "—"}
+                  {rawVal == null ? "—" : rawVal === 0 ? "0" : rawVal.toFixed(1)}
                 </span>
                 {/* Team number */}
                 <span className="text-[11px] font-semibold text-foreground truncate w-full text-center flex-shrink-0">
@@ -1451,6 +1477,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
               teams={selectedTeams}
               matchData={matchData}
               tbaTeams={tbaTeams}
+              tbaClimbData={tbaClimbData}
               showPercentiles={!!showPercentiles[metricKey]}
               onTogglePercentiles={() =>
                 setShowPercentiles((prev) => ({

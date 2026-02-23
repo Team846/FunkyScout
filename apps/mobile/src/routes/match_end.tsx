@@ -50,7 +50,7 @@ function MatchEnd() {
   const handleGoToSummary = () => {
     navigate({
       to: "/match_edit_stats",
-      search: { teamNum, matchNum, alliance, practice }
+      search: { teamNum, matchNum, alliance, practice, fromMatchEnd: true }
     });
   };
 

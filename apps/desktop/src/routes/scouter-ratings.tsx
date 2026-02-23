@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -37,6 +37,7 @@ function ScouterRatingsPage() {
   const [scouterRatings, setScouterRatings] = useState<ScouterRating[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
+  const hasLoadedRef = useRef(false);
 
   /**
    * Fetch user profiles and match data to calculate ratings
@@ -98,13 +99,18 @@ function ScouterRatingsPage() {
     }
   }, [currentEvent, schedule]);
 
-  // Fetch on event change and after each 120s sync
+  // Fetch on event change and after each 120s sync.
+  // Only shows spinner on first load — background refreshes update silently.
   useEffect(() => {
-    if (currentEvent) {
-      setLoading(true);
-      fetchData();
-    }
+    if (!currentEvent) return;
+    if (!hasLoadedRef.current) setLoading(true);
+    fetchData().finally(() => { hasLoadedRef.current = true; });
   }, [currentEvent, fetchData, lastDataRefreshAt]);
+
+  // Reset load flag when event changes so switching events shows the spinner
+  useEffect(() => {
+    hasLoadedRef.current = false;
+  }, [currentEvent]);
 
   /**
    * Handle rating change for a scouter
