@@ -202,7 +202,7 @@ function MatchEditStats() {
       navigate({ to: "/" }); // Dashboard
     } else {
       navigate({
-        to: "/match_end",
+        to: "/",
         search: { teamNum, matchNum, alliance, practice },
       });
     }

@@ -215,7 +215,7 @@ function HomePage() {
       {/* Bottom Nav (same icons/count, consistent bottom spacing) */}
       <nav className="fixed inset-x-0 bottom-0 z-50">
         <div className="mx-auto w-full max-w-md px-4 pb-[calc(env(safe-area-inset-bottom,0px)+12px)]">
-          <div className="flex items-center justify-between rounded-2xl bg-muted px-6 py-4 shadow-lg">
+          <div className="flex items-center justify-between rounded-2xl bg-muted px-6 py-4 shadow-lg dark:shadow-2xl">
             <Button
               className={`h-10 w-10 bg-muted p-0 ${currentPage === "dashboard" ? "text-primary" : "text-muted-foreground"}`}
               onClick={() => setCurrentPage("dashboard")}
@@ -335,7 +335,7 @@ function HomePage() {
                     placeholder={userData.name}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    className="flex-1 text-sm placeholder:text-secondary"
+                    className="flex-1 text-sm placeholder:text-sidebar-ring"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleRename();
                     }}
@@ -360,7 +360,7 @@ function HomePage() {
                     placeholder="Enter invite code"
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value)}
-                    className="flex-1 text-sm placeholder:text-secondary"
+                    className="flex-1 text-sm placeholder:text-sidebar-ring"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleInviteCode();
                     }}
@@ -374,6 +374,24 @@ function HomePage() {
                   </Button>
                 </div>
               </div>
+              {/* Appearance: Dark / Light mode */}
+              <div className="flex flex-col gap-4">
+                <div className="flex gap-3 px-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 border border-border"
+                    onClick={() => {
+                      const isDark = document.documentElement.classList.toggle("dark");
+                      localStorage.setItem("theme", isDark ? "dark" : "light");
+                    }}
+                  >
+                    <span className="text-md text-muted-foreground">
+                      Switch to {document.documentElement.classList.contains("dark") ? "light" : "dark"} mode
+                    </span>
+                  </Button>
+                </div>
+              </div>
+
 
               {/* Change Event Section */}
               <div className="flex flex-row gap-3 p-2">

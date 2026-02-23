@@ -21,6 +21,7 @@ import { getSession } from "@lib/supabase/auth";
 import { Command, CommandInput, CommandList, CommandItem, CommandEmpty } from "@shadcn/ui/components/command.js";
 import { Badge } from "@shadcn/ui/components/badge.tsx";
 export function ScoutingPage() {
+
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
   const [userData, setUserData] = useState(getLocalUserData());
@@ -80,7 +81,6 @@ export function ScoutingPage() {
   
       const fetchShiftData = async () => {
         try {
-          const now = Date.now();
 
           // Count ACTUAL completed match scouting submissions FIRST (doesn't depend on assignments)
           const session = await getSession();
@@ -122,20 +122,29 @@ export function ScoutingPage() {
             setShiftStats({ done: shiftsActuallyDone, left: 0, untilBreak: 0 });
             return;
           }
-
+  
+          if (assignments.length === 0) {
+            setNextShift(null);
+            setShiftStats({ done: 0, left: 0, untilBreak: 0 });
+            return;
+          }
+  
+          const now = Date.now();
           // Map assignments to include match times
           const shiftsWithTimes = assignments.map((assignment) => {
             const matchData = tbaSchedule[assignment.match];
             const matchTime = matchData?.est_time
               ? matchData.est_time * 1000
               : null;
-
             return {
               assignment,
               matchTime,
             };
           });
-
+  
+          const pastShiftsCount = shiftsWithTimes.filter(
+            (s) => s.matchTime && s.matchTime <= now
+          ).length;
           const futureShiftsCount = shiftsWithTimes.filter(
             (s) => s.matchTime && s.matchTime > now
           ).length;
@@ -605,9 +614,9 @@ export function ScoutingPage() {
       {pastMatches.length > 0 && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <p className="text-base text-primary">Edit Past Matches</p>
-            <p className="text-sm text-muted-foreground">
-              {userData.role === "admin" ? "All scouted matches" : "Your scouted matches"}
+            <p className="text-base text-primary">Past Matches</p>
+            <p className="text-sm text-primary">
+              {userData.role === "admin" ? "All Scouted Matches" : "Your Scouted Matches"}
             </p>
           </div>
 
@@ -632,7 +641,6 @@ export function ScoutingPage() {
                         matchNum: match.match,
                         alliance: match.alliance,
                         practice: false,
-                        fromView: "teamView",
                       },
                     })
                   }

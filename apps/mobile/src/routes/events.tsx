@@ -46,9 +46,9 @@ function EventsPage() {
 
   return (
     <div className="min-h-dvh w-full bg-background flex items-center justify-center">
-      <div className="w-72 px-5 py-16 flex flex-col gap-4">
+      <div className="w-72 px-5 py-16 flex flex-col gap-2">
         {/* Search Bar */}
-        <div className="relative mb-6">
+        <div className="relative mb-4">
           <Input
             placeholder="Search events..."
             value={search}
@@ -80,10 +80,10 @@ function EventsPage() {
             <p className="text-center text-muted-foreground">
               Loading events...
             </p>
-          ) : events.length === 0 ? (
+          ) : filteredEvents.length === 0 ? (
             <p className="text-center text-muted-foreground">No events found</p>
           ) : (
-            events.map((event) => {
+            filteredEvents.map((event) => {
               const date = new Date(event.date);
               const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
               const year = date.getFullYear();

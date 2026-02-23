@@ -144,7 +144,7 @@ export function ShiftsPage() {
               className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
               onSelect={() =>
                 navigate({
-                  to: "/match_start",
+                  to: "/match_edit_stats",
                   search: {
                     teamNum: shift.team,
                     matchNum: shift.match,
