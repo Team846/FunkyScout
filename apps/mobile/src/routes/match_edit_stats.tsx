@@ -1385,7 +1385,7 @@ function MatchEditStats() {
                 {([
                   { key: 'bump', label: 'Bump' },
                   { key: 'through', label: 'Trough' },
-                  { key: 'canStation', label: 'Station' },
+                  { key: 'canStation', label: 'Outpost' },
                   { key: 'canGround', label: 'Ground' },
                 ] as const).map(({ key, label }) => {
                   const active = !!(matchData?.postMatch as Record<string, unknown>)?.[key];

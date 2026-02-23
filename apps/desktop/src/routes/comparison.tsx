@@ -280,7 +280,7 @@ function ComparisonBox({
           e.stopPropagation();
           onSwitch();
         }}
-        className="absolute bottom-4 right-4 text-muted-foreground/70 hover:text-muted-foreground transition-colors z-10"
+        className="absolute bottom-2.5 right-2.5 text-muted-foreground/70 hover:text-muted-foreground transition-colors z-10"
         title="Switch metric"
       >
         <RefreshCw className="w-3 h-3" />

@@ -49,7 +49,7 @@ export interface PitScoutFormData {
   };
   intake: {
     ground: boolean;
-    station: boolean;
+    outpost: boolean;
     stocking: boolean;
   };
   fuel: {

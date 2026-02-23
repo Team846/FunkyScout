@@ -42,7 +42,9 @@ const formatRelativeTime = (timestamp: number): string => {
     if (minutes < 60) return `in ${minutes}m`;
     if (hours < 24) {
       const remainingMins = minutes % 60;
-      return remainingMins > 0 ? `in ${hours}h ${remainingMins}m` : `in ${hours}h`;
+      return remainingMins > 0
+        ? `in ${hours}h ${remainingMins}m`
+        : `in ${hours}h`;
     }
     return `in ${days}d`;
   } else {
@@ -69,9 +71,11 @@ export function ShiftsPage() {
 
     getUserEventScheduleAssignments(currentEvent, userData.name)
       .then((assignments) => {
-        console.log(`[ShiftsPage] Found ${assignments.length} shift assignments for user: ${userData.name}`);
+        console.log(
+          `[ShiftsPage] Found ${assignments.length} shift assignments for user: ${userData.name}`
+        );
         if (assignments.length > 0) {
-          console.log('[ShiftsPage] First assignment:', assignments[0]);
+          console.log("[ShiftsPage] First assignment:", assignments[0]);
         }
         const now = Date.now();
 
@@ -127,8 +131,6 @@ export function ShiftsPage() {
 
   return (
     <div className="flex h-full flex-1 flex-col gap-4 min-h-0 overflow-hidden">
-
-
       <Command className="flex h-full flex-1 min-h-0 flex-col w-full bg-background [&_[data-slot=command-input-wrapper]]:border-0 [&_[data-slot=command-input-wrapper]]:h-14 [&_[data-slot=command-input-wrapper]]:rounded-2xl [&_[data-slot=command-input-wrapper]]:bg-muted [&_[data-slot=command-input-wrapper]]:px-1 [&_[data-slot=command-input-wrapper]]:sticky [&_[data-slot=command-input-wrapper]]:top-0 [&_[data-slot=command-input-wrapper]]:z-10">
         <CommandInput
           className="text-foreground text-md placeholder-border"
@@ -144,7 +146,7 @@ export function ShiftsPage() {
               className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
               onSelect={() =>
                 navigate({
-                  to: "/match_edit_stats",
+                  to: "/match_start",
                   search: {
                     teamNum: shift.team,
                     matchNum: shift.match,
@@ -160,7 +162,10 @@ export function ShiftsPage() {
                     <span className="font-bold text-primary">
                       {shift.matchLabel}
                     </span>
-                    <span className="text-foreground"> | Team {shift.teamNumber}</span>
+                    <span className="text-foreground">
+                      {" "}
+                      | Team {shift.teamNumber}
+                    </span>
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge

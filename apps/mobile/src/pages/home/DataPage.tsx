@@ -42,17 +42,17 @@ interface TeamStats {
   rank: number;
   epa: number | null;
   averageRating: number | null; // Average of all ratings across all matches
-  climbPercentage: number | null; // Percentage of matches with successful climb
+  avgClimbPts: number | null; // Avg climb points per match (auto=15, L1=10, L2=20, L3=30)
   matchCount: number; // Total matches scouted
 }
 
-type SortField = "rank" | "epa" | "averageRating" | "climbPercentage";
+type SortField = "rank" | "epa" | "averageRating" | "avgClimbPts";
 
 const SORT_FIELD_LABELS: Record<SortField, string> = {
   rank: "Rank",
   epa: "EPA",
   averageRating: "Avg Rating",
-  climbPercentage: "Climb %",
+  avgClimbPts: "Climb Pts",
 };
 
 const formatMatchTime = (timestamp: number) => {
@@ -139,8 +139,11 @@ export function DataPage() {
         rank: team.rank || 0,
         epa: epaValue, // Keep EPA from TBA data
         averageRating: stats?.ratings.overall || null,
-        climbPercentage: stats
-          ? stats.climb.L2Percentage + stats.climb.L3Percentage
+        avgClimbPts: stats
+          ? (stats.climb.autoClimbPercentage / 100 * 15) +
+            (stats.climb.L1Percentage / 100 * 10) +
+            (stats.climb.L2Percentage / 100 * 20) +
+            (stats.climb.L3Percentage / 100 * 30)
           : null,
         matchCount: stats?.matchCount || 0,
       };
@@ -167,9 +170,9 @@ export function DataPage() {
           aVal = a.averageRating ?? -1;
           bVal = b.averageRating ?? -1;
           break;
-        case "climbPercentage":
-          aVal = a.climbPercentage ?? -1;
-          bVal = b.climbPercentage ?? -1;
+        case "avgClimbPts":
+          aVal = a.avgClimbPts ?? -1;
+          bVal = b.avgClimbPts ?? -1;
           break;
         default:
           return 0;
@@ -198,10 +201,10 @@ export function DataPage() {
         return team.averageRating != null
           ? `Avg Rating: ${team.averageRating.toFixed(2)}`
           : "Avg Rating: —";
-      case "climbPercentage":
-        return team.climbPercentage != null
-          ? `Climb: ${team.climbPercentage.toFixed(0)}%`
-          : "Climb: —";
+      case "avgClimbPts":
+        return team.avgClimbPts != null
+          ? `Climb Pts: ${team.avgClimbPts.toFixed(1)}`
+          : "Climb Pts: —";
     }
   };
 

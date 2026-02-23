@@ -54,14 +54,14 @@
     },
     {
       "id": "stationIntake",
-      "label": "Station Intake",
+      "label": "Outpost Intake",
       "category": "fixedLocation",
       "location": { "x": 0.1, "y": 0.3 },
       "phase": "both"
     },
     {
       "id": "stationStocked",
-      "label": "Station Stocked",
+      "label": "Outpost Stocked",
       "category": "fixedLocation",
       "location": { "x": 0.1, "y": 0.35 },
       "phase": "both"
@@ -152,13 +152,13 @@
     },
     {
       "id": "ratingStationIntake",
-      "label": "Station Intake Rating",
+      "label": "Outpost Intake Rating",
       "category": "postMatch",
       "phase": "postMatch"
     },
     {
       "id": "ratingStationStocking",
-      "label": "Station Stocking Rating",
+      "label": "Outpost Stocking Rating",
       "category": "postMatch",
       "phase": "postMatch"
     },

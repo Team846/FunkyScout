@@ -37,15 +37,19 @@
             "info": "Can the robot intake game pieces from the ground?"
           },
           {
-            "name": "station",
-            "label": "Station",
+            "name": "outpost",
+            "label": "Outpost",
             "type": "boolean",
-            "info": "Can the robot intake from the station?"
+            "info": "Can the robot intake from the outpost?"
           },
           {
             "name": "stocking",
             "label": "Stocking",
             "type": "boolean",
+            "conditional": {
+              "field": "intake.outpost",
+              "equals": true
+            },
             "info": "Can the robot intake while stocking?"
           }
         ]

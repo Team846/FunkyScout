@@ -5,7 +5,6 @@ import type { MatchScoutingData } from "../../../lib/db";
 import { calculateAllTeamStats } from "@lib/data/matchStats";
 import type { EventMatchData } from "@lib/db";
 import type { TbaClimbEntry } from "../../../contexts/DesktopCompetitionDataContext";
-import { computeClimbWithTba } from "../../../utils/climbOverride";
 
 type SortColumn = "rank" | "epa" | "rating" | "climb";
 
@@ -26,7 +25,7 @@ interface TeamRow {
   epa: number | null;
   opr: number | null;
   rating: number | null;
-  climbPct: number | null;
+  avgClimbPts: number | null;
 }
 
 function useEpaColors(tbaTeams: TBATeam[]) {
@@ -57,20 +56,34 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
 
   // Build table rows
   const rows: TeamRow[] = useMemo(() => {
-    const castMatchData = matchData as unknown as EventMatchData[];
     return tbaTeams.map((t) => {
       const stats = allTeamStats[t.key];
 
-      // Determine climb percentage: use TBA override if enabled and data available
-      let climbPct: number | null = null;
-      if (stats) {
-        if (useTbaClimb && tbaClimbData && Object.keys(tbaClimbData).length > 0) {
-          const tbaClimb = computeClimbWithTba(t.key, castMatchData, tbaClimbData);
-          climbPct = Math.round(tbaClimb.L2Percentage + tbaClimb.L3Percentage);
-        } else {
-          // Bug fix: values are already 0-100, do NOT multiply by 100
-          climbPct = Math.round(stats.climb.L2Percentage + stats.climb.L3Percentage);
+      // Compute avg climb points matching the graph (GRAPHABLE_STATS avg_climb_points):
+      // Iterate TBA climb entries directly so denominator = all TBA matches (not just scouted)
+      let avgClimbPts: number | null = null;
+      if (useTbaClimb && tbaClimbData && Object.keys(tbaClimbData).length > 0) {
+        let totalPts = 0;
+        let count = 0;
+        for (const matchEntries of Object.values(tbaClimbData)) {
+          const entry = matchEntries[t.key];
+          if (entry !== undefined) {
+            let pts = entry.auto_climb != null ? 15 : 0;
+            if (entry.teleop_climb === "L1") pts += 10;
+            else if (entry.teleop_climb === "L2") pts += 20;
+            else if (entry.teleop_climb === "L3") pts += 30;
+            totalPts += pts;
+            count++;
+          }
         }
+        if (count > 0) avgClimbPts = totalPts / count;
+      } else if (stats) {
+        // Fall back to scouted stats
+        avgClimbPts =
+          (stats.climb.autoClimbPercentage / 100 * 15) +
+          (stats.climb.L1Percentage / 100 * 10) +
+          (stats.climb.L2Percentage / 100 * 20) +
+          (stats.climb.L3Percentage / 100 * 30);
       }
 
       return {
@@ -81,7 +94,7 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
         epa: t.epa?.total_points?.mean ?? null,
         opr: t.opr ?? null,
         rating: stats?.ratings?.overall ?? null,
-        climbPct,
+        avgClimbPts,
       };
     });
   }, [tbaTeams, allTeamStats, matchData, useTbaClimb, tbaClimbData]);
@@ -117,9 +130,9 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
           valB = b.rating ?? -1;
           return valB - valA; // Descending - higher rating is better
         case "climb":
-          valA = a.climbPct ?? -1;
-          valB = b.climbPct ?? -1;
-          return valB - valA; // Descending - higher climb % is better
+          valA = a.avgClimbPts ?? -1;
+          valB = b.avgClimbPts ?? -1;
+          return valB - valA; // Descending - higher avg climb pts is better
         default:
           return 0;
       }
@@ -142,7 +155,7 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
     { key: "rank", label: "Rank" },
     { key: "epa", label: "EPA" },
     { key: "rating", label: "Avg Rating" },
-    { key: "climb", label: "Climb %" },
+    { key: "climb", label: "Climb Pts" },
   ];
 
   return (
@@ -214,9 +227,9 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
                   {row.rating != null ? row.rating.toFixed(1) : "—"}
                 </span>
 
-                {/* Climb % */}
+                {/* Avg Climb Pts */}
                 <span className="text-sm text-center text-muted-foreground">
-                  {row.climbPct != null ? `${row.climbPct}%` : "—"}
+                  {row.avgClimbPts != null ? row.avgClimbPts.toFixed(1) : "—"}
                 </span>
               </div>
             );

@@ -14,6 +14,10 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@shadcn/ui/components/popover.tsx";
+import {
+  Dialog,
+  DialogContent,
+} from "@shadcn/ui/components/dialog.js";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import type {
   AutoEntry,
@@ -37,17 +41,21 @@ export const Route = createFileRoute("/pitscout")({
   },
 });
 
-// Info icon with popover
+// Info icon with popover — uses <span> to avoid nested <button> error
 function InfoButton({ info }: { info?: string }) {
   if (!info) return null;
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <span
+          role="button"
+          tabIndex={0}
           onClick={(e) => e.stopPropagation()}
-          className="flex items-center justify-center"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+          }}
+          className="flex items-center justify-center cursor-pointer"
         >
           <svg
             viewBox="0 0 24 24"
@@ -70,7 +78,7 @@ function InfoButton({ info }: { info?: string }) {
             />
             <circle cx="12" cy="8" r="1" fill="currentColor" />
           </svg>
-        </button>
+        </span>
       </PopoverTrigger>
       <PopoverContent className="w-48 text-sm bg-card">
         <p className="text-muted-foreground">{info}</p>
@@ -156,7 +164,7 @@ function AutosSection({
     const newId = Date.now();
     setEntries([
       ...entries,
-      { id: newId, climb: false, drawing: null, name: "", description: "" },
+      { id: newId, climb: false, drawing: null, name: `Auto ${entries.length + 1}`, description: "" },
     ]);
     // Open drawer for new entry
     setEditingAutoId(newId);
@@ -294,6 +302,7 @@ function ScoutPage() {
   const navigate = useNavigate();
   const { teamNum, teamName } = Route.useSearch();
   const { formData, setFormData } = usePitScoutForm();
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
 
   /* GENERATED:STATE:START */
   // Movement state
@@ -302,7 +311,7 @@ function ScoutPage() {
 
   // Intake state
   const [intakeGround, setIntakeGround] = useState(false);
-  const [intakeStation, setIntakeStation] = useState(false);
+  const [intakeOutpost, setIntakeOutpost] = useState(false);
   const [intakeStocking, setIntakeStocking] = useState(false);
 
   // Fuel state
@@ -332,7 +341,7 @@ function ScoutPage() {
       setMovementBump(formData.movement.bump);
       setMovementTrough(formData.movement.trough);
       setIntakeGround(formData.intake.ground);
-      setIntakeStation(formData.intake.station);
+      setIntakeOutpost(formData.intake.outpost);
       setIntakeStocking(formData.intake.stocking);
       setFuelShootMoving(formData.fuel.shootMoving);
       setFuelPassing(formData.fuel.passing);
@@ -365,7 +374,7 @@ function ScoutPage() {
       },
       intake: {
         ground: intakeGround,
-        station: intakeStation,
+        outpost: intakeOutpost,
         stocking: intakeStocking,
       },
       fuel: {
@@ -396,33 +405,53 @@ function ScoutPage() {
 
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
-      {/* Header with Back Button and Team Info */}
-      <div className="flex items-center gap-4 mb-4">
+      {/* Header with Back Button, Team Info, and Cheat Sheet */}
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate({ to: "/pit" })}
+            className="text-primary"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="size-6"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M15 18L9 12L15 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          {teamNum && (
+            <p className="text-base">
+              <span className="font-bold text-primary">{teamNum}</span>
+              {teamName && <span className="text-foreground"> | {teamName}</span>}
+            </p>
+          )}
+        </div>
+        {/* Cheat sheet info button */}
         <button
-          onClick={() => navigate({ to: "/pit" })}
-          className="text-primary"
+          type="button"
+          onClick={() => setCheatSheetOpen(true)}
+          className="text-primary flex-shrink-0"
+          aria-label="Open cheat sheet"
         >
           <svg
             viewBox="0 0 24 24"
-            className="size-6"
+            className="size-7 text-primary"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path
-              d="M15 18L9 12L15 6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+            <path d="M12 16V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <circle cx="12" cy="8" r="1" fill="currentColor" />
           </svg>
         </button>
-        {teamNum && (
-          <p className="text-base">
-            <span className="font-bold text-primary">{teamNum}</span>
-            {teamName && <span className="text-foreground"> | {teamName}</span>}
-          </p>
-        )}
       </div>
 
       {/* Divider */}
@@ -469,22 +498,27 @@ function ScoutPage() {
                 Ground
               </ScoutToggle>
               <ScoutToggle
-                pressed={intakeStation}
-                onPressedChange={setIntakeStation}
+                pressed={intakeOutpost}
+                onPressedChange={(p) => {
+                  setIntakeOutpost(p);
+                  if (!p) setIntakeStocking(false);
+                }}
                 className="w-full"
-                info="Can the robot intake from the station?"
+                info="Can the robot intake from the outpost?"
               >
-                Station
+                Outpost
               </ScoutToggle>
             </div>
-            <ScoutToggle
-              pressed={intakeStocking}
-              onPressedChange={setIntakeStocking}
-              className="w-full"
-              info="Can the robot intake while stocking?"
-            >
-              Stocking
-            </ScoutToggle>
+            {intakeOutpost && (
+              <ScoutToggle
+                pressed={intakeStocking}
+                onPressedChange={setIntakeStocking}
+                className="w-full"
+                info="Can the robot intake while stocking?"
+              >
+                Stocking
+              </ScoutToggle>
+            )}
           </div>
         </Section>
 
@@ -655,6 +689,29 @@ function ScoutPage() {
 
       {/* Bottom padding to prevent content from being hidden behind fixed button */}
       <div className="h-20" />
+
+      {/* Cheat Sheet Popup */}
+      <Dialog open={cheatSheetOpen} onOpenChange={setCheatSheetOpen}>
+        <DialogContent className="w-[90vw] h-[80vh] max-w-none p-0 overflow-hidden">
+          <div className="relative w-full h-full flex items-center justify-center bg-black">
+            <button
+              type="button"
+              onClick={() => setCheatSheetOpen(false)}
+              className="absolute top-3 right-3 z-10 flex items-center justify-center size-8 rounded-full bg-black/60 text-white"
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+            <img
+              src="/cheatsheet.png"
+              alt="Game Cheat Sheet"
+              className="w-full h-full object-contain"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

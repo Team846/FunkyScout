@@ -767,7 +767,7 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   // Auto
   { key: "auto_shoots",           label: "Auto Shoots",           group: "Auto",     getValue: (s) => s.auto.shoots,          normalize: relativeNorm },
   { key: "auto_ground_intakes",   label: "Auto Ground Intakes",   group: "Auto",     getValue: (s) => s.auto.groundIntakes,   normalize: relativeNorm },
-  { key: "auto_station_intakes",  label: "Auto Station Intakes",  group: "Auto",     getValue: (s) => s.auto.stationIntakes,  normalize: relativeNorm },
+  { key: "auto_station_intakes",  label: "Auto Outpost Intakes",  group: "Auto",     getValue: (s) => s.auto.stationIntakes,  normalize: relativeNorm },
   { key: "auto_passes",           label: "Auto Passes",           group: "Auto",     getValue: (s) => s.auto.passes,          normalize: relativeNorm },
   {
     key: "auto_total_actions", label: "Auto Total Actions", group: "Auto",
@@ -778,7 +778,7 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   // Teleop
   { key: "teleop_shoots",          label: "Teleop Shoots",          group: "Teleop",  getValue: (s) => s.teleop.shoots,         normalize: relativeNorm },
   { key: "teleop_ground_intakes",  label: "Teleop Ground Intakes",  group: "Teleop",  getValue: (s) => s.teleop.groundIntakes,  normalize: relativeNorm },
-  { key: "teleop_station_intakes", label: "Teleop Station Intakes", group: "Teleop",  getValue: (s) => s.teleop.stationIntakes, normalize: relativeNorm },
+  { key: "teleop_station_intakes", label: "Teleop Outpost Intakes", group: "Teleop",  getValue: (s) => s.teleop.stationIntakes, normalize: relativeNorm },
   { key: "teleop_passes",          label: "Teleop Passes",          group: "Teleop",  getValue: (s) => s.teleop.passes,         normalize: relativeNorm },
   {
     key: "teleop_total_actions", label: "Teleop Total Actions", group: "Teleop",

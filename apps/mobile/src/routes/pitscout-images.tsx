@@ -181,7 +181,6 @@ function PitScoutImagesPage() {
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               multiple
               onChange={handleImageSelect}
               className="hidden"

@@ -38,7 +38,7 @@ interface PitData {
   };
   intake: {
     ground: boolean;
-    station: boolean;
+    outpost: boolean;
     stocking: boolean;
   };
   fuel: {
@@ -86,7 +86,7 @@ interface Verifications {
   };
   intake: {
     ground: VerificationItem;
-    station: VerificationItem;
+    outpost: VerificationItem;
     stocking: VerificationItem;
   };
   fuel: {
@@ -197,7 +197,7 @@ function TeamInfoPage() {
     bump:         matches.some(m => m.data_raw?.postMatch?.bump),
     trough:       matches.some(m => m.data_raw?.postMatch?.trough),
     ground:       matches.some(m => m.data_raw?.postMatch?.canGround),
-    station:      matches.some(m => m.data_raw?.postMatch?.canStation),
+    outpost:      matches.some(m => m.data_raw?.postMatch?.canStation),
     stocking:     matches.some(m => m.data_raw?.postMatch?.canStocking),
     shootMoving:  matches.some(m => m.data_raw?.postMatch?.shootMoving),
     passing:      matches.some(m => m.data_raw?.postMatch?.canPass),
@@ -237,7 +237,7 @@ function TeamInfoPage() {
     },
     intake: {
       ground:   boolItem(pit.intake?.ground ?? false, observed.ground),
-      station:  boolItem(pit.intake?.station ?? false, observed.station),
+      outpost:  boolItem(pit.intake?.outpost ?? false, observed.outpost),
       stocking: boolItem(pit.intake?.stocking ?? false, observed.stocking),
     },
     fuel: {
@@ -672,24 +672,28 @@ function TeamInfoPage() {
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Station</p>
+                    <p className="text-foreground">Outpost</p>
                     <div className="flex items-center gap-2">
-                      <p className={`font-semibold ${pitData.intake?.station ? "text-chart-2" : "text-destructive"}`}>
-                        {pitData.intake?.station ? "Yes" : "No"}
+                      <p className={`font-semibold ${pitData.intake?.outpost ? "text-chart-2" : "text-destructive"}`}>
+                        {pitData.intake?.outpost ? "Yes" : "No"}
                       </p>
-                      {verifications && <VerificationBadge item={verifications.intake.station} />}
+                      {verifications && <VerificationBadge item={verifications.intake.outpost} />}
                     </div>
                   </div>
-                  <div className="h-px bg-border my-2" />
-                  <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Stocking</p>
-                    <div className="flex items-center gap-2">
-                      <p className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}>
-                        {pitData.intake?.stocking ? "Yes" : "No"}
-                      </p>
-                      {verifications && <VerificationBadge item={verifications.intake.stocking} />}
-                    </div>
-                  </div>
+                  {pitData.intake?.outpost && (
+                    <>
+                      <div className="h-px bg-border my-2" />
+                      <div className="flex items-center justify-between py-2">
+                        <p className="text-foreground">Stocking</p>
+                        <div className="flex items-center gap-2">
+                          <p className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}>
+                            {pitData.intake?.stocking ? "Yes" : "No"}
+                          </p>
+                          {verifications && <VerificationBadge item={verifications.intake.stocking} />}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

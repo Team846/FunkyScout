@@ -358,9 +358,9 @@ function MatchEditTestPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* Auto Station */}
+                    {/* Auto Outpost */}
                     <div className="flex items-center gap-4">
-                      <Label className="w-32">Auto Station:</Label>
+                      <Label className="w-32">Auto Outpost:</Label>
                       <Input
                         type="number"
                         value={autoStation}
@@ -385,9 +385,9 @@ function MatchEditTestPage() {
                       </div>
                     </div>
 
-                    {/* Teleop Station */}
+                    {/* Teleop Outpost */}
                     <div className="flex items-center gap-4">
-                      <Label className="w-32">Teleop Station:</Label>
+                      <Label className="w-32">Teleop Outpost:</Label>
                       <Input
                         type="number"
                         value={teleopStation}
