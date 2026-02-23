@@ -118,80 +118,87 @@ function MatchCardSmall({
 
   return (
     <div
-      className={`w-[180px] flex-shrink-0 border rounded-lg px-3 py-3 flex flex-col gap-1.5 ${allianceBorder}`}
+      className={`w-[180px] flex-shrink-0 border rounded-lg px-3 py-3 flex items-stretch gap-0 ${allianceBorder}`}
     >
-      {/* Row 1: Match display + time */}
-      <div className="flex items-baseline justify-between gap-2">
+      {/* Left side: centered vertically */}
+      <div className="flex flex-1 flex-col items-center justify-center gap-1 pr-2 min-w-0">
         <span className="font-semibold text-base">{card.matchDisplay}</span>
-        {matchTime && (
-          <span className="text-xs text-muted-foreground/60">{matchTime}</span>
+
+        {!isTeam && (
+          <span className="text-sm text-primary leading-none">
+            {card.teamNumber}
+          </span>
+        )}
+
+        {type === "team-past" && (
+          <>
+            {card.redScore != null && (
+              <div className="text-sm leading-none font-medium">
+                <span className="text-red-400">{card.redScore}</span>
+                <span className="text-muted-foreground/50"> - </span>
+                <span className="text-blue-400">{card.blueScore}</span>
+              </div>
+            )}
+            <div
+              className={`text-xs leading-snug truncate ${
+                card.wasScouted ? "text-primary" : "text-muted-foreground/70"
+              }`}
+            >
+              {card.wasScouted
+                ? card.scoutedByName ?? "Scouted"
+                : "Not scouted"}
+            </div>
+          </>
+        )}
+
+        {type === "team-next" && card.predictedRedScore != null && (
+          <div className="text-sm leading-none font-medium">
+            <span className="text-red-400/70">~{Math.round(card.predictedRedScore)}</span>
+            <span className="text-muted-foreground/50"> - </span>
+            <span className="text-blue-400/70">~{Math.round(card.predictedBlueScore ?? 0)}</span>
+          </div>
         )}
       </div>
 
-      {/* Scouter rows: team number */}
-      {!isTeam && (
-        <div className="text-sm text-primary leading-none">
-          {card.teamNumber}
-        </div>
-      )}
+      {/* Vertical divider */}
+      <div className="w-px bg-border shrink-0" />
 
-      {/* Scouter past: climb badge */}
-      {type === "scouter-past" && (
-        <ClimbBadge
-          wasScouted={card.wasScouted}
-          scouted={card.scoutedClimbLevel}
-          tba={card.tbaClimbLevel}
-          climbMatch={card.climbMatch}
-        />
-      )}
+      {/* Right side: left-aligned, close to divider */}
+      <div className="flex flex-1 flex-col items-start justify-center gap-1 pl-2 min-w-0">
+        {matchTime ? (
+          <span className="text-xs text-muted-foreground/60">{matchTime}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground/40">—</span>
+        )}
 
-      {/* Team past: scores in "red - blue" format + who scouted */}
-      {type === "team-past" && (
-        <>
-          {card.redScore != null && (
-            <div className="text-sm leading-none font-medium">
-              <span className="text-red-400">{card.redScore}</span>
-              <span className="text-muted-foreground/50"> - </span>
-              <span className="text-blue-400">{card.blueScore}</span>
-            </div>
-          )}
-          <div
-            className={`text-xs leading-snug truncate ${
-              card.wasScouted ? "text-primary" : "text-muted-foreground/70"
-            }`}
-          >
-            {card.wasScouted
-              ? card.scoutedByName ?? "Scouted"
-              : "No one scouted"}
-          </div>
+        {type === "scouter-past" && (
           <ClimbBadge
             wasScouted={card.wasScouted}
             scouted={card.scoutedClimbLevel}
             tba={card.tbaClimbLevel}
             climbMatch={card.climbMatch}
           />
-        </>
-      )}
+        )}
 
-      {/* Team next: predicted scores + who's assigned */}
-      {type === "team-next" && (
-        <>
-          {card.predictedRedScore != null && (
-            <div className="text-sm leading-none font-medium">
-              <span className="text-red-400/70">~{Math.round(card.predictedRedScore)}</span>
-              <span className="text-muted-foreground/50"> - </span>
-              <span className="text-blue-400/70">~{Math.round(card.predictedBlueScore ?? 0)}</span>
-            </div>
-          )}
+        {type === "team-past" && (
+          <ClimbBadge
+            wasScouted={card.wasScouted}
+            scouted={card.scoutedClimbLevel}
+            tba={card.tbaClimbLevel}
+            climbMatch={card.climbMatch}
+          />
+        )}
+
+        {type === "team-next" && (
           <div
-            className={`text-xs leading-snug truncate ${
+            className={`text-xs leading-snug truncate text-right ${
               card.assignedScouterName ? "text-primary" : "text-muted-foreground/70"
             }`}
           >
             {card.assignedScouterName ?? "No one assigned"}
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -208,7 +215,7 @@ function MatchCardScroll({
   return (
     <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
       <div
-        className={`flex gap-2.5 overflow-x-auto items-center py-1 ${alignRight ? "flex-row-reverse" : ""}`}
+        className={`flex gap-3.5 overflow-x-auto items-center py-1 ${alignRight ? "flex-row-reverse" : ""}`}
         style={{ scrollbarWidth: "thin" }}
       >
         {cards.length === 0 ? (
@@ -292,7 +299,7 @@ function ScouterRow({
   onRatingChange: (uid: string, n: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-6">
       <MatchCardScroll cards={row.pastMatches} type="scouter-past" alignRight />
       <ScouterCard
         row={row}
@@ -314,7 +321,7 @@ function TeamRow({
   onPriorityChange: (teamKey: string, n: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-6">
       <MatchCardScroll cards={row.pastMatches} type="team-past" alignRight />
       <TeamCard
         row={row}
@@ -507,7 +514,7 @@ function ShiftViewerPage() {
                 : "No scouters assigned or scouting data found"}
             </EmptyState>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {filteredScouters.map((s) => (
                 <ScouterRow
                   key={s.uid}
@@ -562,7 +569,7 @@ function ShiftViewerPage() {
                 : "No teams in the schedule"}
             </EmptyState>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {filteredTeams.map((t) => (
                 <TeamRow
                   key={t.teamKey}
