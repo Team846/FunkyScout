@@ -3,6 +3,7 @@ import {
   ArrowDown,
   Maximize2,
   Grid2X2,
+  BarChart2,
   X,
 } from "lucide-react";
 import {
@@ -89,6 +90,8 @@ export function ClimbLevelChip({ label, count, n }: { label: string; count: numb
 
 // ─── FullTeamPanel ──────────────────────────────────────────────────────────
 
+export type FullTeamPanelVariant = "picklist" | "comparison";
+
 export interface FullTeamPanelProps {
   teamKey: string;
   entry: PicklistEntry | undefined;
@@ -101,6 +104,16 @@ export interface FullTeamPanelProps {
   onRemove: () => void;
   dragListeners?: Record<string, unknown>;
   dragAttributes?: Record<string, unknown>;
+  /** "picklist" = order #, up/down, drag. "comparison" = metrics-better-at, graph. */
+  variant?: FullTeamPanelVariant;
+  /** For comparison: how many metrics this team is better at (vs the other display team) */
+  metricsBetterAt?: number;
+  /** For comparison: "higher" = green, "lower" = red, "tie" = muted */
+  metricsBetterStatus?: "higher" | "lower" | "tie";
+  /** For comparison: is this team in the graph section */
+  isGraphed?: boolean;
+  /** For comparison: toggle graph */
+  onGraphToggle?: (e: React.MouseEvent) => void;
 }
 
 export function FullTeamPanel({
@@ -115,17 +128,33 @@ export function FullTeamPanel({
   onRemove,
   dragListeners,
   dragAttributes,
+  variant = "picklist",
+  metricsBetterAt = 0,
+  metricsBetterStatus,
+  isGraphed = false,
+  onGraphToggle,
 }: FullTeamPanelProps) {
   const teamNum = getTeamNum(teamKey);
   const teamName = tbaTeam?.name ?? teamKey;
   const climb = getClimbCounts(teamKey, matchData, tbaClimbData, useTbaClimb);
+  const isComparison = variant === "comparison";
 
   return (
     <div className="w-full h-full border border-border rounded-lg bg-card flex flex-col overflow-hidden">
-      {/* Header bar */}
+      {/* Header bar — picklist vs comparison */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border flex-shrink-0">
-        <span className="w-7 h-7 rounded-full border border-muted-foreground/50 text-muted-foreground text-xs font-semibold flex items-center justify-center flex-shrink-0">
-          {entry?.rank ?? "—"}
+        {/* Left: order # (picklist) or metrics-better-at (comparison) */}
+        <span
+          className={[
+            "w-7 h-7 rounded-full border text-xs font-semibold flex items-center justify-center flex-shrink-0",
+            isComparison && metricsBetterStatus === "higher"
+              ? "border-green-500/50 text-green-600 dark:text-green-400"
+              : isComparison && metricsBetterStatus === "lower"
+                ? "border-red-500/50 text-red-600 dark:text-red-400"
+                : "border-muted-foreground/50 text-muted-foreground",
+          ].join(" ")}
+        >
+          {isComparison ? metricsBetterAt : (entry?.rank ?? "—")}
         </span>
         <span className="text-sm font-medium text-primary truncate">
           {teamName}
@@ -136,28 +165,46 @@ export function FullTeamPanel({
         </span>
         <div className="flex-1" />
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={onMoveUp}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-            title="Move up in picklist rank"
-          >
-            <ArrowUp className="w-5 h-5" />
-          </button>
-          <button
-            onClick={onMoveDown}
-            className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-            title="Move down in picklist rank"
-          >
-            <ArrowDown className="w-5 h-5" />
-          </button>
-          <div
-            {...dragAttributes}
-            {...dragListeners}
-            className="p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-            title="Drag to reorder display position"
-          >
-            <Grid2X2 className="w-5 h-5" />
-          </div>
+          {isComparison ? (
+            /* Comparison: graph button only (replaces up/down + drag) */
+            <button
+              onClick={(e) => { e.stopPropagation(); onGraphToggle?.(e); }}
+              className={[
+                "p-0.5 rounded transition-colors",
+                isGraphed
+                  ? "text-primary drop-shadow-[0_0_4px_hsl(var(--primary))]"
+                  : "text-muted-foreground/60 hover:text-muted-foreground",
+              ].join(" ")}
+              title={isGraphed ? "Remove from graph" : "Add to graph"}
+            >
+              <BarChart2 className="w-5 h-5" />
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onMoveUp}
+                className="p-0.5 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                title="Move up in picklist rank"
+              >
+                <ArrowUp className="w-5 h-5" />
+              </button>
+              <button
+                onClick={onMoveDown}
+                className="p-0.5 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                title="Move down in picklist rank"
+              >
+                <ArrowDown className="w-5 h-5" />
+              </button>
+              <div
+                {...dragAttributes}
+                {...dragListeners}
+                className="p-0.5 rounded cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+                title="Drag to reorder display position"
+              >
+                <Grid2X2 className="w-5 h-5" />
+              </div>
+            </>
+          )}
           <button
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
             title="Expand team details"

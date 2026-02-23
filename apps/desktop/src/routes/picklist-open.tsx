@@ -354,10 +354,10 @@ function TeamBar({
 
       {/* Bottom icons - matching header exactly */}
       <div className="flex flex-col items-center gap-2 flex-shrink-0">
-        <button className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors">
+        <button className="p-0.5 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors">
           <ArrowUp className="w-5 h-5" />
         </button>
-        <button className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors">
+        <button className="p-0.5 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors">
           <ArrowDown className="w-5 h-5" />
         </button>
         <div

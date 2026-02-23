@@ -422,14 +422,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div
                     key={tab.id}
                     className={[
-                      "group flex items-center gap-1.5 px-3 text-xs border-r border-border cursor-pointer select-none flex-shrink-0 transition-colors",
+                      "group flex items-center justify-center gap-1.5 px-4 text-xs border-r border-border cursor-pointer select-none w-[160px] flex-shrink-0 transition-colors",
                       isActive
                         ? "bg-card text-foreground border-b-2 border-b-primary -mb-px"
                         : "text-muted-foreground hover:text-foreground hover:bg-secondary/50",
                     ].join(" ")}
                     onClick={() => setActiveTab(tab.id)}
                   >
-                    <span className="max-w-[140px] truncate">{tab.title}</span>
+                    <span className="truncate">{tab.title}</span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

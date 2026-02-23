@@ -88,7 +88,6 @@ const DEFAULT_COMP_METRICS = [
   "epa",
   "avg_fuel_points",
   "avg_climb_points",
-  "teleop_climb_time",
   "rating_overall",
 ];
 
@@ -165,7 +164,6 @@ function ComparisonSidebarCard({
   const teamNum = getTeamNum(tbaTeam.key);
   const teamName = tbaTeam.name ?? tbaTeam.key;
   const epa = tbaTeam.epa?.total_points?.mean;
-  const opr = tbaTeam.opr;
 
   return (
     <div
@@ -189,34 +187,31 @@ function ComparisonSidebarCard({
           </span>
           <span className="text-sm text-primary flex-shrink-0">{teamNum}</span>
         </div>
-        {/* Row 2: graph icon | expand icon (disabled) | EPA badge | OPR badge */}
+        {/* Row 2: graph button (wider) | expand | EPA: [bubble] */}
         <div className="flex items-center gap-2 mt-2">
           <button
             onClick={onGraphToggle}
             className={[
-              "rounded transition-colors",
+              "px-2.5 h-8 flex items-center justify-center rounded transition-colors flex-shrink-0",
               isGraphed
                 ? "text-primary drop-shadow-[0_0_4px_hsl(var(--primary))]"
                 : "text-muted-foreground/50 hover:text-muted-foreground",
             ].join(" ")}
             title={isGraphed ? "Remove from graph" : "Add to graph"}
           >
-            <BarChart2 className="w-4 h-4" />
+            <BarChart2 className="w-5 h-5" />
           </button>
           <button
             disabled
             onClick={(e) => e.stopPropagation()}
-            className="rounded text-muted-foreground/30 cursor-not-allowed"
+            className="rounded text-muted-foreground/30 cursor-not-allowed flex-shrink-0 p-0.5"
           >
             <Maximize2 className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-1.5 ml-auto">
-            <span className="text-xs text-muted-foreground/60">Epa/OPR:</span>
+          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+            <span className="text-xs text-muted-foreground/60">EPA:</span>
             <span className="px-1.5 h-5 rounded-full bg-primary text-background text-xs font-base tabular-nums flex items-center justify-center">
               {epa != null ? epa.toFixed(1) : "—"}
-            </span>
-            <span className="px-1.5 h-5 rounded-full bg-primary text-background text-xs font-base tabular-nums flex items-center justify-center">
-              {opr != null ? opr.toFixed(1) : "—"}
             </span>
           </div>
         </div>
@@ -273,55 +268,66 @@ function ComparisonBox({
   }
 
   return (
-    <div className="border border-border rounded-lg bg-card p-3 relative flex flex-col gap-1 min-h-[80px] justify-center">
-      {/* Switch icon */}
+    <div
+      className={[
+        "w-[120px] h-[120px] flex-shrink-0 rounded-xl border bg-card pt-5 pb-5 px-2 relative flex flex-col justify-between items-center",
+        "border-border/70",
+      ].join(" ")}
+    >
+      {/* Switch icon - absolutely positioned so it doesn't affect label centering */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onSwitch();
         }}
-        className="absolute top-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
+        className="absolute bottom-4 right-4 text-muted-foreground/70 hover:text-muted-foreground transition-colors z-10"
         title="Switch metric"
       >
         <RefreshCw className="w-3 h-3" />
       </button>
-      {/* Stat label */}
-      <div className="text-[11px] text-muted-foreground text-center pr-4 leading-tight">
+      {/* Stat label - centered, foreground text */}
+      <div className="text-xs font-semibold text-foreground text-center w-full leading-tight">
         {label}
       </div>
       {/* Values: A — B */}
-      <div className="flex items-center justify-center gap-2">
+      <div className="flex items-center justify-center gap-1">
         <span
           className={[
-            "text-sm font-semibold tabular-nums transition-all",
+            "text-xs font-medium tabular-nums transition-all",
             winner === "a"
-              ? "text-primary ring-1 ring-primary rounded px-1"
+              ? "text-primary ring-1 ring-primary/80 ring-offset-1 ring-offset-card rounded-sm px-1"
               : "text-foreground/80",
           ].join(" ")}
         >
           {a?.toFixed(1) ?? "—"}
         </span>
-        <span className="text-muted-foreground text-xs">-</span>
+        <span className="text-muted-foreground/60 text-[10px]">-</span>
         <span
           className={[
-            "text-sm font-semibold tabular-nums transition-all",
+            "text-xs font-medium tabular-nums transition-all",
             winner === "b"
-              ? "text-primary ring-1 ring-primary rounded px-1"
-              : "text-foreground/80",
+              ? "text-primary ring-1 ring-primary/80 ring-offset-1 ring-offset-card rounded-sm px-1"
+              : "text-foreground/60",
           ].join(" ")}
         >
           {b?.toFixed(1) ?? "—"}
         </span>
       </div>
-      {/* Arrow + percent */}
-      <div className="flex items-center justify-center gap-0.5">
-        {winner === "a" && <span className="text-primary text-xs">←</span>}
-        <span className="text-xs text-foreground/70 tabular-nums">
+      {/* Percent centered; arrows positioned independently (absolute) so they don't shift it */}
+      <div className="relative flex items-center justify-center w-full min-h-[14px]">
+        {winner === "a" && (
+          <span className="absolute left-5 text-primary text-xl">←</span>
+        )}
+        <span
+          className={[
+            "text-xs tabular-nums",
+            pctDiff != null && winner !== null ? "text-primary" : "text-muted-foreground/70",
+          ].join(" ")}
+        >
           {pctDiff != null ? `${pctDiff.toFixed(0)}%` : "—"}
         </span>
-        {winner === "b" && <span className="text-primary text-xs">→</span>}
-        {winner === null && a != null && b != null && (
-          <span className="text-xs text-muted-foreground ml-0.5">↔</span>
+        {winner === "b" && (
+          <span className="absolute right-5 text-primary text-xl">→</span>
         )}
       </div>
     </div>
@@ -634,6 +640,38 @@ function ComparisonPage() {
   const currentSortLabel =
     ALL_SORT_OPTIONS.find((o) => o.key === sortKey)?.label ?? sortKey;
 
+  // How many comparison metrics each display team wins (only when 2 teams)
+  const metricsBetterCount = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const t of displayTeams) out[t] = 0;
+    if (displayTeams.length < 2) return out;
+    const [a, b] = displayTeams;
+    for (const metricKey of compMetrics) {
+      const { winnerIdx } = computeGraphData(
+        metricKey,
+        [a, b],
+        matchData,
+        tbaTeams,
+        tbaClimbData
+      );
+      if (winnerIdx === 0) out[a] = (out[a] ?? 0) + 1;
+      else if (winnerIdx === 1) out[b] = (out[b] ?? 0) + 1;
+    }
+    return out;
+  }, [displayTeams, compMetrics, matchData, tbaTeams, tbaClimbData]);
+
+  // "higher" | "lower" | "tie" for metricsBetterAt coloring
+  const metricsBetterStatus = useMemo(() => {
+    const out: Record<string, "higher" | "lower" | "tie"> = {};
+    if (displayTeams.length < 2) return out;
+    const [a, b] = displayTeams;
+    const va = metricsBetterCount[a] ?? 0;
+    const vb = metricsBetterCount[b] ?? 0;
+    out[a] = va > vb ? "higher" : va < vb ? "lower" : "tie";
+    out[b] = vb > va ? "higher" : vb < va ? "lower" : "tie";
+    return out;
+  }, [displayTeams, metricsBetterCount]);
+
   return (
     <div className="flex h-full overflow-hidden p-3 gap-3">
       {/* ══════════════════════════════════════════
@@ -760,7 +798,7 @@ function ComparisonPage() {
       ══════════════════════════════════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-4 rounded-lg">
         {/* ── Top: big team panels + comparison center (flex-[3]) ── */}
-        <div className="flex-[3] flex items-stretch justify-center gap-3 min-h-0 overflow-hidden">
+        <div className="flex-[3] flex items-stretch justify-center gap-8 min-h-0 overflow-hidden">
           {displayTeams.length === 0 ? (
             <div className="w-full h-full flex items-center justify-center border border-border rounded-lg">
               <p className="text-sm text-primary">
@@ -786,13 +824,18 @@ function ComparisonPage() {
                         prev.filter((t) => t !== displayTeams[0])
                       )
                     }
+                    variant="comparison"
+                    metricsBetterAt={metricsBetterCount[displayTeams[0]] ?? 0}
+                    metricsBetterStatus={metricsBetterStatus[displayTeams[0]]}
+                    isGraphed={graphTeams.includes(displayTeams[0])}
+                    onGraphToggle={(e) => toggleGraphTeam(displayTeams[0], e)}
                   />
                 </div>
               )}
 
               {/* Center comparison column (only when 2 teams selected) */}
               {displayTeams.length >= 2 && (
-                <div className="w-[150px] flex-shrink-0 flex flex-col gap-2 justify-center">
+                <div className="w-[140px] flex-shrink-0 flex flex-col gap-5 justify-center items-center py-2">
                   {compMetrics.map((metricKey, idx) => (
                     <ComparisonBox
                       key={`${metricKey}-${idx}`}
@@ -839,6 +882,11 @@ function ComparisonPage() {
                         prev.filter((t) => t !== displayTeams[1])
                       )
                     }
+                    variant="comparison"
+                    metricsBetterAt={metricsBetterCount[displayTeams[1]] ?? 0}
+                    metricsBetterStatus={metricsBetterStatus[displayTeams[1]]}
+                    isGraphed={graphTeams.includes(displayTeams[1])}
+                    onGraphToggle={(e) => toggleGraphTeam(displayTeams[1], e)}
                   />
                 </div>
               )}
