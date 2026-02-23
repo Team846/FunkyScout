@@ -97,6 +97,7 @@ export function TabProvider({ children, router }: TabProviderProps) {
       "/dashboard": "Event Dashboard",
       "/shifts": "Shifts",
       "/picklists": "Picklists",
+      "/comparison": "Comparison",
       "/match-edit-test": "Match Edit",
       "/scouter-ratings": "Scouter Ratings",
       // "/picklist-open" intentionally omitted — per-picklist tabs are added explicitly

@@ -71,7 +71,7 @@ const NAV_ITEMS = [
   { icon: Calendar, label: "Shifts", path: "/shifts", activePaths: ["/shifts"] },
   { icon: ListOrdered, label: "Picklists", path: "/picklists", activePaths: ["/picklists", "/picklist-open"] },
   { icon: CalendarClock, label: "Scheduler", path: "/scheduler", activePaths: ["/scheduler"] },
-  { icon: GitCompare, label: "Comparisons", path: null as string | null, activePaths: [] },
+  { icon: GitCompare, label: "Comparisons", path: "/comparison", activePaths: ["/comparison"] },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

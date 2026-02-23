@@ -18,6 +18,7 @@ import { Route as ResetRouteImport } from './routes/reset'
 import { Route as PicklistsRouteImport } from './routes/picklists'
 import { Route as PicklistOpenRouteImport } from './routes/picklist-open'
 import { Route as MatchEditTestRouteImport } from './routes/match-edit-test'
+import { Route as ComparisonRouteImport } from './routes/comparison'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AuthIndexRouteRouteImport } from './routes/auth/index.route'
@@ -67,6 +68,11 @@ const MatchEditTestRoute = MatchEditTestRouteImport.update({
   path: '/match-edit-test',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ComparisonRoute = ComparisonRouteImport.update({
+  id: '/comparison',
+  path: '/comparison',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -85,6 +91,7 @@ const AuthIndexRouteRoute = AuthIndexRouteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/comparison': typeof ComparisonRoute
   '/match-edit-test': typeof MatchEditTestRoute
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/comparison': typeof ComparisonRoute
   '/match-edit-test': typeof MatchEditTestRoute
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
@@ -114,6 +122,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/comparison': typeof ComparisonRoute
   '/match-edit-test': typeof MatchEditTestRoute
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/comparison'
     | '/match-edit-test'
     | '/picklist-open'
     | '/picklists'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/comparison'
     | '/match-edit-test'
     | '/picklist-open'
     | '/picklists'
@@ -158,6 +169,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/comparison'
     | '/match-edit-test'
     | '/picklist-open'
     | '/picklists'
@@ -173,6 +185,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ComparisonRoute: typeof ComparisonRoute
   MatchEditTestRoute: typeof MatchEditTestRoute
   PicklistOpenRoute: typeof PicklistOpenRoute
   PicklistsRoute: typeof PicklistsRoute
@@ -251,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MatchEditTestRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/comparison': {
+      id: '/comparison'
+      path: '/comparison'
+      fullPath: '/comparison'
+      preLoaderRoute: typeof ComparisonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -277,6 +297,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ComparisonRoute: ComparisonRoute,
   MatchEditTestRoute: MatchEditTestRoute,
   PicklistOpenRoute: PicklistOpenRoute,
   PicklistsRoute: PicklistsRoute,

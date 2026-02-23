@@ -902,6 +902,17 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   { key: "rating_shooting",  label: "Shooting Rating",      group: "Ratings", getValue: (s) => s.ratings.shooting,  normalize: absoluteNorm(1, 5) },
   { key: "rating_passing",   label: "Passing Rating",       group: "Ratings", getValue: (s) => s.ratings.passing,   normalize: absoluteNorm(1, 5) },
   { key: "rating_driver",    label: "Driver Rating",        group: "Ratings", getValue: (s) => s.ratings.driver,    normalize: absoluteNorm(1, 5) },
+  {
+    key: "rating_overall",
+    label: "Overall Rating",
+    group: "Ratings",
+    getValue: (s) => {
+      const vals = [s.ratings.ground, s.ratings.shooting, s.ratings.passing, s.ratings.driver]
+        .filter((v): v is number => v !== null);
+      return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    },
+    normalize: absoluteNorm(1, 5),
+  },
 ];
 
 /**
