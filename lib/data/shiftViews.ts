@@ -465,7 +465,7 @@ export function buildTeamViewData(params: {
     const tbaTeam = tbaTeamMap.get(teamKey);
     const pit = pitMap.get(teamKey);
 
-    const teamNumber = parseInt(teamKey.replace("frc", ""), 10);
+    const teamNumber = parseInt(teamKey?.replace("frc", ""), 10);
     const teamName = tbaTeam?.name ?? pit?.team_name ?? `Team ${teamNumber}`;
     const epa = tbaTeam?.epa?.total_points?.mean ?? null;
     const priority = (pit?.data?.priority as number | undefined) ?? null;

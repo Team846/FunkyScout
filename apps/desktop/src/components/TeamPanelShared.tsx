@@ -19,7 +19,7 @@ import type { PicklistEntry } from "@lib/data/schema";
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function getTeamNum(teamKey: string): string {
-  return teamKey.replace("frc", "");
+  return teamKey?.replace("frc", "");
 }
 
 export interface ClimbCounts {

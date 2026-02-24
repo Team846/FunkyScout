@@ -71,7 +71,7 @@ export async function compareTeams(
 
     return {
       teamKey,
-      teamNumber: parseInt(teamKey.replace("frc", "")),
+      teamNumber: parseInt(teamKey?.replace("frc", "")),
       teamName: teamDataEntry?.team_name || `Team ${teamKey}`,
       stats,
       epa: teamDataFields?.epa?.total_points?.mean ?? null,
@@ -165,7 +165,7 @@ export async function getTeamMatchHistory(
 
   return {
     teamKey,
-    teamNumber: parseInt(teamKey.replace("frc", "")),
+    teamNumber: parseInt(teamKey?.replace("frc", "")),
     teamName: teamDataEntry?.team_name || `Team ${teamKey}`,
     matches: matchesWithStats,
     aggregateStats,

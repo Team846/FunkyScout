@@ -766,6 +766,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     },
   });
 
+
   // ── Sidebar DnD sensors ──
   const sidebarSensors = useSensors(
     useSensor(PointerSensor),
@@ -777,17 +778,18 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
 
   // ── Filtered sidebar entries ──
   const filteredEntries = useMemo(() => {
-    if (!searchTeam.trim()) return displayEntries;
+    if (!searchTeam.trim()) return displayEntries.filter(e => e?.team);
     const q = searchTeam.toLowerCase();
     return displayEntries.filter(
       (e) =>
-        e.team.toLowerCase().includes(q) ||
-        getTeamNum(e.team).includes(q) ||
+        e?.team?.toLowerCase()?.includes(q) ||
+        getTeamNum(e?.team)?.includes(q) ||
         (tbaTeams.find((t) => t.key === e.team)?.name ?? "")
           .toLowerCase()
           .includes(q)
     );
-  }, [displayEntries, searchTeam, tbaTeams]);
+    }, [displayEntries, searchTeam, tbaTeams]);
+
 
   // ── Sidebar drag end ──
   const handleSidebarDragEnd = (event: DragEndEvent) => {

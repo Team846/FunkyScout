@@ -151,7 +151,7 @@ function TeamInfoPage() {
       const teamData = data.find((t) => t.team === teamKey);
       if (teamData) {
         // Always store team name (exists even without pit data)
-        setTeamName(teamData.team_name || `Team ${teamKey.replace("frc", "")}`);
+        setTeamName(teamData.team_name || `Team ${teamKey?.replace("frc", "")}`);
 
         // Team is scouted if it has a scouter name (not just TBA/Statbotics data)
         if (teamData.data && teamData.name != null && teamData.name !== "") {
@@ -440,7 +440,7 @@ function TeamInfoPage() {
     );
   }
 
-  const teamNum = teamKey.replace("frc", "");
+  const teamNum = teamKey?.replace("frc", "");
 
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
