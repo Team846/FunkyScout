@@ -1,5 +1,5 @@
 import supabase from "../supabase/supabase";
-import { fetchTBAEventTeams, fetchTBATeamStatuses } from "../tba/event";
+import { fetchTBAEventTeams } from "../tba/event";
 import { refreshSchedule } from "./schedule";
 import { bootstrapMatchData } from "./match-data";
 import { getLocalEventList, cacheEventList } from "../db";

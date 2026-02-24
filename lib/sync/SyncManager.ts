@@ -466,7 +466,7 @@ export class SyncManager {
   private async syncPicklistUpdate(
     payload: UpdatePicklistPayload,
   ): Promise<void> {
-    const { id, event, title, entries, type } = payload;
+    const { id, title, entries, type } = payload;
 
     const now = new Date().toISOString();
 

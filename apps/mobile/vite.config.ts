@@ -3,6 +3,7 @@ import type { PluginOption } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
 import react from "@vitejs/plugin-react";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 
@@ -24,6 +25,41 @@ const plugins: PluginOption[] = [
     },
   }),
   tailwindcss() as unknown as PluginOption,
+  VitePWA({
+    registerType: "autoUpdate",
+    injectRegister: "auto",
+    manifest: {
+      name: "FunkyScout",
+      short_name: "FunkyScout",
+      description: "FRC Scouting App",
+      theme_color: "#000000",
+      background_color: "#000000",
+      display: "standalone",
+      orientation: "portrait",
+      start_url: "/",
+      scope: "/",
+      icons: [
+        {
+          src: "icon.svg",
+          sizes: "any",
+          type: "image/svg+xml",
+          purpose: "any",
+        },
+      ],
+    },
+    workbox: {
+      // Only pre-cache hashed JS/CSS/font bundles — NOT HTML
+      // HTML must always come from the network to get COOP/COEP headers
+      // required for SharedArrayBuffer (WASM SQLite)
+      globPatterns: ["**/*.{js,css,woff2,ttf}"],
+      // Exclude WASM and SQLite worker files — they rely on special
+      // response headers and must not be served from SW cache
+      globIgnores: ["**/*.wasm", "**/sqlite*.js", "**/sqlite3*.js"],
+      // Never intercept navigation — HTML must come from Vercel
+      // so SharedArrayBuffer headers are present
+      navigateFallback: null,
+    },
+  }),
 ];
 
 export default defineConfig({

@@ -170,7 +170,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.href = "/auth";
+    navigate({ to: "/auth" });
   };
 
   const handleChangeName = async () => {

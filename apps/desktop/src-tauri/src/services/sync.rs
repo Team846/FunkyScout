@@ -728,18 +728,36 @@ impl SyncService {
         .await
         .context("Failed to ensure event exists in event_list")?;
 
-        // Bulk insert/update team data
+        // Bulk insert/update team data.
+        // On conflict: merge incoming data on top of existing instead of replacing,
+        // so user fields (priority, pit scouting) are preserved when TBA-only data
+        // is written by the sync cycle. SQLite's json_patch follows RFC 7396 merge,
+        // where keys in the patch overlay the existing value.
+        // We strip null values from the patch first so TBA fields that are temporarily
+        // null (epa, opr) don't erase previously cached values.
         for record in team_records {
             let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
             let team_name = record.get("team_name").and_then(|v| v.as_str());
-            let data_json = record.get("data").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+
+            // Strip null values from incoming data so json_patch doesn't erase existing keys
+            let data_json = match record.get("data").and_then(|v| v.as_object()) {
+                Some(obj) => {
+                    let non_null: serde_json::Map<String, serde_json::Value> = obj
+                        .iter()
+                        .filter(|(_, v)| !v.is_null())
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    serde_json::Value::Object(non_null).to_string()
+                }
+                None => "{}".to_string(),
+            };
 
             sqlx::query(
                 "INSERT INTO event_team_data (event, team, team_name, data, last_modified)
-                 VALUES (?, ?, ?, ?, ?)
+                 VALUES (?, ?, ?, json(?), ?)
                  ON CONFLICT(event, team) DO UPDATE SET
                    team_name = excluded.team_name,
-                   data = excluded.data,
+                   data = json_patch(COALESCE(event_team_data.data, '{}'), excluded.data),
                    last_modified = excluded.last_modified"
             )
             .bind(&self.current_event)
@@ -1177,8 +1195,8 @@ impl SyncService {
             .ok_or_else(|| anyhow::anyhow!("Missing team"))?;
         let data = payload.get("data").cloned().unwrap_or(json!({}));
         let team_name = payload.get("teamName").and_then(|v| v.as_str());
-        let name = payload.get("name").and_then(|v| v.as_str());
-        let uid = payload.get("uid").and_then(|v| v.as_str());
+        let name = payload.get("name").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+        let uid = payload.get("uid").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
 
         self.supabase.put_team_data(event, team, data, team_name, name, uid).await?;
 
@@ -1196,8 +1214,8 @@ impl SyncService {
         let alliance = payload.get("alliance").and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing alliance"))?;
         let data_raw = payload.get("dataRaw").cloned().unwrap_or(json!({}));
-        let name = payload.get("name").and_then(|v| v.as_str());
-        let uid = payload.get("uid").and_then(|v| v.as_str());
+        let name = payload.get("name").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+        let uid = payload.get("uid").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
 
         println!("[SyncQueue] PUT_MATCH_DATA: event={}, match={}, team={}, alliance={}",
             event, match_key, team, alliance);

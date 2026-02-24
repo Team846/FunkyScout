@@ -43,3 +43,4 @@ If this fails, download a
 its path to the `LDAI_RUNTIME_FILE` environment variable.
 
 to filter: 2>&1 | grep -vE '(sqlx|sea_orm)'
+to open: xattr -cr /Applications/funkyscout.app

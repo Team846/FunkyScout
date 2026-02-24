@@ -32,6 +32,27 @@ export function DesktopEventProvider({ children }: { children: ReactNode }) {
     const loadConfig = async () => {
       try {
         const config = await invoke<any>("get_config");
+
+        // Fresh install: Tauri store has empty API keys.
+        // Seed from bundled env vars so the Rust sync can connect to Supabase.
+        let needsSave = false;
+        if (!config.supabase_url) {
+          config.supabase_url = import.meta.env.VITE_SUPABASE_URL;
+          needsSave = true;
+        }
+        if (!config.supabase_key) {
+          config.supabase_key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          needsSave = true;
+        }
+        if (!config.tba_key) {
+          config.tba_key = import.meta.env.VITE_X_TBA_AUTH_KEY;
+          needsSave = true;
+        }
+        if (needsSave) {
+          await invoke("save_config", { config });
+          console.log("[DesktopEvent] Seeded API keys from env vars (fresh install)");
+        }
+
         _setCurrentEvent(config.event_key || null);
         const parsedTeam = parseInt(config.team_key || "846", 10);
         _setHomeTeam(isNaN(parsedTeam) ? 846 : parsedTeam);

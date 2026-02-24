@@ -16,9 +16,6 @@ export const DEFAULT_POLLING_CONFIG: PollingConfig = {
   backoffFactor: 1.5,
 };
 
-// Polling config: Development uses slower polling to conserve Supabase limits.
-// Production uses 240s (4 min) same as 2024 + realtime for instant updates.
-const isDevelopment = import.meta.env.DEV;
 
 export const LIVE_POLLING_CONFIG: PollingConfig = {
   baseInterval: 300_000, // 5min for both dev and prod (incremental sync reduces per-poll egress)

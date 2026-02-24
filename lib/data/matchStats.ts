@@ -432,8 +432,8 @@ function calculateSingleMatchTimeline(
  * Calculate success rates for a single match (returns null if not tracked)
  */
 function calculateSingleMatchSuccessRates(
-  autoActions: MatchAction[],
-  teleopActions: MatchAction[]
+  _autoActions: MatchAction[],
+  _teleopActions: MatchAction[]
 ) {
   // Placeholder - returns null until success field is added to actions
   return {
@@ -609,7 +609,7 @@ function calculateConsistencyScores(matchStats: MatchStats[]) {
 /**
  * Calculate success rates across matches (returns null if no success data tracked)
  */
-function calculateSuccessRates(matchStats: MatchStats[]) {
+function calculateSuccessRates(_matchStats: MatchStats[]) {
   // This requires actions to have a success field (not currently implemented)
   // For now, return null - can be implemented when success tracking is added
   return {
@@ -666,8 +666,8 @@ function calculateTimelineAnalysis(matchStats: MatchStats[]) {
  * Calculate average timestamps for each action type in a phase
  */
 function calculateAverageActionTimestamps(
-  matchStats: MatchStats[],
-  phase: "auto" | "teleop"
+  _matchStats: MatchStats[],
+  _phase: "auto" | "teleop"
 ): Record<string, number> {
   // This would require access to raw action timestamps
   // For now, return empty object - can be implemented if needed

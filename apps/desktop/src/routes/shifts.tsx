@@ -448,6 +448,14 @@ function ShiftViewerPage() {
       ]);
       setDirtyRatings({});
       setDirtyPriorities({});
+      // Re-read from local SQLite so the UI reflects saved values immediately
+      // (without waiting for the next 120s Rust sync cycle)
+      const [pd, prof] = await Promise.all([
+        getPitScoutingData(currentEvent),
+        getUserProfiles(),
+      ]);
+      setPitData(pd);
+      setProfiles(prof);
     } catch (e) {
       console.error("[Shifts] Save failed:", e);
     } finally {

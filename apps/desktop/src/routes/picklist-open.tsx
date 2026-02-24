@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   ArrowUp,
@@ -62,7 +62,7 @@ import type { TBATeam } from "../contexts/DesktopTeamDataContext";
 import { usePicklistEditor } from "@lib/hooks/usePicklistEditor";
 import { getMatchScoutingData } from "../lib/db";
 import type { MatchScoutingData } from "../lib/db";
-import { deletePicklist } from "@lib/data/writes";
+import { deletePicklist, updatePicklist } from "@lib/data/writes";
 import { GRAPHABLE_STATS, getStatDataPoints, getTbaStatDataPoints } from "@lib/data/matchStats";
 import type { PicklistEntry } from "@lib/data/schema";
 
@@ -670,7 +670,7 @@ function PicklistEditorPage() {
 function PicklistEditor({ picklistId }: { picklistId: string }) {
   const navigate = useNavigate();
   const { currentEvent, useTbaClimb } = useDesktopEvent();
-  const { picklists, tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
+  const { picklists, tbaClimbData, lastDataRefreshAt, refresh } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
 
   // ── State ──
@@ -766,6 +766,27 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     },
   });
 
+  // ── Auto-save newly created empty picklists ──
+  // When a picklist has no entries (just created), push the merged initial
+  // team list to Supabase so other clients see it without waiting for a drag.
+  const autoSavedPicklistRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedPicklist || !currentEvent || !picklistId) return;
+    if (selectedPicklist.picklist.length > 0) return; // already has entries
+    if (mergedInitialEntries.length === 0) return; // no teams loaded yet
+    if (autoSavedPicklistRef.current === picklistId) return; // already done
+
+    autoSavedPicklistRef.current = picklistId;
+    const validEntries = mergedInitialEntries.map((e) => ({
+      team: e.team,
+      rank: e.rank ?? 0,
+      flags: e.flags ?? {},
+    }));
+    updatePicklist(picklistId, currentEvent, selectedPicklist.title, validEntries, picklistType)
+      .then(() => console.log("[PicklistOpen] Auto-saved initial entries for new picklist:", picklistId))
+      .catch((e) => console.error("[PicklistOpen] Failed to auto-save new picklist:", e));
+  }, [picklistId, mergedInitialEntries.length]);
+
   // ── Sidebar DnD sensors ──
   const sidebarSensors = useSensors(
     useSensor(PointerSensor),
@@ -859,6 +880,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     try {
       await deletePicklist(picklistId, currentEvent);
       toast.success("Picklist deleted");
+      await refresh(); // re-read SQLite so picklists list is up-to-date immediately
       navigate({ to: "/picklists" });
     } catch {
       toast.error("Failed to delete picklist");
@@ -1247,8 +1269,11 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
           )}
 
           {/* Add metric button - same height as graph bubbles, entire bar is clickable */}
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => setShowMetricPicker((v) => !v)}
+            onKeyDown={(e) => e.key === "Enter" && setShowMetricPicker((v) => !v)}
             className="w-14 flex-shrink-0 border border-border rounded-lg bg-card flex items-center justify-center text-primary hover:bg-secondary transition-colors cursor-pointer relative"
             title="Add metric"
           >
@@ -1268,7 +1293,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                 onClose={() => setShowMetricPicker(false)}
               />
             )}
-          </button>
+          </div>
         </div>
       </div>
     </div>

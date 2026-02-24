@@ -66,12 +66,13 @@ function MatchEditTestPage() {
   // Only shows spinner on first load — background refreshes update silently.
   useEffect(() => {
     if (!currentEvent) return;
+    const event = currentEvent;
 
     async function loadMatchData() {
       if (!hasLoadedRef.current) setIsLoading(true);
       try {
-        console.log("[MatchEditTest] Loading match data for event:", currentEvent);
-        const data = await getMatchScoutingData(currentEvent);
+        console.log("[MatchEditTest] Loading match data for event:", event);
+        const data = await getMatchScoutingData(event);
         console.log("[MatchEditTest] Loaded match data:", data.length, "submissions");
         setAllMatchData(data);
       } catch (error) {

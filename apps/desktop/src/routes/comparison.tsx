@@ -926,8 +926,11 @@ function ComparisonPage() {
           )}
 
           {/* Add metric button */}
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => setShowGraphPicker((v) => !v)}
+            onKeyDown={(e) => e.key === "Enter" && setShowGraphPicker((v) => !v)}
             className="w-14 flex-shrink-0 border border-border rounded-lg bg-card flex items-center justify-center text-primary hover:bg-secondary transition-colors cursor-pointer relative"
             title="Add metric graph"
           >
@@ -944,7 +947,7 @@ function ComparisonPage() {
                 onClose={() => setShowGraphPicker(false)}
               />
             )}
-          </button>
+          </div>
         </div>
       </div>
     </div>

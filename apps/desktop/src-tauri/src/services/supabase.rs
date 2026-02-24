@@ -79,21 +79,36 @@ impl SupabaseService {
         name: Option<&str>,
         uid: Option<&str>,
     ) -> Result<()> {
-        let payload = json!({
+        // Build payload dynamically — only include name/uid if provided.
+        // Omitting them preserves the existing pit scouter's name/uid in Supabase
+        // (PostgREST upsert only overwrites columns that appear in the payload).
+        let mut payload = json!({
             "event": event,
             "team": team,
             "data": data,
-            "name": name,
-            "uid": uid,
         });
+        if let Some(n) = name {
+            payload["name"] = json!(n);
+        }
+        if let Some(u) = uid {
+            payload["uid"] = json!(u);
+        }
 
-        self.auth_client()
+        // No .on_conflict() — PostgREST infers from the primary key (event, team).
+        // Adding on_conflict("event,team") requires a named UNIQUE constraint (not just PK),
+        // which causes a silent 409 failure if the constraint name doesn't match.
+        let resp = self.auth_client()
             .from("event_team_data")
             .upsert(&payload.to_string())
-            .on_conflict("event,team")
             .execute()
             .await
             .context("Failed to upsert team data")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("[Supabase] event_team_data upsert failed (HTTP {}): {}", status, body);
+        }
 
         Ok(())
     }
@@ -604,17 +619,57 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Put team data (from sync queue)
+    /// Put team data (from sync queue) — merges with existing Supabase data first.
+    /// Reads current row from Supabase, deep-merges the incoming partial data on top,
+    /// then writes the merged result. Prevents overwriting TBA stats when only a
+    /// partial update (e.g. just `priority`) is provided.
     pub async fn put_team_data(
         &self,
         event: &str,
         team: &str,
-        data: Value,
+        new_data: Value,
         _team_name: Option<&str>,
         name: Option<&str>,
         uid: Option<&str>,
     ) -> Result<()> {
-        self.upsert_team_data(event, team, data, name, uid).await
+        // Fetch the current row so we can preserve TBA stats, pit scouting, etc.
+        let response = self.auth_client()
+            .from("event_team_data")
+            .select("data")
+            .eq("event", event)
+            .eq("team", team)
+            .execute()
+            .await;
+
+        let merged_data = match response {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                let rows: Vec<Value> = serde_json::from_str(&body).unwrap_or_default();
+                if let Some(row) = rows.first() {
+                    let existing = row.get("data").cloned().unwrap_or(json!({}));
+                    Self::merge_json(existing, new_data)
+                } else {
+                    new_data
+                }
+            }
+            _ => new_data, // fetch failed — fall back to full write
+        };
+
+        self.upsert_team_data(event, team, merged_data, name, uid).await
+    }
+
+    /// Deep-merge two JSON objects: overlay keys win, existing keys not in overlay are kept.
+    fn merge_json(base: Value, overlay: Value) -> Value {
+        match (base.as_object(), overlay.as_object()) {
+            (Some(base_obj), Some(overlay_obj)) => {
+                let mut merged = base_obj.clone();
+                for (key, value) in overlay_obj {
+                    merged.insert(key.clone(), value.clone());
+                }
+                json!(merged)
+            }
+            _ => overlay,
+        }
     }
 
     /// Put match data (from sync queue)
