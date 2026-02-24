@@ -12,6 +12,7 @@ import { getMatchLabel } from "@lib/utils/match";
 import { fetchAllUserDetails } from "@lib/supabase/user";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
+import { getSchedule } from "@lib/data/schedule";
 
 export const Route = createFileRoute("/scheduler")({
   component: SchedulerPage,
@@ -26,6 +27,15 @@ interface ScouterProfile {
   role: string;
 }
 
+interface TeamSchedule {
+  matchKey: string;
+  teams: {
+    teamKey: string;
+    teamNumber: number;
+  }[];
+  predictedTime: number;
+}
+
 interface PitAssignment {
   teamKey: string;
   teamNumber: number;
@@ -36,6 +46,41 @@ interface PitAssignment {
 
 function SchedulerPage() {
   const { currentEvent } = useDesktopEvent();
+  const [schedule, setSchedule] = useState<TeamSchedule[] | null>(null);
+
+  useEffect(() => {
+    if (currentEvent) {
+      getSchedule(currentEvent).then((data) => {
+        const transformedData: TeamSchedule[] = [];
+        const scheduleMap = new Map<string, {
+          matchKey: string;
+          teams: { teamKey: string; teamNumber: number; }[];
+          predictedTime: number;
+        }>();
+
+        data.forEach((entry) => {
+          if (!scheduleMap.has(entry.match)) {
+            scheduleMap.set(entry.match, {
+              matchKey: entry.match,
+              teams: [],
+              predictedTime: entry.est_time || 0,
+            });
+          }
+          const matchEntry = scheduleMap.get(entry.match)!;
+          matchEntry.teams.push({
+            teamKey: entry.team,
+            teamNumber: parseInt(entry.team.replace("frc", ""), 10),
+          });
+        });
+
+        transformedData.push(...Array.from(scheduleMap.values()));
+        setSchedule(transformedData);
+      });
+    } else {
+      setSchedule(null);
+    }
+  }, [currentEvent]);
+
   const [w, setW] = useState(3);
   const [r, setR] = useState(1);
   const [assignments, setAssignments] = useState<CycleAssignment[]>([]);
@@ -67,7 +112,7 @@ function SchedulerPage() {
         .filter((p) => p.role === "scouter" || p.role === "admin")
         .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: p.role ?? "scouter" }));
       setAllScouters(eligible);
-      // Only initialize selection if there's no saved state (first visit)
+      // Only initialize selection if there\\\`s no saved state (first visit)
       if (_persistedSelectedUids === null) {
         setSelectedUids(new Set(eligible.map((s) => s.uid)));
       }
@@ -108,7 +153,8 @@ function SchedulerPage() {
       toast.success(`Generated ${result.length} assignments`);
     } catch (e: any) {
       toast.error(`Failed to generate: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setGenerating(false);
     }
   };
@@ -121,7 +167,8 @@ function SchedulerPage() {
       toast.success(`Applied ${assignments.length} shift assignments`);
     } catch (e: any) {
       toast.error(`Failed to apply: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setApplying(false);
     }
   };
@@ -147,7 +194,7 @@ function SchedulerPage() {
       // Round-robin assignment
       const result: PitAssignment[] = teams.map((t, i) => {
         const scouter = selected[i % selected.length];
-        const teamNum = parseInt(t.team.replace("frc", ""), 10);
+        const teamNum = parseInt(t.team?.replace("frc", "") ?? "0", 10);
         return {
           teamKey: t.team,
           teamNumber: isNaN(teamNum) ? 0 : teamNum,
@@ -160,7 +207,8 @@ function SchedulerPage() {
       toast.success(`Scheduled ${result.length} teams across ${selected.length} scouters`);
     } catch (e: any) {
       toast.error(`Failed to schedule teams: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setSchedulingTeams(false);
     }
   };
@@ -176,7 +224,8 @@ function SchedulerPage() {
       toast.success(`Applied ${pitAssignments.length} team assignments`);
     } catch (e: any) {
       toast.error(`Failed to apply team assignments: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setApplyingTeams(false);
     }
   };
@@ -309,16 +358,18 @@ function SchedulerPage() {
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Time</span>
               </div>
               <div className="h-full overflow-y-auto">
-                {[...Array(20)].map((_, i) => (
-                  <div key={i} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
-                    <span className="text-xs font-semibold text-foreground/80">Qual {i + 1}</span>
-                    <span className="text-xs text-gray-500 text-center">Team A1</span>
-                    <span className="text-xs text-gray-500 text-center">Team A2</span>
-                    <span className="text-xs text-gray-500 text-center">Team A3</span>
-                    <span className="text-xs text-gray-500 text-center">Team B1</span>
-                    <span className="text-xs text-gray-500 text-center">Team B2</span>
-                    <span className="text-xs text-gray-500 text-center">Team B3</span>
-                    <span className="text-xs text-muted-foreground text-center">--:--</span>
+                {schedule?.map((match: TeamSchedule) => (
+                  <div key={match.matchKey} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
+                    <span className="text-xs font-semibold text-foreground/80">{getMatchLabel(match.matchKey)}</span>
+                    {match.teams.slice(0, 3).map((team: { teamKey: string; teamNumber: number }) => (
+                      <span key={team.teamKey} className="text-xs text-gray-500 text-center">{team.teamNumber}</span>
+                    ))}
+                    {match.teams.slice(3, 6).map((team: { teamKey: string; teamNumber: number }) => (
+                      <span key={team.teamKey} className="text-xs text-gray-500 text-center">{team.teamNumber}</span>
+                    ))}
+                    <span className="text-xs text-muted-foreground text-center">
+                      {new Date(match.predictedTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
                   </div>
                 ))}
               </div>
