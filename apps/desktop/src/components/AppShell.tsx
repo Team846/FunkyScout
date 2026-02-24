@@ -90,6 +90,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   // Name change dialog
   const [showNameDialog, setShowNameDialog] = useState(false);
@@ -135,6 +136,33 @@ export function AppShell({ children }: { children: ReactNode }) {
     fetchEvents();
   }, []);
 
+  // Track network status and trigger sync immediately when coming back online.
+  // The Rust sync queue accumulates writes while offline; this drains it right
+  // away instead of waiting up to 120s for the next periodic cycle.
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      console.log("[AppShell] Network reconnected — flushing sync queue");
+      invoke("trigger_sync_now")
+        .then(() => {
+          refreshTeams();
+          refreshCompetitionData();
+        })
+        .catch((e) => console.warn("[AppShell] trigger_sync_now on reconnect failed:", e));
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      console.log("[AppShell] Network lost — writes will queue locally");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [refreshTeams, refreshCompetitionData]);
+
   const fetchEvents = async () => {
     try {
       const { data, error } = await supabase
@@ -148,18 +176,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const handleSync = async () => {
-    if (isSyncing) return;
+    if (isSyncing || !isOnline) return;
     setIsSyncing(true);
     try {
       // 1. Kick the Rust sync to pull fresh data from Supabase into SQLite
       await invoke("trigger_sync_now");
-      // 2. Re-read SQLite after Rust has had time to write (~5s)
+      // 2. Re-read SQLite at 5s (fast path: picklists, schedule usually done)
       setTimeout(() => {
-        forceSyncNow(); // calls any registered DesktopSyncContext callbacks
-        refreshTeams(); // re-reads event_team_data from SQLite
-        refreshCompetitionData(); // re-reads schedule, picklists from SQLite
-        setIsSyncing(false);
+        forceSyncNow();
+        refreshTeams();
+        refreshCompetitionData();
       }, 5000);
+      // 3. Re-read again at 15s (slow path: TBA + Statbotics + match data can take 10-15s)
+      setTimeout(() => {
+        refreshTeams();
+        refreshCompetitionData();
+        setIsSyncing(false);
+      }, 15000);
     } catch (e) {
       console.warn("[AppShell] trigger_sync_now failed:", e);
       refreshTeams();
@@ -228,12 +261,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     currentEvent ||
     "No Event";
 
-  const syncColor =
-    teams.length > 0
-      ? isSyncing
-        ? "text-yellow-400"
-        : "text-chart-2"
-      : "text-muted-foreground";
+  const syncColor = !isOnline
+    ? "text-destructive"
+    : isSyncing
+      ? "text-yellow-400"
+      : teams.length > 0
+        ? "text-chart-2"
+        : "text-muted-foreground";
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -415,7 +449,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* Top Tab Bar */}
           <header className="h-10 flex-shrink-0 border-b border-border flex items-stretch bg-background">
             {/* Tabs */}
-            <div className="flex items-stretch flex-1 min-w-0">
+            <div className="flex items-stretch overflow-x-auto flex-1 min-w-0">
               {tabs.map((tab) => {
                 const isActive = tab.id === activeTabId;
                 return (
@@ -451,9 +485,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleSync}
+                    disabled={!isOnline}
                     className={`p-1.5 rounded hover:bg-secondary transition-colors ${syncColor}`}
                   >
-                    {teams.length > 0 ? (
+                    {isOnline ? (
                       <Cloud className="w-4 h-4" />
                     ) : (
                       <CloudOff className="w-4 h-4" />
@@ -461,11 +496,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
-                  {isSyncing
-                    ? "Syncing..."
-                    : teams.length > 0
-                      ? "Synced — click to sync now"
-                      : "Not synced"}
+                  {!isOnline
+                    ? "Offline — writes queued locally"
+                    : isSyncing
+                      ? "Syncing..."
+                      : teams.length > 0
+                        ? "Synced — click to sync now"
+                        : "Not synced"}
                 </TooltipContent>
               </Tooltip>
 

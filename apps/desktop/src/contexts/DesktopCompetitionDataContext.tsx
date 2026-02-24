@@ -222,9 +222,11 @@ export function DesktopCompetitionDataProvider({
     );
 
     // 3. Re-read SQLite after sync has had time to write. Multiple reads
-    //    because cold-start sync time varies (5-20s across all tables).
+    //    because cold-start sync time varies (5-35s across all tables).
+    //    Team data is fetched late in the sync cycle (~step 16 of 17), so a
+    //    35s poll is needed to reliably catch priority/pit data on first load.
     //    Stale data from step 1 stays visible until a poll finds fresh data.
-    const pollDelays = [5_000, 10_000, 20_000];
+    const pollDelays = [5_000, 10_000, 20_000, 35_000];
     const timers = pollDelays.map((delay) =>
       setTimeout(() => {
         console.log(`[DesktopCompetitionData] Post-sync poll at ${delay / 1000}s`);

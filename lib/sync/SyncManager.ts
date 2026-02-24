@@ -43,6 +43,7 @@ export class SyncManager {
   constructor(
     private supabaseClient: SupabaseClient,
     private getIsOnline: () => boolean,
+    private onPermanentFailure?: (type: string, error: string) => void,
   ) {}
 
   /**
@@ -138,9 +139,11 @@ export class SyncManager {
   private async processQueueItem(item: SyncQueueItem): Promise<void> {
     // Check if we've exceeded max retries
     if (item.retries >= DEFAULT_RETRY_CONFIG.maxRetries) {
+      const lastError = item.last_error || "unknown error";
       console.error(
-        `[Sync] Item ${item.id} exceeded max retries. Last error: ${item.last_error || "unknown"}`,
+        `[Sync] ⚠️  Item ${item.id} (${item.type}) permanently failed after ${item.retries} retries. Data NOT synced to Supabase. Last error: ${lastError}`,
       );
+      this.onPermanentFailure?.(item.type, lastError);
       await removeSyncQueueItem(item.id);
       return;
     }
@@ -387,17 +390,20 @@ export class SyncManager {
   }
 
   /**
-   * Sync match data deletion to Supabase
+   * Sync match data deletion to Supabase.
+   * Must set last_modified so incremental sync (filtered by last_modified) propagates deletion.
    */
   private async syncDeleteMatchData(
     payload: DeleteMatchDataPayload,
   ): Promise<void> {
     const { event, match, team, uid, timestamp } = payload;
+    const now = new Date().toISOString();
 
     const { error } = await this.supabaseClient
       .from("event_match_data")
       .update({
-        deleted_at: new Date().toISOString(),
+        deleted_at: now,
+        last_modified: now,
       })
       .eq("event", event)
       .eq("match", match)
@@ -495,12 +501,16 @@ export class SyncManager {
     payload: DeletePicklistPayload,
   ): Promise<void> {
     const { id } = payload;
+    const now = new Date().toISOString();
 
-    // Soft delete picklist (entries are embedded — no separate entries operation needed)
+    // Soft delete picklist. Must also set last_modified so incremental sync
+    // (which filters by last_modified >= cutoff) fetches this row and propagates
+    // deleted_at to other clients' local cache.
     const { error: picklistError } = await this.supabaseClient
       .from("event_picklist")
       .update({
-        deleted_at: new Date().toISOString(),
+        deleted_at: now,
+        last_modified: now,
       })
       .eq("id", id);
 

@@ -316,6 +316,10 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
               `[CompetitionData] ✅ Full load: cached ${localPicklists.length} picklists`
             );
           }
+        } else if (data && !data.isIncremental && data.picklists.length === 0) {
+          // Full load with 0 picklists — clear cache so stale picklists don't persist
+          await cacheEventPicklists(currentEvent, []);
+          console.log("[CompetitionData] ✅ Full load: cleared picklists (0 in Supabase)");
         }
       } catch (error) {
         console.error("[CompetitionData] Failed to fetch picklists:", error);

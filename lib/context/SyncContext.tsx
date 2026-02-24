@@ -56,6 +56,13 @@ export function SyncProvider({
     syncManagerRef.current = new SyncManager(
       supabase,
       () => isOnline,
+      (type, error) => {
+        console.error(`[SyncContext] Permanent sync failure: ${type} — ${error}`);
+        toast.error(`Upload failed permanently (${type})`, {
+          description: "Data was not saved to the server. Check your connection and try again.",
+          duration: 8000,
+        });
+      },
     );
 
     syncManagerRef.current.start();

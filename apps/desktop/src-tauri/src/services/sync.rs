@@ -268,79 +268,32 @@ impl SyncService {
                 .collect();
 
             if !team_data_records.is_empty() {
-                // Load cached team data for change detection.
-                // Only push rows whose meaningful fields actually changed to avoid
-                // spurious Supabase writes (each write fires realtime for all subscribers).
-                let cached_team_data: HashMap<String, serde_json::Value> = {
-                    let rows: Vec<(String, String)> = sqlx::query_as(
-                        "SELECT team, data FROM event_team_data WHERE event = ?"
-                    )
-                    .bind(&self.current_event)
-                    .fetch_all(&self.sqlx_pool)
-                    .await
-                    .unwrap_or_default();
-
-                    rows.into_iter()
-                        .filter_map(|(team, data_str)| {
-                            serde_json::from_str::<serde_json::Value>(&data_str)
-                                .ok()
-                                .map(|d| (team, d))
-                        })
-                        .collect()
-                };
-
-                let changed_team_records: Vec<serde_json::Value> = team_data_records
-                    .iter()
-                    .filter(|record| {
-                        let team = match record.get("team").and_then(|v| v.as_str()) {
-                            Some(t) => t,
-                            None => return true,
-                        };
-                        let empty = json!({});
-                        let new_data = record.get("data").unwrap_or(&empty);
-                        let cached = match cached_team_data.get(team) {
-                            Some(c) => c,
-                            None => return true, // New team — always push
-                        };
-                        // Compare rank, record, match pointers, OPR
-                        for field in &["rank", "record", "next_match", "last_match", "opr", "dpr", "ccwm"] {
-                            if cached.get(*field) != new_data.get(*field) {
-                                return true;
-                            }
-                        }
-                        // Compare EPA total mean
-                        let old_epa = cached.get("epa").and_then(|e| e.get("total_points")).and_then(|t| t.get("mean"));
-                        let new_epa = new_data.get("epa").and_then(|e| e.get("total_points")).and_then(|t| t.get("mean"));
-                        old_epa != new_epa
-                    })
-                    .cloned()
-                    .collect();
-
-                let teams_with_epa = changed_team_records.iter()
-                    .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
-                    .count();
-                println!("[Sync] {}/{} teams changed ({} with EPA)",
-                    changed_team_records.len(), team_data_records.len(), teams_with_epa);
-
-                // Cache ALL to local SQLite (for offline support)
+                // Cache ALL to local SQLite first (for offline support).
                 self.cache_teams_to_sqlite(&team_data_records)
                     .await
                     .context("Failed to cache team data to SQLite")?;
 
-                // Only push changed rows to Supabase
-                if !changed_team_records.is_empty() {
-                    match self.supabase
-                        .bulk_upsert_team_data(&self.current_event, changed_team_records)
-                        .await
-                    {
-                        Ok(_) => println!("[Sync] ✓ Pushed changed team data to Supabase"),
-                        Err(e) => {
-                            eprintln!("[Sync] ✗ Failed to push team data to Supabase: {}", e);
-                            // Non-fatal: continue to Supabase pull steps
-                        }
+                // Always push to Supabase — bulk_upsert_team_data fetches the current
+                // Supabase state, merges (preserving pit scouting), and only upserts
+                // rows that actually changed. Using SQLite for change detection here
+                // was incorrect: SQLite may be ahead of Supabase (e.g., when an earlier
+                // Supabase push was silently blocked), causing OPR/DPR/EPA to never
+                // reach Supabase even though they exist in the local cache.
+                let teams_with_epa = team_data_records.iter()
+                    .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
+                    .count();
+                println!("[Sync] Pushing {} teams to Supabase ({} with EPA)",
+                    team_data_records.len(), teams_with_epa);
+
+                match self.supabase
+                    .bulk_upsert_team_data(&self.current_event, team_data_records)
+                    .await
+                {
+                    Ok(_) => println!("[Sync] ✓ Pushed team data to Supabase"),
+                    Err(e) => {
+                        eprintln!("[Sync] ✗ Failed to push team data to Supabase: {}", e);
+                        // Non-fatal: continue to Supabase pull steps
                     }
-                } else {
-                    println!("[Sync] ✓ Team data unchanged — skipping Supabase push");
                 }
             }
 
@@ -652,8 +605,25 @@ impl SyncService {
                 .context("Failed to cache schedule to SQLite")?;
         }
 
-        // Update last_sync_time for next cycle's incremental filter
-        *self.last_sync_time.lock().unwrap() = Some(chrono::Utc::now());
+        // Only advance last_sync_time if:
+        // - We're already in incremental mode (not the first sync), OR
+        // - The first full sync actually received data from Supabase.
+        //
+        // If the first sync returned 0 rows from all pull tables (e.g., due to a
+        // temporary auth/RLS hiccup at startup), keeping last_sync_time=None ensures
+        // the NEXT sync also does a full fetch instead of an incremental that would
+        // miss data uploaded before this sync cycle's window.
+        let got_supabase_data = !user_profiles.is_empty()
+            || !picklists.is_empty()
+            || !match_data.is_empty()
+            || !team_data.is_empty()
+            || !schedule_data.is_empty();
+
+        if !is_first_sync || got_supabase_data {
+            *self.last_sync_time.lock().unwrap() = Some(chrono::Utc::now());
+        } else {
+            println!("[Sync] First sync returned 0 rows from all tables — keeping last_sync_time=None so next sync is also a full fetch");
+        }
 
         Ok(())
     }
@@ -1034,6 +1004,31 @@ impl SyncService {
     /// Process sync queue: Push pending operations to Supabase
     /// Implements offline-first write queue with retry logic
     async fn process_sync_queue(&self) -> Result<()> {
+        // Crash recovery: if items were stuck in 'processing' state from a previous
+        // run that crashed, reset them to 'pending' so they get retried.
+        // Threshold: 3 minutes (well above the longest single operation).
+        let stale_cutoff = chrono::Utc::now().timestamp_millis() - 3 * 60 * 1000;
+        let recovered: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sync_queue
+             WHERE status = 'processing' AND last_attempt < ?"
+        )
+        .bind(stale_cutoff)
+        .fetch_one(&self.sqlx_pool)
+        .await
+        .unwrap_or((0,));
+
+        if recovered.0 > 0 {
+            sqlx::query(
+                "UPDATE sync_queue SET status = 'pending'
+                 WHERE status = 'processing' AND last_attempt < ?"
+            )
+            .bind(stale_cutoff)
+            .execute(&self.sqlx_pool)
+            .await
+            .context("Failed to recover stale processing items")?;
+            println!("[SyncQueue] Recovered {} stale 'processing' items → 'pending'", recovered.0);
+        }
+
         // Fetch pending queue items (limit to 10 per cycle to avoid blocking)
         let queue_items: Vec<(i64, String, String)> = sqlx::query_as(
             "SELECT id, operation, payload FROM sync_queue
@@ -1045,11 +1040,23 @@ impl SyncService {
         .await
         .context("Failed to fetch sync queue items")?;
 
+        // Warn about permanently failed items (data that will never reach Supabase)
+        let failed_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sync_queue WHERE status = 'failed'"
+        )
+        .fetch_one(&self.sqlx_pool)
+        .await
+        .unwrap_or((0,));
+        if failed_count.0 > 0 {
+            eprintln!("[SyncQueue] ⚠️  {} permanently failed item(s) in queue (exceeded max retries — data NOT synced to Supabase)", failed_count.0);
+        }
+
         if queue_items.is_empty() {
             return Ok(());
         }
 
-        println!("[SyncQueue] Processing {} pending operations", queue_items.len());
+        let batch_size = queue_items.len();
+        println!("[SyncQueue] Processing {} pending operations (batch of up to 10)", batch_size);
 
         for (id, operation, payload_str) in queue_items {
             // Mark as processing
@@ -1101,6 +1108,20 @@ impl SyncService {
                     self.mark_queue_failed(id, e.to_string()).await?;
                     eprintln!("[SyncQueue] ✗ Failed operation {} (id: {}): {}", operation, id, e);
                 }
+            }
+        }
+
+        // If we processed a full batch of 10, there may be more items waiting.
+        // Schedule an immediate follow-up to drain the rest without waiting 120s.
+        if batch_size >= 10 {
+            let more: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM sync_queue WHERE status = 'pending'"
+            )
+            .fetch_one(&self.sqlx_pool)
+            .await
+            .unwrap_or((0,));
+            if more.0 > 0 {
+                println!("[SyncQueue] {} more items remain — will process in next sync cycle", more.0);
             }
         }
 

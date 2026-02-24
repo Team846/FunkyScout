@@ -54,8 +54,14 @@ export async function getPicklists(
     if (!picklists || picklists.length === 0) {
       if (!isIncremental) {
         console.log(`[getPicklists] No picklists found for event ${eventKey}`);
+        // Don't advance sync key on a full fetch with 0 results — next poll should
+        // also be a full fetch. This handles auth hiccups at startup that return 0
+        // rows and would otherwise cause subsequent incremental syncs to miss data
+        // uploaded before this window.
+      } else {
+        // Incremental with 0 results is normal (nothing changed) — advance the key
+        localStorage.setItem(picklistSyncKey(eventKey), new Date().toISOString());
       }
-      localStorage.setItem(picklistSyncKey(eventKey), new Date().toISOString());
       return { picklists: [], isIncremental };
     }
 

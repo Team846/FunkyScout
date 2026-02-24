@@ -12,6 +12,7 @@
 
 import type { EventMatchData, EventTeamData, EventSchedule } from "@lib/data/schema";
 import { calculateTeamStats, calculateSingleMatchStats, type TeamStats, type MatchStats } from "@lib/data/matchStats";
+import { teamsMatch } from "@lib/data/shiftViews";
 import { getMatchLabel } from "@lib/utils/match";
 
 // ============== TYPE 1: Side-by-side Team Comparison ==============
@@ -67,7 +68,7 @@ export async function compareTeams(
     const stats = calculateTeamStats(teamKey, matchData as any);
 
     // Get TBA data
-    const teamDataEntry = teamData.find((t) => t.team === teamKey);
+    const teamDataEntry = teamData.find((t) => teamsMatch(t.team, teamKey));
     const teamDataFields = teamDataEntry?.data as any;
 
     return {
@@ -162,7 +163,7 @@ export async function getTeamMatchHistory(
     return aNum - bNum;
   });
 
-  const teamDataEntry = teamData.find((t) => t.team === teamKey);
+  const teamDataEntry = teamData.find((t) => teamsMatch(t.team, teamKey));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const aggregateStats = calculateTeamStats(teamKey, matchData as any);
 
@@ -313,7 +314,7 @@ export async function getMatchBreakdown(
   const blueTeams = matchSchedule.filter((s) => s.alliance === "blue");
 
   const createTeamEntry = (scheduleEntry: EventSchedule): MatchBreakdownTeam => {
-    const teamDataEntry = teamData.find((t) => t.team === scheduleEntry.team);
+    const teamDataEntry = teamData.find((t) => teamsMatch(t.team, scheduleEntry.team));
     const matchDataEntry = matchData.find(
       (m) =>
         m.team === scheduleEntry.team &&

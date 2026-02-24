@@ -173,8 +173,15 @@ export async function getMatchData(eventKey: string) {
       console.log(`[MatchData] Full load: cached ${processed.length} rows`);
     }
 
-    // Record this sync time for the next incremental fetch
-    localStorage.setItem(matchSyncKey(eventKey), new Date().toISOString());
+    // Only advance the sync key if:
+    // - We're already in incremental mode (any result, including 0, is normal), OR
+    // - The full fetch actually returned rows (proves Supabase is accessible/authorized).
+    // If a full fetch returns 0 rows (e.g. auth hiccup at startup), keep the key unset
+    // so the next poll also does a full fetch instead of an incremental that would miss
+    // data uploaded before this sync's window.
+    if (isIncremental || processed.length > 0) {
+      localStorage.setItem(matchSyncKey(eventKey), new Date().toISOString());
+    }
 
     // Always return the full local cache so callers get the complete match data,
     // not just the partial incremental subset from this fetch.

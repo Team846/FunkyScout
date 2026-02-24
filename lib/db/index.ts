@@ -983,6 +983,11 @@ export async function incrementSyncQueueRetry(
 
 // ============ UTILITIES ============
 
+/**
+ * Clear all local data for an event (cache + incremental sync keys).
+ * Use when resetting event data so the next sync does a full fetch.
+ * Sync keys must be cleared to avoid incremental fetch missing data.
+ */
 export async function clearEventData(event: string): Promise<void> {
   return await withWriteLock(async () => {
     await initDatabase();
@@ -1005,6 +1010,13 @@ export async function clearEventData(event: string): Promise<void> {
         [event],
       );
       await execWorker("COMMIT");
+      // Clear incremental sync keys so next fetch does full load
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem(`lastScheduleSync_${event}`);
+        localStorage.removeItem(`lastMatchSync_${event}`);
+        localStorage.removeItem(`lastPicklistSync_${event}`);
+        localStorage.removeItem(`lastTeamSync_${event}`);
+      }
       console.log(`[LocalDB] Cleared all data for ${event}`);
     } catch (e) {
       await execWorker("ROLLBACK");

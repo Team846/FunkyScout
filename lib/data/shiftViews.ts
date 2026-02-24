@@ -282,6 +282,13 @@ export function formatMatchKey(matchKey: string): string {
   return seg.toUpperCase();
 }
 
+/** Normalized team key comparison (frc5000 vs 5000). */
+export function teamsMatch(a: string, b: string): boolean {
+  const na = a?.startsWith("frc") ? a : `frc${a}`;
+  const nb = b?.startsWith("frc") ? b : `frc${b}`;
+  return na === nb;
+}
+
 // ─── Build functions ──────────────────────────────────────────────────────────
 
 /**
@@ -445,8 +452,14 @@ export function buildTeamViewData(params: {
 }): TeamViewRow[] {
   const { schedule, matchData, tbaTeams, pitData, tbaClimbData } = params;
 
+  // Build pitMap with normalized keys so "frc5000" and "5000" both resolve
+  // (event_team_data.team can vary; schedule uses TBA "frc5000" format)
   const pitMap = new Map<string, PitDataInput>();
-  for (const p of pitData) pitMap.set(p.team, p);
+  for (const p of pitData) {
+    pitMap.set(p.team, p);
+    const frcKey = p.team.startsWith("frc") ? p.team : `frc${p.team}`;
+    if (frcKey !== p.team) pitMap.set(frcKey, p);
+  }
 
   const tbaTeamMap = new Map<string, TBATeamInput>();
   for (const t of tbaTeams) tbaTeamMap.set(t.key, t);

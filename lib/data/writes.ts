@@ -834,7 +834,11 @@ export async function setTeamPriority(
 
   // 1. Read the current full row from local SQLite (preserves TBA stats + pit data)
   const allPitData = await invoke<any[]>("get_pit_scouting_data", { event: eventKey });
-  const existing = allPitData.find((r: any) => r.team === teamKey);
+  const existing = allPitData.find(
+    (r: any) =>
+      (r.team?.startsWith("frc") ? r.team : `frc${r.team}`) ===
+      (teamKey?.startsWith("frc") ? teamKey : `frc${teamKey}`)
+  );
   const existingData = existing?.data ?? {};
 
   // 2. Merge priority into existing data (null keeps the field but clears the value)
@@ -956,22 +960,25 @@ export async function assignPitTeams(
   const { invoke } = await import("@tauri-apps/api/core");
   const now = Date.now();
 
-  const assignmentMap = new Map(assignments.map((a) => [a.teamKey, a]));
+  const norm = (t: string) => (t?.startsWith("frc") ? t : `frc${t}`);
+  const assignmentMap = new Map(
+    assignments.map((a) => [norm(a.teamKey), a])
+  );
 
-  // Read current pit data, merge assignments
+  // Read current pit data, merge assignments (normalize team keys: frc5000 vs 5000)
   const allPitData = await invoke<any[]>("get_pit_scouting_data", { event: eventKey });
-  const existingTeams = new Set(allPitData.map((r: any) => r.team));
+  const existingTeams = new Set(allPitData.map((r: any) => norm(r.team)));
 
   const updatedRows: any[] = [];
   for (const row of allPitData) {
-    const a = assignmentMap.get(row.team);
+    const a = assignmentMap.get(norm(row.team));
     if (a) {
       updatedRows.push({ ...row, assigned: a.uid, last_modified: now });
     }
   }
   // Create skeleton rows for teams not yet in pit data
   for (const a of assignments) {
-    if (!existingTeams.has(a.teamKey)) {
+    if (!existingTeams.has(norm(a.teamKey))) {
       updatedRows.push({
         event: eventKey,
         team: a.teamKey,

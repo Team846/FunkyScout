@@ -16,12 +16,24 @@ import {
 } from "@shadcn/ui/components/tabs.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@shadcn/ui/components/alert-dialog.tsx";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import {
   buildScouterViewData,
   buildTeamViewData,
+  teamsMatch,
   type ScouterViewRow,
   type TeamViewRow,
   type MatchCard,
@@ -36,6 +48,8 @@ import {
   type UserProfile,
 } from "../lib/db";
 import { setTeamPriority } from "@lib/data/writes";
+import { permanentlyExcludeScouter } from "@lib/data/scouterExclusions";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/shifts")({
   component: ShiftViewerPage,
@@ -216,11 +230,10 @@ function MatchCardScroll({
   alignRight?: boolean;
 }) {
   return (
-    <div className="flex flex-1 min-w-[80vw] items-center">
+    <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
       <div
-        className={`flex gap-3.5 overflow-x-auto items-center py-1 ${
-          alignRight ? "ml-auto flex-row" : ""
-        }`}
+        className={`flex gap-3.5 overflow-x-auto items-center py-1 ${alignRight ? "flex-row-reverse" : ""}`}
+        style={{ scrollbarWidth: "thin" }}
       >
         {cards.length === 0 ? (
           <div className="text-sm text-muted-foreground/30 px-2">—</div>
@@ -243,10 +256,12 @@ function ScouterCard({
   row,
   rating,
   onRatingChange,
+  onExclude,
 }: {
   row: ScouterViewRow;
   rating: number | null;
   onRatingChange: (n: number) => void;
+  onExclude: () => void;
 }) {
   return (
     <Card className="w-[220px] flex-shrink-0 px-4 py-3 flex flex-col gap-1.5">
@@ -260,6 +275,35 @@ function ScouterCard({
         {row.matchesScouted}/{row.matchesAssigned} scouted
         {row.climbAccuracy != null && ` · ${row.climbAccuracy.toFixed(0)}% accuracy`}
       </div>
+      {/* Row 3: exclude button */}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-6 text-xs w-full mt-0.5"
+          >
+            Exclude Data
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Exclude all data from {row.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently soft-delete all {row.matchesScouted} match submission{row.matchesScouted !== 1 ? "s" : ""} from {row.name} for this event. The data will be removed from all calculations and synced to Supabase. This can be undone from the exclusion manager.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onExclude}
+            >
+              Exclude Data
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
@@ -299,21 +343,24 @@ function ScouterRow({
   row,
   rating,
   onRatingChange,
+  onExclude,
 }: {
   row: ScouterViewRow;
   rating: number | null;
   onRatingChange: (uid: string, n: number) => void;
+  onExclude: (uid: string) => void;
 }) {
   return (
-    <div className="flex w-full items-center gap-6 p-2.5">
+    <div className="flex items-center gap-6">
       <MatchCardScroll cards={row.pastMatches} type="scouter-past" alignRight />
       <ScouterCard
         row={row}
         rating={rating}
         onRatingChange={(n) => onRatingChange(row.uid, n)}
+        onExclude={() => onExclude(row.uid)}
       />
       <MatchCardScroll cards={row.nextMatches} type="scouter-next" />
-  </div>
+    </div>
   );
 }
 
@@ -412,13 +459,11 @@ function ShiftViewerPage() {
   const filteredScouters = useMemo(
     () =>
       scouterRows.filter((s) => {
-        if (s.matchesScouted === 0) return false;
         if (scouterSearch) {
           return s.name
             .toLowerCase()
             .includes(scouterSearch.toLowerCase());
         }
-
         return true;
       }),
     [scouterRows, scouterSearch]
@@ -438,25 +483,59 @@ function ShiftViewerPage() {
   );
 
   const handleRatingChange = useCallback((uid: string, n: number) => {
-    setDirtyRatings((prev) => ({ ...prev, [uid]: n }));
-  }, []);
+    // Only mark dirty if the value actually differs from the saved rating.
+    // Prevents the save/reset buttons from appearing when the user clicks
+    // the same star that's already persisted.
+    const savedProfile = profiles.find((p) => p.uid === uid);
+    const savedRating = (savedProfile?.settings as any)?.scouterRating ?? null;
+    setDirtyRatings((prev) => {
+      if (n === savedRating) {
+        const { [uid]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [uid]: n };
+    });
+  }, [profiles]);
 
   const handlePriorityChange = useCallback((teamKey: string, n: number) => {
-    setDirtyPriorities((prev) => ({ ...prev, [teamKey]: n }));
-  }, []);
+    // Only mark dirty if the value actually differs from the saved priority.
+    // Use Number() to handle JSON number/string type mismatches from SQLite.
+    const savedPit = pitData.find((p) => teamsMatch(p.team, teamKey));
+    const raw = savedPit?.data?.priority;
+    const savedNum =
+      raw === undefined || raw === null ? null : Number(raw);
+    setDirtyPriorities((prev) => {
+      const same = savedNum !== null && Number(n) === savedNum;
+      if (same) {
+        const { [teamKey]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [teamKey]: n };
+    });
+  }, [pitData]);
 
   const handleSaveAll = useCallback(async () => {
     if (!currentEvent) return;
+    const toSaveRatings = { ...dirtyRatings };
+    const toSavePriorities = { ...dirtyPriorities };
+    if (
+      Object.keys(toSaveRatings).length === 0 &&
+      Object.keys(toSavePriorities).length === 0
+    )
+      return;
+    // Clear dirty state immediately so Save/Reset buttons disappear
+    setDirtyRatings({});
+    setDirtyPriorities({});
     setSaving(true);
     try {
       await Promise.all([
-        ...Object.entries(dirtyRatings).map(([uid, r]) => setScouterRating(uid, r)),
-        ...Object.entries(dirtyPriorities).map(([teamKey, p]) =>
+        ...Object.entries(toSaveRatings).map(([uid, r]) =>
+          setScouterRating(uid, r)
+        ),
+        ...Object.entries(toSavePriorities).map(([teamKey, p]) =>
           setTeamPriority(currentEvent, teamKey, p)
         ),
       ]);
-      setDirtyRatings({});
-      setDirtyPriorities({});
       // Re-read from local SQLite so the UI reflects saved values immediately
       // (without waiting for the next 120s Rust sync cycle)
       const [pd, prof] = await Promise.all([
@@ -465,8 +544,12 @@ function ShiftViewerPage() {
       ]);
       setPitData(pd);
       setProfiles(prof);
+      toast.success("Saved");
     } catch (e) {
       console.error("[Shifts] Save failed:", e);
+      // Restore dirty state so user can retry
+      setDirtyRatings(toSaveRatings);
+      setDirtyPriorities(toSavePriorities);
     } finally {
       setSaving(false);
     }
@@ -475,7 +558,23 @@ function ShiftViewerPage() {
   const handleReset = useCallback(() => {
     setDirtyRatings({});
     setDirtyPriorities({});
+    toast.success("Changes discarded");
   }, []);
+
+  const handleExcludeScouter = useCallback(async (uid: string) => {
+    if (!currentEvent) return;
+    try {
+      // Cast needed: MatchScoutingData (desktop) vs EventMatchData (lib) differ only in `name` nullability
+      await permanentlyExcludeScouter(uid, currentEvent, matchData as any);
+      // Refresh local match data so excluded submissions disappear immediately
+      const md = await getMatchScoutingData(currentEvent);
+      setMatchData(md);
+      toast.success("Scouter data excluded");
+    } catch (e) {
+      console.error("[Shifts] Failed to exclude scouter:", e);
+      toast.error("Failed to exclude scouter data");
+    }
+  }, [currentEvent, matchData]);
 
   const hasScouterChanges = Object.keys(dirtyRatings).length > 0;
   const hasTeamChanges = Object.keys(dirtyPriorities).length > 0;
@@ -491,7 +590,7 @@ function ShiftViewerPage() {
   }
 
   return (
-    <div className="p-4 h-full overflow-y-auto overflow-x-hidden">
+    <div className="p-4 h-full overflow-y-auto">
       <Tabs defaultValue="by-scouter" className="w-full">
         <TabsList>
           <TabsTrigger value="by-scouter">By Scouter</TabsTrigger>
@@ -540,13 +639,14 @@ function ShiftViewerPage() {
                 : "No scouters assigned or scouting data found"}
             </EmptyState>
           ) : (
-            <div className="flex-1 flex-col gap-2.5 space-y-6 w-full p-2.5">
+            <div className="space-y-6">
               {filteredScouters.map((s) => (
                 <ScouterRow
                   key={s.uid}
                   row={s}
                   rating={dirtyRatings[s.uid] ?? s.rating}
                   onRatingChange={handleRatingChange}
+                  onExclude={handleExcludeScouter}
                 />
               ))}
             </div>

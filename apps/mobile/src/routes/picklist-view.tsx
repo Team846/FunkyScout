@@ -60,6 +60,7 @@ function PicklistViewPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastLoadedTimestamp, setLastLoadedTimestamp] = useState<number>(0);
+  const lastLoadedAtRef = useRef<number>(0); // When we set lastLoadedTimestamp, for grace period
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -87,7 +88,9 @@ function PicklistViewPage() {
       // Use `result` (the freshly fetched value), NOT `picklist` state which is stale
       // until React re-renders. Using `picklist` here gives null on first load → Date.now()
       // → isNewer checks always fail because cachedTimestamp (from Supabase) < Date.now()
-      setLastLoadedTimestamp(result?.last_modified ?? Date.now());
+      const ts = result?.last_modified ?? Date.now();
+      setLastLoadedTimestamp(ts);
+      lastLoadedAtRef.current = Date.now();
     } catch (error) {
       console.error("Failed to load picklist:", error);
       if (isInitialLoad) {
@@ -103,15 +106,29 @@ function PicklistViewPage() {
     loadPicklistData();
   }, [currentEvent, id]);
 
-  // Check for remote updates every 15 seconds
+  // Check for remote updates every 15 seconds.
+  // Do NOT include hasUnsavedChanges in deps — that caused the effect to re-run on every
+  // edit, triggering an immediate check that could false-positive when a background poll
+  // had just updated the cache (e.g. clock skew or race).
   useEffect(() => {
     if (!currentEvent || !id) return;
+
+    const GRACE_MS = 8000; // Don't check for 8s after load — avoids races with initial poll
 
     const checkForUpdates = async () => {
       try {
         // Skip check if we haven't loaded the picklist yet (lastLoadedTimestamp === 0)
         if (lastLoadedTimestamp === 0) {
           console.log("[picklist-view] 15s check skipped - not loaded yet");
+          return;
+        }
+
+        // Grace period: avoid false conflicts right after load (background poll can race)
+        const elapsed = Date.now() - lastLoadedAtRef.current;
+        if (elapsed < GRACE_MS) {
+          console.log(
+            `[picklist-view] 15s check skipped - within grace period (${Math.round(elapsed / 1000)}s)`
+          );
           return;
         }
 
@@ -122,18 +139,18 @@ function PicklistViewPage() {
         const timeDiff = cachedTimestamp - lastLoadedTimestamp;
         const isNewer = cachedTimestamp > lastLoadedTimestamp;
 
+        // Require meaningful timestamp difference to avoid clock skew false positives
+        const significantDiff = Math.abs(timeDiff) > 2000;
+
         console.log("[picklist-view] 15s conflict check:", {
           cachedLastModified: cachedTimestamp,
-          cachedTitle: cachedPicklist?.title,
-          cachedEntryCount: (cachedPicklist?.picklist as PicklistEntry[])?.length || 0,
           localLastLoadedTimestamp: lastLoadedTimestamp,
-          localTitle: picklist?.title,
-          localEntryCount: entries.length,
           timeDifference: `${timeDiff}ms`,
           isNewer,
+          significantDiff,
         });
 
-        if (isNewer) {
+        if (isNewer && significantDiff) {
           console.log(
             "[picklist-view] ⚠️ Remote changes detected - cache is newer!"
           );
@@ -192,7 +209,7 @@ function PicklistViewPage() {
     const interval = setInterval(checkForUpdates, 15000); // Check every 15 seconds
 
     return () => clearInterval(interval);
-  }, [currentEvent, id, lastLoadedTimestamp, hasUnsavedChanges]);
+  }, [currentEvent, id, lastLoadedTimestamp]);
 
   // Permission checks
   const canView = picklist
@@ -321,6 +338,7 @@ function PicklistViewPage() {
       // (prevents the 15s check from thinking our own save is someone else's change)
       const tempTimestamp = Date.now();
       setLastLoadedTimestamp(tempTimestamp);
+      lastLoadedAtRef.current = Date.now(); // Reset grace period for post-save flow
       console.log("[picklist-view] Temporary timestamp set to:", tempTimestamp);
 
       // Immediately refresh from Supabase to:
@@ -342,10 +360,12 @@ function PicklistViewPage() {
         });
         setPicklist(updatedPicklist);
         // Update with the actual Supabase timestamp for future conflict checks
-        setLastLoadedTimestamp(updatedPicklist.last_modified ?? Date.now());
+        const ts = updatedPicklist.last_modified ?? Date.now();
+        setLastLoadedTimestamp(ts);
+        lastLoadedAtRef.current = Date.now();
         console.log(
           "[picklist-view] ✅ lastLoadedTimestamp updated to:",
-          updatedPicklist.last_modified
+          ts
         );
       } else {
         console.warn(

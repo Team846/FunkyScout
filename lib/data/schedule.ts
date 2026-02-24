@@ -129,7 +129,15 @@ export async function getSchedule(eventKey: string) {
       console.log(`[Schedule] Full load: cached ${processed.length} rows`);
     }
 
-    localStorage.setItem(scheduleSyncKey(eventKey), new Date().toISOString());
+    // Only advance the sync key if:
+    // - We're already in incremental mode (0 results is normal — nothing changed), OR
+    // - The full fetch actually returned rows (proves Supabase is accessible/authorized).
+    // If a full fetch returns 0 rows (e.g. auth hiccup at startup), keep the key unset
+    // so the next poll also does a full fetch instead of incremental that would miss data
+    // uploaded before this window.
+    if (isIncremental || processed.length > 0) {
+      localStorage.setItem(scheduleSyncKey(eventKey), new Date().toISOString());
+    }
 
     // Always return the full local cache so callers get the complete schedule,
     // not just the partial incremental subset from this fetch.

@@ -55,8 +55,7 @@ export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
 
     return scouterMap
       .filter((s) => s.scouted > 0 || s.rating > 0)
-      .sort((a, b) => b.score - a.score || b.scouted - a.scouted)
-      .slice(0, 5);
+      .sort((a, b) => b.score - a.score || b.scouted - a.scouted);
   }, [profiles, matchData]);
 
   const matchProgressPct =

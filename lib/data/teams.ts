@@ -62,7 +62,15 @@ export async function getTeams(eventKey: string) {
       console.log("[Teams] Incremental: no changes since last sync");
     }
 
-    localStorage.setItem(teamSyncKey(eventKey), new Date().toISOString());
+    // Only advance the sync key if:
+    // - We're already in incremental mode (0 results is normal — nothing changed), OR
+    // - The full fetch actually returned rows (proves Supabase is accessible/authorized).
+    // If a full fetch returns 0 rows (e.g. auth hiccup at startup), keep the key unset
+    // so the next poll also does a full fetch instead of incremental that would miss data
+    // uploaded before this window.
+    if (isIncremental || converted.length > 0) {
+      localStorage.setItem(teamSyncKey(eventKey), new Date().toISOString());
+    }
 
     // Always return full cached list so caller gets the complete data set
     return getEventTeamData(eventKey);

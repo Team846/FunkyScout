@@ -1134,7 +1134,10 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                   {isSaving ? "Saving..." : "Save"}
                 </button>
                 <button
-                  onClick={resetChanges}
+                  onClick={() => {
+                    resetChanges();
+                    toast.success("Changes discarded");
+                  }}
                   disabled={isSaving}
                   className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground disabled:opacity-50 transition-colors"
                 >

@@ -193,8 +193,7 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Soft delete match data
-    /// Mirrors: SyncManager.syncDeleteMatchData()
+    /// Soft delete match data. Must set last_modified so incremental sync propagates deletion.
     pub async fn delete_match_data(
         &self,
         event: &str,
@@ -204,6 +203,7 @@ impl SupabaseService {
         timestamp_ms: i64,
     ) -> Result<()> {
         let timestamp_iso = Self::timestamp_to_iso(timestamp_ms);
+        let now = Self::now_iso();
 
         println!(
             "[Supabase] Deleting match data: event={}, match={}, team={}, uid={}, timestamp_ms={}, timestamp_iso={}",
@@ -211,7 +211,8 @@ impl SupabaseService {
         );
 
         let payload = json!({
-            "deleted_at": Self::now_iso(),
+            "deleted_at": now,
+            "last_modified": now,
         });
 
         let response = self.auth_client()
@@ -269,10 +270,13 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Soft delete picklist (entries are embedded — only the header row needs soft-deleting)
+    /// Soft delete picklist (entries are embedded — only the header row needs soft-deleting).
+    /// Must set last_modified so incremental sync (filtered by last_modified) propagates deletion.
     pub async fn delete_picklist(&self, id: &str) -> Result<()> {
+        let now = Self::now_iso();
         let payload = json!({
-            "deleted_at": Self::now_iso(),
+            "deleted_at": now,
+            "last_modified": now,
         });
 
         self.auth_client()
