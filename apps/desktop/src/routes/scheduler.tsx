@@ -11,6 +11,7 @@ import type { CycleAssignment, Scouter } from "@lib/schedule/cycle";
 import { getMatchLabel } from "@lib/utils/match";
 import { fetchAllUserDetails } from "@lib/supabase/user";
 import { toast } from "sonner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
 import { invoke } from "@tauri-apps/api/core";
 import { getSchedule } from "@lib/data/schedule";
 
@@ -84,6 +85,8 @@ function SchedulerPage() {
   const [w, setW] = useState(3);
   const [r, setR] = useState(1);
   const [assignments, setAssignments] = useState<CycleAssignment[]>([]);
+  const [assignedMatchTeams, setAssignedMatchTeams] = useState<Set<string>>(new Set());
+  const [matchScouterMap, setMatchScouterMap] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
 
@@ -150,6 +153,14 @@ function SchedulerPage() {
         .map((s) => ({ uid: s.uid, name: s.name }));
       const result = await runCycleForEvent(currentEvent, [w, r], scouters);
       setAssignments(result);
+      const newAssignedMatchTeams = new Set<string>();
+      const newMatchScouterMap: Record<string, string> = {};
+      result.forEach(assignment => {
+        newAssignedMatchTeams.add(`${assignment.matchKey}|${assignment.teamKey}`);
+        newMatchScouterMap[`${assignment.matchKey}|${assignment.teamKey}`] = assignment.name!; // Store scouter name
+      });
+      setAssignedMatchTeams(newAssignedMatchTeams);
+      setMatchScouterMap(newMatchScouterMap);
       toast.success(`Generated ${result.length} assignments`);
     } catch (e: any) {
       toast.error(`Failed to generate: ${e.message ?? String(e)}`);
@@ -361,12 +372,50 @@ function SchedulerPage() {
                 {schedule?.map((match: TeamSchedule) => (
                   <div key={match.matchKey} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
                     <span className="text-xs font-semibold text-foreground/80">{getMatchLabel(match.matchKey)}</span>
-                    {match.teams.slice(0, 3).map((team: { teamKey: string; teamNumber: number }) => (
-                      <span key={team.teamKey} className="text-xs text-gray-500 text-center">{team.teamNumber}</span>
-                    ))}
-                    {match.teams.slice(3, 6).map((team: { teamKey: string; teamNumber: number }) => (
-                      <span key={team.teamKey} className="text-xs text-gray-500 text-center">{team.teamNumber}</span>
-                    ))}
+                    {match.teams.slice(0, 3).map((team: { teamKey: string; teamNumber: number }) => {
+                      const assignmentKey = `${match.matchKey}|${team.teamKey}`;
+                      const isAssigned = assignedMatchTeams.has(assignmentKey);
+                      const scouterName = matchScouterMap[assignmentKey];
+
+                      return (
+                        <TooltipProvider key={team.teamKey}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"}`}>
+                                {team.teamNumber}
+                              </span>
+                            </TooltipTrigger>
+                            {isAssigned && scouterName && (
+                              <TooltipContent className="bg-black border border-gray-500 text-yellow-400">
+                                <p>{scouterName}</p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
+                    {match.teams.slice(3, 6).map((team: { teamKey: string; teamNumber: number }) => {
+                      const assignmentKey = `${match.matchKey}|${team.teamKey}`;
+                      const isAssigned = assignedMatchTeams.has(assignmentKey);
+                      const scouterName = matchScouterMap[assignmentKey];
+
+                      return (
+                        <TooltipProvider key={team.teamKey}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"}`}>
+                                {team.teamNumber}
+                              </span>
+                            </TooltipTrigger>
+                            {isAssigned && scouterName && (
+                              <TooltipContent className="bg-black border border-gray-500 text-yellow-400">
+                                <p>{scouterName}</p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
                     <span className="text-xs text-muted-foreground text-center">
                       {new Date(match.predictedTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
