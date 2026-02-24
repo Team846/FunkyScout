@@ -61,7 +61,7 @@ function MatchPlay() {
     // Clear in-progress data when leaving
     sessionStorage.removeItem("inProgressMatchData");
     if (practice) {
-      navigate({ to: "/auth" });
+      navigate({ to: "/practice" });
     } else {
       navigate({ to: "/home" });
     }

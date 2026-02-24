@@ -27,7 +27,7 @@ const supabase = createClient
        // Persist session across app restarts
        persistSession: true,
        autoRefreshToken: true,
-       detectSessionInUrl: false, // Mobile doesn't use URL auth
+       detectSessionInUrl: true, // Required for password reset email links (token in URL hash)
      },
    }
 );

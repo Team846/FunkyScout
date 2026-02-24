@@ -17,7 +17,15 @@ Deno.serve(async (req) => {
 
     console.log(`Creating account ${email}/${username}`);
 
-    const supabase = createClient(
+    // Use anon key for signup so Supabase sends the confirmation email.
+    // Service role bypasses email confirmation (auto-confirms without emailing).
+    const supabaseAuth = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
+
+    // Use service role for admin operations (profile update bypasses RLS)
+    const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
@@ -30,8 +38,8 @@ Deno.serve(async (req) => {
 
     console.log(`Using callback URL: ${callbackUrl}`);
 
-    // 1. sign up the user
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    // 1. sign up the user (anon key so confirmation email is sent)
+    const { data, error: signUpError } = await supabaseAuth.auth.signUp({
       email,
       password,
       options: {
@@ -71,8 +79,8 @@ Deno.serve(async (req) => {
 
     console.log(`Using UUID ${uid}`);
 
-    // 2. add the user to the user_profiles table
-    const { error: profileError } = await supabase
+    // 2. add the user to the user_profiles table (service role to bypass RLS)
+    const { error: profileError } = await supabaseAdmin
       .from("user_profiles")
       .update({ name: username })
       .eq("uid", uid)

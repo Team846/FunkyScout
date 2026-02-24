@@ -115,6 +115,19 @@ function MatchEditStats() {
         }
       }
 
+      // Practice mode: no Supabase, init empty form if no sessionStorage
+      if (practice && teamNum && matchNum) {
+        setMatchData({
+          presetActions: [],
+          locationActions: [],
+          toggleActions: [],
+          postMatch: { ratings: {} },
+          notes: "",
+        });
+        setNotes("");
+        return;
+      }
+
       // If no sessionStorage and we have route params, decide whether to load from Supabase or start fresh
       if (currentEvent && teamNum && matchNum) {
         try {
@@ -192,9 +205,13 @@ function MatchEditStats() {
     }
 
     loadMatchData();
-  }, [currentEvent, teamNum, matchNum]);
+  }, [currentEvent, teamNum, matchNum, practice]);
 
   const handleBack = () => {
+    if (practice) {
+      navigate({ to: "/practice" });
+      return;
+    }
     // Home button behavior depends on context:
     // - If from team view: go to dashboard (user is editing, not scouting)
     // - If from scouting flow: go to match end screen (user can resume scouting)
@@ -206,6 +223,15 @@ function MatchEditStats() {
         search: { teamNum, matchNum, alliance, practice },
       });
     }
+  };
+
+  const handleFinish = () => {
+    // Practice mode: clear local data and return to practice home, no Supabase writes
+    if (!matchData || !teamNum || !matchNum) return;
+    const sessionKey = `matchData_${matchNum}_${teamNum}`;
+    sessionStorage.removeItem(sessionKey);
+    toast.success("Practice complete!");
+    navigate({ to: "/practice" });
   };
 
   const handleSubmit = async () => {
@@ -1425,14 +1451,14 @@ function MatchEditStats() {
           </div>
         </div>
 
-        {/* Submit Button - Fixed at bottom */}
+        {/* Submit / Finish Button - Fixed at bottom */}
         <div className="fixed bottom-4 left-4 right-4 z-40">
           <Button
-            onClick={handleSubmit}
-            disabled={!isFormComplete || isSubmitting}
+            onClick={practice ? handleFinish : handleSubmit}
+            disabled={practice ? !isFormComplete : !isFormComplete || isSubmitting}
             className="w-full h-12 bg-[#CDA745] hover:bg-[#CDA745]/90 text-black disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? "Uploading..." : "Submit"}
+            {practice ? "Finish" : isSubmitting ? "Uploading..." : "Submit"}
           </Button>
         </div>
       </div>

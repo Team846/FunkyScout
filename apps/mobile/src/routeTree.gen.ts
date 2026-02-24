@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root"
 import { Route as VerifyRouteImport } from "./routes/verify"
 import { Route as TeamInfoRouteImport } from "./routes/team-info"
 import { Route as ResetRouteImport } from "./routes/reset"
+import { Route as PracticeRouteImport } from "./routes/practice"
 import { Route as PitscoutImagesRouteImport } from "./routes/pitscout-images"
 import { Route as PitscoutRouteImport } from "./routes/pitscout"
 import { Route as PitRouteImport } from "./routes/pit"
@@ -40,6 +41,11 @@ const TeamInfoRoute = TeamInfoRouteImport.update({
 const ResetRoute = ResetRouteImport.update({
   id: "/reset",
   path: "/reset",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PracticeRoute = PracticeRouteImport.update({
+  id: "/practice",
+  path: "/practice",
   getParentRoute: () => rootRouteImport,
 } as any)
 const PitscoutImagesRoute = PitscoutImagesRouteImport.update({
@@ -128,6 +134,7 @@ export interface FileRoutesByFullPath {
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/pitscout-images": typeof PitscoutImagesRoute
+  "/practice": typeof PracticeRoute
   "/reset": typeof ResetRoute
   "/team-info": typeof TeamInfoRoute
   "/verify": typeof VerifyRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/pitscout-images": typeof PitscoutImagesRoute
+  "/practice": typeof PracticeRoute
   "/reset": typeof ResetRoute
   "/team-info": typeof TeamInfoRoute
   "/verify": typeof VerifyRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   "/pit": typeof PitRoute
   "/pitscout": typeof PitscoutRoute
   "/pitscout-images": typeof PitscoutImagesRoute
+  "/practice": typeof PracticeRoute
   "/reset": typeof ResetRoute
   "/team-info": typeof TeamInfoRoute
   "/verify": typeof VerifyRoute
@@ -188,6 +197,7 @@ export interface FileRouteTypes {
     | "/pit"
     | "/pitscout"
     | "/pitscout-images"
+    | "/practice"
     | "/reset"
     | "/team-info"
     | "/verify"
@@ -207,6 +217,7 @@ export interface FileRouteTypes {
     | "/pit"
     | "/pitscout"
     | "/pitscout-images"
+    | "/practice"
     | "/reset"
     | "/team-info"
     | "/verify"
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | "/pit"
     | "/pitscout"
     | "/pitscout-images"
+    | "/practice"
     | "/reset"
     | "/team-info"
     | "/verify"
@@ -246,6 +258,7 @@ export interface RootRouteChildren {
   PitRoute: typeof PitRoute
   PitscoutRoute: typeof PitscoutRoute
   PitscoutImagesRoute: typeof PitscoutImagesRoute
+  PracticeRoute: typeof PracticeRoute
   ResetRoute: typeof ResetRoute
   TeamInfoRoute: typeof TeamInfoRoute
   VerifyRoute: typeof VerifyRoute
@@ -272,6 +285,13 @@ declare module "@tanstack/react-router" {
       path: "/reset"
       fullPath: "/reset"
       preLoaderRoute: typeof ResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/practice": {
+      id: "/practice"
+      path: "/practice"
+      fullPath: "/practice"
+      preLoaderRoute: typeof PracticeRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/pitscout-images": {
@@ -390,6 +410,7 @@ const rootRouteChildren: RootRouteChildren = {
   PitRoute: PitRoute,
   PitscoutRoute: PitscoutRoute,
   PitscoutImagesRoute: PitscoutImagesRoute,
+  PracticeRoute: PracticeRoute,
   ResetRoute: ResetRoute,
   TeamInfoRoute: TeamInfoRoute,
   VerifyRoute: VerifyRoute,

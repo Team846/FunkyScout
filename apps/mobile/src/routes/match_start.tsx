@@ -39,7 +39,7 @@ function MatchStart() {
   const [showPuff, setShowPuff] = useState(false);
   const handleBackClick = () => {
     if (practice) {
-      navigate({ to: "/auth" });
+      navigate({ to: "/practice" });
     } else {
       navigate({ to: "/home" });
     }

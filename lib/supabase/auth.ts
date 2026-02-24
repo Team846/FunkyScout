@@ -3,6 +3,7 @@ import supabase from "./supabase.ts";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { fetchUserProfile, clearLocalUserData } from "./user.ts";
 import { handleError } from "../../utils/errorHandler.ts";
+import { isTauri } from "../utils/platform";
 
 
 export async function getSession(): Promise<Session | null> {
@@ -43,8 +44,14 @@ export async function signupWithPassword(email: string, password: string, userna
 
 export async function sendPasswordReset(email: string, redirectTo?: string): Promise<boolean> {
   try {
-    // Always use current origin + /reset (works for both localhost and production)
-    const resetUrl = redirectTo || `${window.location.origin}/reset`;
+    // On desktop (Tauri), window.location.origin is "tauri://localhost" which browsers
+    // can't handle when they open the email link. Use the web app URL instead so the
+    // user lands on the vercel /reset page which works in any browser.
+    const resetUrl = redirectTo || (
+      isTauri()
+        ? "https://funkyscout.vercel.app/reset?from=desktop"
+        : `${window.location.origin}/reset`
+    );
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: resetUrl,
     });

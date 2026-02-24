@@ -41,7 +41,7 @@ function MatchEnd() {
   const [coordinates, setCoordinates] = useState([1000, 1000]);
   const handleBackClick = () => {
     if (practice) {
-      navigate({ to: "/auth" });
+      navigate({ to: "/practice" });
     } else {
       navigate({ to: "/home" });
     }

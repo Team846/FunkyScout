@@ -15,6 +15,7 @@ function ResetPasswordPage() {
   const [invalid, setInvalid] = useState(false);
   const [ready, setReady] = useState(false);
   const navigate = useNavigate();
+  const fromDesktop = new URLSearchParams(window.location.search).get("from") === "desktop";
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -102,13 +103,19 @@ function ResetPasswordPage() {
         <div className="w-full max-w-md space-y-4 text-center">
           <h1 className="text-xl font-bold text-primary">Password Updated!</h1>
           <p className="text-muted-foreground">Your password has been successfully changed.</p>
-          <Button
-            variant="outline"
-            onClick={() => navigate({ to: "/auth" })}
-            className="h-11 px-8 bg-accent text-primary"
-          >
-            Go to Sign In
-          </Button>
+          {fromDesktop ? (
+            <p className="text-sm text-muted-foreground">
+              Return to the FunkyScout Desktop app and sign in with your new password. You can close this tab.
+            </p>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => navigate({ to: "/auth" })}
+              className="h-11 px-8 bg-accent text-primary"
+            >
+              Go to Sign In
+            </Button>
+          )}
         </div>
       </div>
     );
