@@ -194,209 +194,137 @@ function SchedulerPage() {
 
   return (
     <div className="h-full overflow-auto p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold">Scheduler</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Assign scouters to qual matches using the work/rest cycle algorithm.
-          </p>
-        </div>
+      <div className="h-full flex p-6 gap-6">
+        {/* Left Panel - 1/3 width */}
+        <div className="flex flex-col w-1/3 space-y-6">
+          {/* Top 2/3: Scouter List */}
+          <div className="flex-2 rounded-lg border border-border bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Scouters</span>
+                {/* Info button placeholder */}
+                <span className="text-xs text-muted-foreground">(i)</span>
+                <span className="text-xs text-muted-foreground">
+                  {selectedUids.size} / {allScouters.length} selected
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={selectAll} className="text-xs text-primary hover:underline">
+                  All
+                </button>
+                <span className="text-xs text-muted-foreground">·</span>
+                <button onClick={selectNone} className="text-xs text-primary hover:underline">
+                  None
+                </button>
+                {/* Dropdown for "just scouters" could go here if needed later */}
+              </div>
+            </div>
+            <div className="p-3 border-b border-border">
+              <Input
+                placeholder="Search scouters..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {loadingScouters ? (
+                <p className="text-sm text-muted-foreground p-4">Loading scouters...</p>
+              ) : filtered.length === 0 ? (
+                <p className="text-sm text-muted-foreground p-4">No scouters found.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {filtered.map((s) => (
+                    <label
+                      key={s.uid}
+                      className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-secondary/40 select-none"
+                    >
+                      <Checkbox
+                        checked={selectedUids.has(s.uid)}
+                        onCheckedChange={() => toggleUid(s.uid)}
+                      />
+                      <span className="text-sm flex-1">{s.name}</span>
+                      {s.role === "admin" && (
+                        <span className="text-xs text-muted-foreground">admin</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-        {/* Config row */}
-        <div className="flex items-end gap-4 p-4 rounded-lg bg-card border border-border">
-          <div className="space-y-1.5">
-            <Label>Work (w)</Label>
-            <Input
-              type="number"
-              min={1}
-              value={w}
-              onChange={(e) => setW(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-24"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Rest (r)</Label>
-            <Input
-              type="number"
-              min={0}
-              value={r}
-              onChange={(e) => setR(Math.max(0, parseInt(e.target.value) || 0))}
-              className="w-24"
-            />
-          </div>
-          <p className="text-xs text-muted-foreground pb-2">
-            Work {w} match{w !== 1 ? "es" : ""}, rest {r} match{r !== 1 ? "es" : ""}, repeat.
-          </p>
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleScheduleTeams}
-              disabled={schedulingTeams || !currentEvent || selectedUids.size === 0}
-            >
-              {schedulingTeams ? "Scheduling..." : "Schedule Teams"}
-            </Button>
+          {/* Bottom 1/3: Work/Rest Ratio and Generate Assignments Button */}
+          <div className="flex-1 p-4 rounded-lg bg-card border border-border flex flex-col justify-between">
+            <div className="flex items-end gap-4">
+              <div className="space-y-1.5">
+                <Label>Work (w)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={w}
+                  onChange={(e) => setW(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-24"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Rest (r)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={r}
+                  onChange={(e) => setR(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-24"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground pb-2">
+                Work {w} match{w !== 1 ? "es" : ""}, rest {r} match{r !== 1 ? "es" : ""}, repeat.
+              </p>
+            </div>
             <Button
               onClick={handleGenerate}
               disabled={generating || !currentEvent || selectedUids.size === 0}
+              className="mt-4"
             >
-              {generating ? "Generating..." : "Generate Shifts"}
+              {generating ? "Generating..." : "Generate Assignments"}
             </Button>
           </div>
         </div>
 
-        {/* Scouter selection */}
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Scouters</span>
-              <span className="text-xs text-muted-foreground">
-                {selectedUids.size} / {allScouters.length} selected
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={selectAll} className="text-xs text-primary hover:underline">
-                All
-              </button>
-              <span className="text-xs text-muted-foreground">·</span>
-              <button onClick={selectNone} className="text-xs text-primary hover:underline">
-                None
-              </button>
-            </div>
+        {/* Right Panel - 2/3 width */}
+        <div className="flex-2 flex flex-col">
+          <div className="flex items-center justify-between pb-4">
+            <h2 className="text-xl font-semibold">Match Schedule</h2>
+            <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Jump to last completed match">
+              {/* <ArrowDown className="w-4 h-4" /> */}
+              Jump to Current Match
+            </button>
           </div>
-          <div className="p-3 border-b border-border">
-            <Input
-              placeholder="Search scouters..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {loadingScouters ? (
-              <p className="text-sm text-muted-foreground p-4">Loading scouters...</p>
-            ) : filtered.length === 0 ? (
-              <p className="text-sm text-muted-foreground p-4">No scouters found.</p>
-            ) : (
-              <div className="divide-y divide-border">
-                {filtered.map((s) => (
-                  <label
-                    key={s.uid}
-                    className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-secondary/40 select-none"
-                  >
-                    <Checkbox
-                      checked={selectedUids.has(s.uid)}
-                      onCheckedChange={() => toggleUid(s.uid)}
-                    />
-                    <span className="text-sm flex-1">{s.name}</span>
-                    {s.role === "admin" && (
-                      <span className="text-xs text-muted-foreground">admin</span>
-                    )}
-                  </label>
+          <div className="flex-1 overflow-hidden rounded-lg border border-border">
+            <div className="flex flex-col h-full overflow-hidden relative">
+              <div className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 px-3 py-3 bg-card/50 flex-shrink-0 relative z-10 border-b border-border/50">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Match</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">Red Alliance</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">Blue Alliance</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Time</span>
+              </div>
+              <div className="h-full overflow-y-auto">
+                {[...Array(20)].map((_, i) => (
+                  <div key={i} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
+                    <span className="text-xs font-semibold text-foreground/80">Qual {i + 1}</span>
+                    <span className="text-xs text-gray-500 text-center">Team A1</span>
+                    <span className="text-xs text-gray-500 text-center">Team A2</span>
+                    <span className="text-xs text-gray-500 text-center">Team A3</span>
+                    <span className="text-xs text-gray-500 text-center">Team B1</span>
+                    <span className="text-xs text-gray-500 text-center">Team B2</span>
+                    <span className="text-xs text-gray-500 text-center">Team B3</span>
+                    <span className="text-xs text-muted-foreground text-center">--:--</span>
+                  </div>
                 ))}
               </div>
-            )}
+            </div>
           </div>
         </div>
-
-        {/* No event selected */}
-        {!currentEvent && (
-          <p className="text-sm text-muted-foreground">Select an event to use the scheduler.</p>
-        )}
-
-        {/* Pit team assignments */}
-        {pitAssignments.length > 0 && (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {pitAssignments.length} teams across {Object.keys(pitByUid).length} scouters
-              </p>
-              <Button onClick={handleApplyTeams} disabled={applyingTeams}>
-                {applyingTeams ? "Applying..." : "Apply Team Assignments"}
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {Object.entries(pitByUid).map(([uid, rows]) => (
-                <div
-                  key={uid}
-                  className="rounded-lg border border-border bg-card overflow-hidden"
-                >
-                  <div className="px-4 py-2 bg-secondary/50 border-b border-border flex items-center gap-2">
-                    <span className="text-sm font-medium">{rows[0]?.name || uid}</span>
-                    <span className="text-xs text-muted-foreground">
-                      ({rows.length} team{rows.length !== 1 ? "s" : ""})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 p-3">
-                    {rows
-                      .sort((a, b) => a.teamNumber - b.teamNumber)
-                      .map((a) => (
-                        <div
-                          key={a.teamKey}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary text-xs"
-                          title={a.teamName ?? a.teamKey}
-                        >
-                          <span className="font-medium text-foreground">{a.teamNumber}</span>
-                          {a.teamName && (
-                            <span className="text-muted-foreground max-w-[120px] truncate">
-                              {a.teamName}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Shift assignment results */}
-        {assignments.length > 0 && (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {assignments.length} assignments across {Object.keys(byUid).length} scouters
-              </p>
-              <Button onClick={handleApply} disabled={applying}>
-                {applying ? "Applying..." : "Apply Shift Assignments"}
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {Object.entries(byUid).map(([uid, rows]) => (
-                <div
-                  key={uid}
-                  className="rounded-lg border border-border bg-card overflow-hidden"
-                >
-                  <div className="px-4 py-2 bg-secondary/50 border-b border-border flex items-center gap-2">
-                    <span className="text-sm font-medium">{rows[0]?.name || uid}</span>
-                    <span className="text-xs text-muted-foreground">
-                      ({rows.length} match{rows.length !== 1 ? "es" : ""})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 p-3">
-                    {rows
-                      .sort((a, b) => a.matchKey.localeCompare(b.matchKey))
-                      .map((a) => (
-                        <div
-                          key={`${a.matchKey}|${a.teamKey}`}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary text-xs"
-                        >
-                          <span className="font-medium text-muted-foreground">
-                            {getMatchLabel(a.matchKey)}
-                          </span>
-                          <span className="text-foreground">
-                            {a.teamKey?.replace("frc", "")}
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
