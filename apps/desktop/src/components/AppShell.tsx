@@ -415,7 +415,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* Top Tab Bar */}
           <header className="h-10 flex-shrink-0 border-b border-border flex items-stretch bg-background">
             {/* Tabs */}
-            <div className="flex items-stretch overflow-x-auto flex-1 min-w-0">
+            <div className="flex items-stretch flex-1 min-w-0">
               {tabs.map((tab) => {
                 const isActive = tab.id === activeTabId;
                 return (
@@ -620,7 +620,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {events.map((event) => (
                     <DropdownMenuItem
                       key={event.event}
-                      onClick={() => setCurrentEvent(event.event)}
+                      onClick={() => {setCurrentEvent(event.event)}}
                       className={
                         currentEvent === event.event
                           ? "bg-primary/10 text-primary"

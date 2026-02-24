@@ -216,18 +216,21 @@ function MatchCardScroll({
   alignRight?: boolean;
 }) {
   return (
-    <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
+    <div className="flex flex-1 min-w-[80vw] items-center">
       <div
-        className={`flex gap-3.5 overflow-x-auto items-center py-1 ${alignRight ? "flex-row-reverse" : ""}`}
-        style={{ scrollbarWidth: "thin" }}
+        className={`flex gap-3.5 overflow-x-auto items-center py-1 ${
+          alignRight ? "ml-auto flex-row" : ""
+        }`}
       >
         {cards.length === 0 ? (
-          <div className="text-sm text-muted-foreground/30 px-2">
-            —
-          </div>
+          <div className="text-sm text-muted-foreground/30 px-2">—</div>
         ) : (
           cards.map((m) => (
-            <MatchCardSmall key={`${m.matchKey}-${m.team}`} card={m} type={type} />
+            <MatchCardSmall
+              key={`${m.matchKey}-${m.team}`}
+              card={m}
+              type={type}
+            />
           ))
         )}
       </div>
@@ -302,7 +305,7 @@ function ScouterRow({
   onRatingChange: (uid: string, n: number) => void;
 }) {
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex w-full items-center gap-6 p-2.5">
       <MatchCardScroll cards={row.pastMatches} type="scouter-past" alignRight />
       <ScouterCard
         row={row}
@@ -310,7 +313,7 @@ function ScouterRow({
         onRatingChange={(n) => onRatingChange(row.uid, n)}
       />
       <MatchCardScroll cards={row.nextMatches} type="scouter-next" />
-    </div>
+  </div>
   );
 }
 
@@ -408,13 +411,19 @@ function ShiftViewerPage() {
 
   const filteredScouters = useMemo(
     () =>
-      scouterSearch
-        ? scouterRows.filter((s) =>
-            s.name.toLowerCase().includes(scouterSearch.toLowerCase())
-          )
-        : scouterRows,
+      scouterRows.filter((s) => {
+        if (s.matchesScouted === 0) return false;
+        if (scouterSearch) {
+          return s.name
+            .toLowerCase()
+            .includes(scouterSearch.toLowerCase());
+        }
+
+        return true;
+      }),
     [scouterRows, scouterSearch]
   );
+
 
   const filteredTeams = useMemo(
     () =>
@@ -482,7 +491,7 @@ function ShiftViewerPage() {
   }
 
   return (
-    <div className="p-4 h-full overflow-y-auto">
+    <div className="p-4 h-full overflow-y-auto overflow-x-hidden">
       <Tabs defaultValue="by-scouter" className="w-full">
         <TabsList>
           <TabsTrigger value="by-scouter">By Scouter</TabsTrigger>
@@ -531,7 +540,7 @@ function ShiftViewerPage() {
                 : "No scouters assigned or scouting data found"}
             </EmptyState>
           ) : (
-            <div className="space-y-6">
+            <div className="flex-1 flex-col gap-2.5 space-y-6 w-full p-2.5">
               {filteredScouters.map((s) => (
                 <ScouterRow
                   key={s.uid}

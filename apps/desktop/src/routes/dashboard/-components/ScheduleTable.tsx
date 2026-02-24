@@ -82,7 +82,7 @@ function TeamChip({
 }) {
   const team = tbaTeams.find((t) => t.key === teamKey);
   const epa = team?.epa?.total_points?.mean;
-  const teamNum = teamKey.replace("frc", "");
+  const teamNum = teamKey?.replace("frc", "");
 
   let chipClass = "bg-secondary/60 text-foreground/80";
   if (isHome) {

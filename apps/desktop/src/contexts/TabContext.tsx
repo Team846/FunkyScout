@@ -100,6 +100,7 @@ export function TabProvider({ children, router }: TabProviderProps) {
       "/comparison": "Comparison",
       "/match-edit-test": "Match Edit",
       "/scouter-ratings": "Scouter Ratings",
+      "/scheduler": "Scheduler",
       // "/picklist-open" intentionally omitted — per-picklist tabs are added explicitly
     };
 

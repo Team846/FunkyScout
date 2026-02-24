@@ -349,7 +349,7 @@ function analyzeClimbActions(
   }
 
   // --- Teleop climb (L1/L2/L3) ---
-  const teleopClimbActions = teleopActions.filter((a) => a.actionId.startsWith("climb_L"));
+  const teleopClimbActions = teleopActions.filter((a) => a?.actionId?.startsWith("climb_L"));
   let level: "L1" | "L2" | "L3" | null = null;
   let teleopClimbTime: number | null = null;
 

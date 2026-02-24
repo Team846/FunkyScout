@@ -387,7 +387,7 @@ function SchedulerPage() {
                             {getMatchLabel(a.matchKey)}
                           </span>
                           <span className="text-foreground">
-                            {a.teamKey.replace("frc", "")}
+                            {a.teamKey?.replace("frc", "")}
                           </span>
                         </div>
                       ))}
