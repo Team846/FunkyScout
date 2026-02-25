@@ -22,7 +22,7 @@ function ResetPasswordPage() {
   useEffect(() => {
     const timeout = setTimeout(() => {
       setInvalid(true);
-    }, 5000);
+    }, 10000);
 
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {

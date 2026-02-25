@@ -335,6 +335,20 @@ function TeamCard({
         <span className="text-[11px] text-muted-foreground">Priority</span>
         <StarRating value={priority} onChange={onPriorityChange} />
       </div>
+      {/* Row 4: pit scouting badge */}
+      {row.pitScoutedByName ? (
+        <div className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-primary/15 text-primary w-fit">
+          Scouted by {row.pitScoutedByName}
+        </div>
+      ) : row.pitAssignedName ? (
+        <div className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-ring/15 text-ring w-fit">
+          Assigned to {row.pitAssignedName}
+        </div>
+      ) : (
+        <div className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground/50 w-fit">
+          Not assigned
+        </div>
+      )}
     </Card>
   );
 }
@@ -452,8 +466,8 @@ function ShiftViewerPage() {
   );
 
   const teamRows = useMemo(
-    () => buildTeamViewData({ schedule, matchData, tbaTeams, pitData, tbaClimbData }),
-    [schedule, matchData, tbaTeams, pitData, tbaClimbData]
+    () => buildTeamViewData({ schedule, matchData, tbaTeams, pitData, tbaClimbData, profiles }),
+    [schedule, matchData, tbaTeams, pitData, tbaClimbData, profiles]
   );
 
   const filteredScouters = useMemo(

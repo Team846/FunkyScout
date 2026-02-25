@@ -910,11 +910,13 @@ export async function assignShiftsFromCycle(
     assignments.map((a) => [`${a.matchKey}|${a.teamKey}`, a]),
   );
 
-  // Read current schedule, apply assignments by (match, team)
+  // Read current schedule, replace ALL assignments atomically:
+  // entries in the new batch get the new scouter, all others are cleared to null.
+  // This prevents old assignments from compounding on top of new ones.
   const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
   const updated = schedule.map((s: EventScheduleEntry) => {
     const a = assignmentMap.get(`${s.match}|${s.team}`);
-    return a ? { ...s, uid: a.uid, name: a.name ?? null, last_modified: now } : s;
+    return { ...s, uid: a?.uid ?? null, name: a?.name ?? null, last_modified: now };
   });
 
   // 1. Cache locally (Tauri SQLite)

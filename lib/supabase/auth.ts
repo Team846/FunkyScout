@@ -31,8 +31,13 @@ export async function loginWithPassword(email: string, password: string): Promis
 
 export async function signupWithPassword(email: string, password: string, username: string): Promise<boolean> {
   try {
+    // Pass the redirect URL explicitly so the verification email link works for external testers.
+    // Priority: VITE_REDIRECT_URL (set in .env for the deployed/tunnel URL) > window.location.origin (dev LAN).
+    // Tauri is never the signup surface, so no isTauri() branch needed here.
+    const appBase = import.meta.env.VITE_REDIRECT_URL || window.location.origin;
+    const redirectTo = `${appBase}/verify`;
     const { error } = await supabase.functions.invoke("createAccount", {
-      body: { email, password, username },
+      body: { email, password, username, redirectTo },
     });
     if (error) throw error;
     return true;
@@ -44,14 +49,17 @@ export async function signupWithPassword(email: string, password: string, userna
 
 export async function sendPasswordReset(email: string, redirectTo?: string): Promise<boolean> {
   try {
-    // On desktop (Tauri), window.location.origin is "tauri://localhost" which browsers
-    // can't handle when they open the email link. Use the web app URL instead so the
-    // user lands on the vercel /reset page which works in any browser.
-    const resetUrl = redirectTo || (
-      isTauri()
-        ? "https://funkyscout.vercel.app/reset?from=desktop"
-        : `${window.location.origin}/reset`
-    );
+    // Resolve the reset redirect URL. Priority:
+    //   1. Explicit override passed by caller
+    //   2. VITE_REDIRECT_URL env var (set to your deployed/tunnel URL in .env)
+    //   3. window.location.origin (works for same-machine / LAN dev access)
+    // Tauri uses "tauri://localhost" as origin which browsers can't open, so
+    // VITE_REDIRECT_URL must be set when sending resets from the desktop app.
+    const appBase = import.meta.env.VITE_REDIRECT_URL || (isTauri() ? null : window.location.origin);
+    const resetUrl = redirectTo || (appBase ? `${appBase}/reset` : null);
+    if (!resetUrl) {
+      throw new Error("No redirect URL configured. Set VITE_REDIRECT_URL in your .env file.");
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: resetUrl,
     });

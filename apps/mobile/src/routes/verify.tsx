@@ -17,7 +17,7 @@ function VerifyPage() {
     const timeout = setTimeout(() => {
       setTimedOut(true);
       setStatus("error");
-    }, 5000);
+    }, 10000);
 
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "USER_UPDATED") {

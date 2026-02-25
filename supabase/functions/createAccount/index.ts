@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { email, password, username } = await req.json();
+    const { email, password, username, redirectTo: bodyRedirectTo } = await req.json();
 
     console.log(`Creating account ${email}/${username}`);
 
@@ -30,11 +30,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Get the origin from the request to support both localhost and production
-    const origin = req.headers.get("origin") || Deno.env.get("AUTH_CALLBACK_URL");
-    const baseUrl = origin || "https://funkyscout.vercel.app";
-    // Redirect to /verify for email confirmation (matches Supabase redirect URLs)
-    const callbackUrl = `${baseUrl}/verify`;
+    // Resolve the callback URL. Priority:
+    //   1. redirectTo from request body (client explicitly passes VITE_REDIRECT_URL/verify)
+    //   2. AUTH_CALLBACK_URL env var on the edge function
+    //   3. origin request header (works for same-machine / LAN dev access)
+    //   4. hardcoded fallback (production Vercel URL)
+    const callbackUrl = bodyRedirectTo
+      || Deno.env.get("AUTH_CALLBACK_URL")
+      || (() => {
+        const origin = req.headers.get("origin");
+        return origin ? `${origin}/verify` : "https://funkyscout.vercel.app/verify";
+      })();
 
     console.log(`Using callback URL: ${callbackUrl}`);
 

@@ -479,7 +479,8 @@ impl SyncService {
                             changed_schedule_records.len(), schedule_records.len());
 
                         // Cache ALL to local SQLite (for offline support)
-                        self.cache_schedule_to_sqlite(&schedule_records)
+                        // preserve_assignments=true: TBA data has no name/uid, use COALESCE
+                        self.cache_schedule_to_sqlite(&schedule_records, true)
                             .await
                             .context("Failed to cache schedule to SQLite")?;
 
@@ -665,7 +666,8 @@ impl SyncService {
         };
 
         if !schedule_data.is_empty() {
-            self.cache_schedule_to_sqlite(&schedule_data)
+            // preserve_assignments=false: Supabase is authoritative — null means cleared
+            self.cache_schedule_to_sqlite(&schedule_data, false)
                 .await
                 .context("Failed to cache schedule to SQLite")?;
             // Update snapshot for next push cycle's change detection
@@ -775,6 +777,12 @@ impl SyncService {
         for record in team_records {
             let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
             let team_name = record.get("team_name").and_then(|v| v.as_str());
+            // Pit scouting / assignment fields — null if not yet scouted/assigned
+            let name = record.get("name").and_then(|v| v.as_str());
+            let uid = record.get("uid").and_then(|v| v.as_str());
+            let assigned = record.get("assigned").and_then(|v| v.as_str());
+            let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
+            let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
 
             // Strip null values from incoming data so json_patch doesn't erase existing keys
             let data_json = match record.get("data").and_then(|v| v.as_object()) {
@@ -790,18 +798,28 @@ impl SyncService {
             };
 
             sqlx::query(
-                "INSERT INTO event_team_data (event, team, team_name, data, last_modified)
-                 VALUES (?, ?, ?, json(?), ?)
+                "INSERT INTO event_team_data (event, team, team_name, data, name, uid, assigned, timestamp, last_modified, deleted_at)
+                 VALUES (?, ?, ?, json(?), ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(event, team) DO UPDATE SET
                    team_name = excluded.team_name,
                    data = json_patch(COALESCE(event_team_data.data, '{}'), excluded.data),
-                   last_modified = excluded.last_modified"
+                   name = COALESCE(excluded.name, event_team_data.name),
+                   uid = COALESCE(excluded.uid, event_team_data.uid),
+                   assigned = COALESCE(excluded.assigned, event_team_data.assigned),
+                   timestamp = COALESCE(excluded.timestamp, event_team_data.timestamp),
+                   last_modified = excluded.last_modified,
+                   deleted_at = excluded.deleted_at"
             )
             .bind(&self.current_event)
             .bind(team)
             .bind(team_name)
             .bind(&data_json)
+            .bind(name)
+            .bind(uid)
+            .bind(assigned)
+            .bind(timestamp)
             .bind(chrono::Utc::now().timestamp_millis())
+            .bind(deleted_at)
             .execute(&self.sqlx_pool)
             .await
             .context(format!("Failed to cache team {} to SQLite", team))?;
@@ -810,20 +828,26 @@ impl SyncService {
         Ok(())
     }
 
-    /// Cache schedule data to local SQLite
-    /// Matches Supabase structure for offline support
-    async fn cache_schedule_to_sqlite(&self, schedule_records: &[serde_json::Value]) -> Result<()> {
+    /// Cache schedule data to local SQLite.
+    ///
+    /// `preserve_assignments`: when true, uses COALESCE so null name/uid in the incoming
+    /// record does NOT overwrite an existing non-null assignment (used for TBA push data,
+    /// which never carries scouting assignment fields).
+    /// When false, name/uid are written directly — Supabase is authoritative (used for
+    /// Supabase pull data, where null means the assignment was deliberately cleared).
+    async fn cache_schedule_to_sqlite(
+        &self,
+        schedule_records: &[serde_json::Value],
+        preserve_assignments: bool,
+    ) -> Result<()> {
         if schedule_records.is_empty() {
             return Ok(());
         }
 
-        // Bulk insert/update schedule data
         for record in schedule_records {
             let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("");
             let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
             let alliance = record.get("alliance").and_then(|v| v.as_str()).unwrap_or("");
-            // Assignment fields — present in Supabase pull records, absent in TBA push records.
-            // COALESCE in the ON CONFLICT clause preserves existing SQLite values when NULL.
             let name = record.get("name").and_then(|v| v.as_str());
             let uid = record.get("uid").and_then(|v| v.as_str());
             let est_time = record.get("est_time").and_then(|v| v.as_i64());
@@ -833,37 +857,73 @@ impl SyncService {
             let predicted_red_score = record.get("predicted_red_score").and_then(|v| v.as_f64());
             let predicted_blue_score = record.get("predicted_blue_score").and_then(|v| v.as_f64());
 
-            sqlx::query(
-                "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT(event, match, team) DO UPDATE SET
-                   alliance = excluded.alliance,
-                   name = COALESCE(excluded.name, event_schedule.name),
-                   uid = COALESCE(excluded.uid, event_schedule.uid),
-                   est_time = excluded.est_time,
-                   red_score = excluded.red_score,
-                   blue_score = excluded.blue_score,
-                   red_win_prob = excluded.red_win_prob,
-                   predicted_red_score = excluded.predicted_red_score,
-                   predicted_blue_score = excluded.predicted_blue_score,
-                   last_modified = excluded.last_modified"
-            )
-            .bind(&self.current_event)
-            .bind(match_key)
-            .bind(team)
-            .bind(alliance)
-            .bind(name)
-            .bind(uid)
-            .bind(est_time)
-            .bind(red_score)
-            .bind(blue_score)
-            .bind(red_win_prob)
-            .bind(predicted_red_score)
-            .bind(predicted_blue_score)
-            .bind(chrono::Utc::now().timestamp_millis())
-            .execute(&self.sqlx_pool)
-            .await
-            .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
+            if preserve_assignments {
+                // TBA path: COALESCE so null doesn't erase existing assignments
+                sqlx::query(
+                    "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(event, match, team) DO UPDATE SET
+                       alliance = excluded.alliance,
+                       name = COALESCE(excluded.name, event_schedule.name),
+                       uid = COALESCE(excluded.uid, event_schedule.uid),
+                       est_time = excluded.est_time,
+                       red_score = excluded.red_score,
+                       blue_score = excluded.blue_score,
+                       red_win_prob = excluded.red_win_prob,
+                       predicted_red_score = excluded.predicted_red_score,
+                       predicted_blue_score = excluded.predicted_blue_score,
+                       last_modified = excluded.last_modified"
+                )
+                .bind(&self.current_event)
+                .bind(match_key)
+                .bind(team)
+                .bind(alliance)
+                .bind(name)
+                .bind(uid)
+                .bind(est_time)
+                .bind(red_score)
+                .bind(blue_score)
+                .bind(red_win_prob)
+                .bind(predicted_red_score)
+                .bind(predicted_blue_score)
+                .bind(chrono::Utc::now().timestamp_millis())
+                .execute(&self.sqlx_pool)
+                .await
+                .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
+            } else {
+                // Supabase pull path: direct assignment — null means deliberately cleared
+                sqlx::query(
+                    "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(event, match, team) DO UPDATE SET
+                       alliance = excluded.alliance,
+                       name = excluded.name,
+                       uid = excluded.uid,
+                       est_time = excluded.est_time,
+                       red_score = excluded.red_score,
+                       blue_score = excluded.blue_score,
+                       red_win_prob = excluded.red_win_prob,
+                       predicted_red_score = excluded.predicted_red_score,
+                       predicted_blue_score = excluded.predicted_blue_score,
+                       last_modified = excluded.last_modified"
+                )
+                .bind(&self.current_event)
+                .bind(match_key)
+                .bind(team)
+                .bind(alliance)
+                .bind(name)
+                .bind(uid)
+                .bind(est_time)
+                .bind(red_score)
+                .bind(blue_score)
+                .bind(red_win_prob)
+                .bind(predicted_red_score)
+                .bind(predicted_blue_score)
+                .bind(chrono::Utc::now().timestamp_millis())
+                .execute(&self.sqlx_pool)
+                .await
+                .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
+            }
         }
 
         Ok(())

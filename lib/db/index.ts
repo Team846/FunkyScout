@@ -310,6 +310,13 @@ export async function cacheEventSchedule(
   eventKey: string,
   entries: EventScheduleEntry[],
 ): Promise<void> {
+  // Tauri: delegate to Rust cache command (avoids WASM on desktop)
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("cache_schedule", { event: eventKey, schedule: entries });
+    return;
+  }
+
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
@@ -631,10 +638,18 @@ export async function upsertEventMatchDataRows(
 }
 
 export async function upsertEventScheduleRows(
-  _eventKey: string,
+  eventKey: string,
   entries: EventScheduleEntry[],
 ): Promise<void> {
   if (entries.length === 0) return;
+
+  // Tauri: delegate to Rust cache command (avoids WASM on desktop)
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("cache_schedule", { event: eventKey, schedule: entries });
+    return;
+  }
+
   return await withWriteLock(async () => {
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");

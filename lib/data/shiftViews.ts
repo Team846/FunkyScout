@@ -196,6 +196,8 @@ export interface TeamViewRow {
   matchesAssigned: number;
   matchesScouted: number;
   priority: number | null;
+  pitScoutedByName: string | null;
+  pitAssignedName: string | null;
   pastMatches: MatchCard[];
   nextMatches: MatchCard[];
 }
@@ -244,6 +246,8 @@ interface PitDataInput {
   team: string;
   data?: Record<string, unknown> | null;
   team_name?: string | null;
+  name?: string | null;     // name of scouter who submitted pit data
+  assigned?: string | null; // UID of assigned pit scouter
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -449,8 +453,13 @@ export function buildTeamViewData(params: {
   tbaTeams: TBATeamInput[];
   pitData: PitDataInput[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntryInput>>;
+  profiles?: ProfileInput[];
 }): TeamViewRow[] {
   const { schedule, matchData, tbaTeams, pitData, tbaClimbData } = params;
+
+  // Build UID → name lookup for assigned pit scouter resolution
+  const profileNameMap = new Map<string, string>();
+  for (const p of (params.profiles ?? [])) profileNameMap.set(p.uid, p.name);
 
   // Build pitMap with normalized keys so "frc5000" and "5000" both resolve
   // (event_team_data.team can vary; schedule uses TBA "frc5000" format)
@@ -537,6 +546,12 @@ export function buildTeamViewData(params: {
     pastMatchCards.sort((a, b) => (b.estTime ?? 0) - (a.estTime ?? 0));
     nextMatchCards.sort((a, b) => (a.estTime ?? 0) - (b.estTime ?? 0));
 
+    const pitScoutedByName = pit?.name ?? null;
+    const pitAssignedUid = pit?.assigned ?? null;
+    const pitAssignedName = pitAssignedUid
+      ? (profileNameMap.get(pitAssignedUid) ?? null)
+      : null;
+
     rows.push({
       teamKey,
       teamNumber,
@@ -545,6 +560,8 @@ export function buildTeamViewData(params: {
       matchesAssigned: teamEntries.length,
       matchesScouted: scoutedMatches.length,
       priority,
+      pitScoutedByName,
+      pitAssignedName,
       pastMatches: pastMatchCards,
       nextMatches: nextMatchCards,
     });

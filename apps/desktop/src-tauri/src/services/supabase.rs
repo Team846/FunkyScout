@@ -724,13 +724,30 @@ impl SupabaseService {
     }
 
     /// Bulk assign shifts from cycle algorithm (from sync queue).
-    /// Updates each (event, match, team) row individually since each row
-    /// needs different uid/name values — not possible in a single PostgREST PATCH.
+    /// First clears all existing shift assignments for the event (atomic replace),
+    /// then applies the new assignments row by row.
+    /// This prevents old assignments from compounding on top of the new schedule.
     pub async fn bulk_assign_shifts(
         &self,
         event: &str,
         assignments: &[Value],
     ) -> Result<()> {
+        // Step 1: Clear all existing shift assignments for this event in one call.
+        // This ensures a full replacement rather than an additive update.
+        let clear_payload = json!({
+            "uid": null,
+            "name": null,
+            "last_modified": Self::now_iso(),
+        });
+        self.auth_client()
+            .from("event_schedule")
+            .update(&clear_payload.to_string())
+            .eq("event", event)
+            .execute()
+            .await
+            .context("Failed to clear existing shift assignments")?;
+
+        // Step 2: Apply the new assignments.
         for assignment in assignments {
             let match_key = assignment.get("match").and_then(|v| v.as_str()).unwrap_or("");
             let team = assignment.get("team").and_then(|v| v.as_str()).unwrap_or("");
@@ -757,7 +774,7 @@ impl SupabaseService {
                 ))?;
         }
 
-        println!("[Supabase] ✓ Bulk assigned {} shifts", assignments.len());
+        println!("[Supabase] ✓ Bulk assigned {} shifts (cleared first)", assignments.len());
         Ok(())
     }
 
