@@ -1020,14 +1020,14 @@ function MatchPlay() {
               onClick={() => toggleAction("disable")}
               className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[7.5px] cursor-pointer transition-all duration-75 active:scale-[0.92] ${
                 activeToggles.disable
-                  ? "border-2 border-[#BF4141]"
-                  : "border-2 border-[#1E1E1E]"
+                  ? "border-2 border-[#41bf6f]"
+                  : "border-2 border-destructive"
               }`}
             >
               <p
-                className={`rotate-270 text-xs text-outfit ${activeToggles.disable ? "text-[#BF4141]" : "text-muted-foreground"}`}
+                className={`rotate-270 text-xs text-outfit ${activeToggles.disable ? "text-muted-foreground" : "text-destructive"}`}
               >
-                disabled
+                {activeToggles.disable ? "enable" : "disabled"}
               </p>
             </div>
 
@@ -1091,25 +1091,23 @@ function MatchPlay() {
                   : "border-2 border-[#1E1E1E]"
               }`}
             >
-              <div className="flex items-center gap-1">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <g clip-path="url(#clip0_755_311)">
-                <rect width="20" height="20" fill="black"/>
-                <rect x="9" width="2" height="2.5" fill="#D9D9D9"/>
-                <rect x="8" y="1" width="4" height="2" fill="#D9D9D9"/>
-                <path d="M10 4H6.5L3 9.76L6.5 16" stroke="#D9D9D9" stroke-width="2"/>
-                <path d="M10 4H13.5L17 9.76L13.5 16" stroke="#D9D9D9" stroke-width="2"/>
-                <circle cx="10" cy="16" r="3.75" fill="#D9D9D9" stroke="#A3A3A3" stroke-width="0.5"/>
-                </g>
-                <defs>
-                <clipPath id="clip0_755_311">
-                <rect width="20" height="20" fill="white"/>
-                </clipPath>
-                </defs>
-                </svg>
-
-
-
+              <div className="flex items-center gap-2">
+                {!isAuto && (
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-muted-foreground">
+                  <g clipPath="url(#clip0_755_311)">
+                  <rect x="9" width="2" height="2.5" fill="currentColor"/>
+                  <rect x="8" y="1" width="4" height="2" fill="currentColor"/>
+                  <path d="M10 4H6.5L3 9.76L6.5 16" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M10 4H13.5L17 9.76L13.5 16" stroke="currentColor" strokeWidth="2"/>
+                  <circle cx="10" cy="16" r="3.75" fill="currentColor"/>
+                  </g>
+                  <defs>
+                  <clipPath id="clip0_755_311">
+                  <rect width="20" height="20" fill="white"/>
+                  </clipPath>
+                  </defs>
+                  </svg>
+                )}
                 <p
                   className={`text-xs text-outfit ${pendingLocationAction === "ground_intake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
                 >
@@ -1144,26 +1142,22 @@ function MatchPlay() {
                   : "border-2 border-[#1E1E1E]"
               }`}
             >
-              <div className="flex items-center gap-1">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <g clip-path="url(#clip0_991_314)">
-                <rect width="20" height="20" fill="black"/>
-                <path d="M6.23389 13.9007C6.23389 14.5578 6.7685 15.0924 7.42567 15.0924C8.08284 15.0924 8.61739 14.5578 8.61739 13.9007C8.61739 13.2435 8.08284 12.709 7.42567 12.709C6.7685 12.709 6.23389 13.2435 6.23389 13.9007ZM7.54298 13.9007C7.54298 13.9653 7.49039 14.0179 7.42574 14.0179C7.36103 14.0179 7.30843 13.9653 7.30843 13.9007C7.30843 13.836 7.36103 13.7834 7.42574 13.7834C7.49032 13.7834 7.54298 13.836 7.54298 13.9007Z" fill="white"/>
-                <path d="M19.9652 9.11853L17.4326 1.63631C17.3167 1.29396 16.9453 1.11012 16.6029 1.22621C16.2605 1.3421 16.0768 1.71355 16.1928 2.05598L16.3731 2.58857L5.52066 5.32358C5.37783 4.22763 4.58477 2.87106 2.73083 2.87106C2.36935 2.87106 2.07628 3.16419 2.07628 3.5256C2.07628 3.88702 2.36928 4.18015 2.73083 4.18015C3.36234 4.18015 3.7717 4.39833 4.01911 4.86675C4.18982 5.18991 4.22638 5.53153 4.23406 5.64783L3.43992 5.84796C3.42369 5.8522 3.40753 5.85692 3.39157 5.86217C0.791435 6.73503 -0.613885 9.56069 0.259044 12.1608C0.716283 13.5228 1.72059 14.584 2.97837 15.1351L2.76618 15.5026C2.29433 16.3198 2.23635 17.1566 2.60692 17.7985C2.9775 18.4402 3.73117 18.8084 4.6748 18.8084L10.1331 18.8083C11.0767 18.8083 11.8304 18.4402 12.2009 17.7984C12.5715 17.1566 12.5135 16.3197 12.0417 15.5026L10.6922 13.1653L18.5744 9.09187L18.7255 9.53827C18.8179 9.81113 19.0724 9.98305 19.3454 9.98305C19.4149 9.98305 19.4857 9.97187 19.5553 9.9483C19.8976 9.83241 20.0812 9.46096 19.9652 9.11853ZM11.0673 17.1439C10.9369 17.3697 10.5964 17.4992 10.1331 17.4992L4.67473 17.4993C4.21137 17.4993 3.87083 17.3697 3.74053 17.1439C3.61002 16.918 3.66814 16.5583 3.89979 16.1571L6.62894 11.4303C6.86053 11.029 7.14302 10.7989 7.40389 10.7989C7.6647 10.7989 7.94713 11.029 8.17878 11.4303L10.9079 16.1571C11.1396 16.5583 11.1976 16.918 11.0673 17.1439ZM9.31245 10.7757C8.84066 9.95853 8.14497 9.48985 7.40389 9.48985C6.66275 9.48985 5.96706 9.95853 5.49527 10.7757L3.63857 13.9916C2.64908 13.6043 1.85305 12.796 1.49999 11.7443C0.859314 9.83591 1.88389 7.76291 3.78531 7.11086L10.7089 5.36601L12.5375 10.7381L10.0369 12.0305L9.31245 10.7757ZM13.7135 10.1305L11.9825 5.04507L16.7838 3.83503L18.1308 7.84749L13.7135 10.1305Z" fill="white"/>
+              <div className="flex items-center gap-2">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-muted-foreground">
+                <g clipPath="url(#clip0_991_314)">
+                <path d="M6.23389 13.9007C6.23389 14.5578 6.7685 15.0924 7.42567 15.0924C8.08284 15.0924 8.61739 14.5578 8.61739 13.9007C8.61739 13.2435 8.08284 12.709 7.42567 12.709C6.7685 12.709 6.23389 13.2435 6.23389 13.9007ZM7.54298 13.9007C7.54298 13.9653 7.49039 14.0179 7.42574 14.0179C7.36103 14.0179 7.30843 13.9653 7.30843 13.9007C7.30843 13.836 7.36103 13.7834 7.42574 13.7834C7.49032 13.7834 7.54298 13.836 7.54298 13.9007Z" fill="currentColor"/>
+                <path d="M19.9652 9.11853L17.4326 1.63631C17.3167 1.29396 16.9453 1.11012 16.6029 1.22621C16.2605 1.3421 16.0768 1.71355 16.1928 2.05598L16.3731 2.58857L5.52066 5.32358C5.37783 4.22763 4.58477 2.87106 2.73083 2.87106C2.36935 2.87106 2.07628 3.16419 2.07628 3.5256C2.07628 3.88702 2.36928 4.18015 2.73083 4.18015C3.36234 4.18015 3.7717 4.39833 4.01911 4.86675C4.18982 5.18991 4.22638 5.53153 4.23406 5.64783L3.43992 5.84796C3.42369 5.8522 3.40753 5.85692 3.39157 5.86217C0.791435 6.73503 -0.613885 9.56069 0.259044 12.1608C0.716283 13.5228 1.72059 14.584 2.97837 15.1351L2.76618 15.5026C2.29433 16.3198 2.23635 17.1566 2.60692 17.7985C2.9775 18.4402 3.73117 18.8084 4.6748 18.8084L10.1331 18.8083C11.0767 18.8083 11.8304 18.4402 12.2009 17.7984C12.5715 17.1566 12.5135 16.3197 12.0417 15.5026L10.6922 13.1653L18.5744 9.09187L18.7255 9.53827C18.8179 9.81113 19.0724 9.98305 19.3454 9.98305C19.4149 9.98305 19.4857 9.97187 19.5553 9.9483C19.8976 9.83241 20.0812 9.46096 19.9652 9.11853ZM11.0673 17.1439C10.9369 17.3697 10.5964 17.4992 10.1331 17.4992L4.67473 17.4993C4.21137 17.4993 3.87083 17.3697 3.74053 17.1439C3.61002 16.918 3.66814 16.5583 3.89979 16.1571L6.62894 11.4303C6.86053 11.029 7.14302 10.7989 7.40389 10.7989C7.6647 10.7989 7.94713 11.029 8.17878 11.4303L10.9079 16.1571C11.1396 16.5583 11.1976 16.918 11.0673 17.1439ZM9.31245 10.7757C8.84066 9.95853 8.14497 9.48985 7.40389 9.48985C6.66275 9.48985 5.96706 9.95853 5.49527 10.7757L3.63857 13.9916C2.64908 13.6043 1.85305 12.796 1.49999 11.7443C0.859314 9.83591 1.88389 7.76291 3.78531 7.11086L10.7089 5.36601L12.5375 10.7381L10.0369 12.0305L9.31245 10.7757ZM13.7135 10.1305L11.9825 5.04507L16.7838 3.83503L18.1308 7.84749L13.7135 10.1305Z" fill="currentColor"/>
                 </g>
                 <defs>
                 <clipPath id="clip0_991_314">
-                <rect width="20" height="20" fill="#4ADE80"/>
+                <rect width="20" height="20" fill="white"/>
                 </clipPath>
                 </defs>
                 </svg>
                 <p
                   className={`text-xs text-outfit ${pendingLocationAction === "shoot" ? "text-[#CDA745]" : "text-muted-foreground"}`}
                 >
-                  
-
-                  <p>Shoot</p>
-                  
+                  Shoot
                 </p>
               </div>
               
@@ -1185,7 +1179,17 @@ function MatchPlay() {
                   onClick={handleAutoClimbStart}
                   className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
                 >
-                  <p className="text-xs text-outfit text-muted-foreground">Start Climb</p>
+                  <div className="flex items-center gap-0">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-muted-foreground w-6 h-6">
+                      <path d="M8 3V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M16 3V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 14H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 10H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 6H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M8 18H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <p className="text-xs text-outfit text-muted-foreground">Start Climb</p>
+                  </div>
                 </div>
               )
             ) : teleopClimbActive ? (
