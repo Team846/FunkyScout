@@ -245,7 +245,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         
       </div>)}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl bg-muted px-5 py-4">
+        {aggregateStats?.averages.auto && (<div className="rounded-2xl bg-muted px-5 py-4">
           <p className="text-s font-semibold text-primary mb-3">AUTO</p>
           <div className="flex flex-col gap-3 gap-3">
             
@@ -254,14 +254,14 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
             <p className="text-xs">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.auto.groundIntakes + aggregateStats.averages.auto.stationIntakes).toFixed(1)}</span></p>
               
             </div>
-        </div>
-          <div className="rounded-2xl bg-muted px-5 py-4">
+        </div>)}
+          {aggregateStats?.averages.teleop && (<div className="rounded-2xl bg-muted px-5 py-4">
           <p className="text-s font-semibold text-primary mb-3">TELEOP</p>
           <div className="flex flex-col gap-3">
               <p className="text-xs">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.shoots.toFixed(1)}</span></p>
               <p className="text-xs">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.teleop.groundIntakes + aggregateStats.averages.teleop.stationIntakes).toFixed(1)}</span></p>
             </div>
-          </div>
+          </div>)}
       </div>
       
       

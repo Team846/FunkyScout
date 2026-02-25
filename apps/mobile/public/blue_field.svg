@@ -79,10 +79,6 @@
 <rect x="325.61" y="266.69" width="27" height="3" transform="rotate(-180 325.61 266.69)" fill="#B73E3E"/>
 </g>
 <rect x="130.11" y="190.19" width="45" height="65" rx="2.5" stroke="#246190" stroke-width="3"/>
-<mask id="path-31-inside-1_639_2126" fill="white">
-<rect x="157.61" y="59.69" width="10" height="60" rx="2" transform="rotate(-180 157.61 59.69)"/>
-</mask>
-<rect x="157.61" y="59.69" width="10" height="60" rx="2" transform="rotate(-180 157.61 59.69)" stroke="#246190" stroke-width="6" mask="url(#path-31-inside-1_639_2126)"/>
 <rect x="180.11" y="185.643" width="54" height="53" transform="rotate(-180 180.11 185.643)" stroke="#246190" stroke-width="3"/>
 <path d="M141.811 178.079L131.518 160.331L141.816 142.576L162.408 142.576L172.702 160.326L162.406 178.079L141.811 178.079Z" stroke="#A3A3A3" stroke-width="3"/>
 <g clip-path="url(#clip2_639_2126)">
@@ -999,10 +995,14 @@
 </g>
 <rect x="324.5" y="179.76" width="46" height="42" transform="rotate(-180 324.5 179.76)" stroke="#246190" stroke-width="3"/>
 <rect x="295.5" y="180.5" width="4" height="44" transform="rotate(-180 295.5 180.5)" fill="#246190" stroke="black"/>
-<mask id="path-340-inside-2_639_2126" fill="white">
+<mask id="path-339-inside-1_639_2126" fill="white">
 <rect x="147.61" y="257.69" width="10" height="60" rx="2"/>
 </mask>
-<rect x="147.61" y="257.69" width="10" height="60" rx="2" stroke="#246190" stroke-width="6" mask="url(#path-340-inside-2_639_2126)"/>
+<rect x="147.61" y="257.69" width="10" height="60" rx="2" stroke="#246190" stroke-width="6" mask="url(#path-339-inside-1_639_2126)"/>
+<mask id="path-340-inside-2_639_2126" fill="white">
+<rect x="147.61" y="6.10352e-05" width="10" height="60" rx="2"/>
+</mask>
+<rect x="147.61" y="6.10352e-05" width="10" height="60" rx="2" stroke="#246190" stroke-width="6" mask="url(#path-340-inside-2_639_2126)"/>
 <rect x="175.11" y="128.19" width="45" height="67" rx="2.5" transform="rotate(-180 175.11 128.19)" stroke="#246190" stroke-width="3"/>
 <rect x="180.11" y="185.643" width="54" height="53" transform="rotate(-180 180.11 185.643)" stroke="#246190" stroke-width="3"/>
 <path d="M141.811 178.079L131.518 160.331L141.816 142.576L162.408 142.576L172.702 160.326L162.406 178.079L141.811 178.079Z" stroke="#A3A3A3" stroke-width="3"/>
@@ -1461,6 +1461,8 @@
 </g>
 </g>
 <rect x="324.5" y="179.76" width="46" height="42" transform="rotate(-180 324.5 179.76)" stroke="#246190" stroke-width="3"/>
+<rect x="324.5" y="179.76" width="46" height="42" transform="rotate(-180 324.5 179.76)" stroke="#246190" stroke-width="3"/>
+<rect x="324.5" y="53.8699" width="12" height="29" transform="rotate(-180 324.5 53.8699)" stroke="#246190" stroke-width="3"/>
 <rect x="295.5" y="180.5" width="4" height="44" transform="rotate(-180 295.5 180.5)" fill="#246190" stroke="black"/>
 </g>
 <rect x="324.61" y="316.69" width="323.61" height="315.69" rx="19" transform="rotate(-180 324.61 316.69)" stroke="#A3A3A3" stroke-width="2"/>
