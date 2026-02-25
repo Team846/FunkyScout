@@ -1053,39 +1053,39 @@ function MatchPlay() {
 
           
 
-          {/* Teleop only: Stocking row above intake/pass */}
+          {/* Teleop only: Stocking + Pass same size, together = Intake row width */}
           {!isAuto && (
-            <div className="flex gap-2.5 w-full h-full">
+            <div className="flex gap-2.5 w-full min-w-0 flex-1">
               <div
                 onClick={() => addPresetAction("stocking")}
-                className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+                className="flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
               >
-                <p className="text-xs text-outfit text-muted-foreground">Stocking</p>
+                <p className="text-xs text-outfit text-muted-foreground truncate">Stocking</p>
               </div>
               <div
-              onClick={() => startLocationAction("passing")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                pendingLocationAction === "passing"
-                  ? "border-2 border-[#CDA745]"
-                  : "border-2 border-[#1E1E1E]"
-              }`}
-            >
-              <p
-                className={`text-xs text-outfit ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                onClick={() => startLocationAction("passing")}
+                className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                  pendingLocationAction === "passing"
+                    ? "border-2 border-[#CDA745]"
+                    : "border-2 border-[#1E1E1E]"
+                }`}
               >
-                Pass
-              </p>
-            </div>
+                <p
+                  className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                >
+                  Pass
+                </p>
+              </div>
             </div>
             
             
           )}
 
-          {/* Location action buttons (user selects position on field) */}
-          <div className="flex gap-2.5 w-full h-full">
+          {/* Intake + Pass (auto) - same layout as Stocking+Pass */}
+          <div className="flex gap-2.5 w-full min-w-0 flex-1">
             <div
               onClick={() => startLocationAction("ground_intake")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+              className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
                 pendingLocationAction === "ground_intake"
                   ? "border-2 border-[#CDA745]"
                   : "border-2 border-[#1E1E1E]"
@@ -1117,23 +1117,25 @@ function MatchPlay() {
               
             </div>
 
-            {isAuto && (<div
-              onClick={() => startLocationAction("passing")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                pendingLocationAction === "passing"
-                  ? "border-2 border-[#CDA745]"
-                  : "border-2 border-[#1E1E1E]"
-              }`}
-            >
-              <p
-                className={`text-xs text-outfit ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+            {isAuto && (
+              <div
+                onClick={() => startLocationAction("passing")}
+                className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                  pendingLocationAction === "passing"
+                    ? "border-2 border-[#CDA745]"
+                    : "border-2 border-[#1E1E1E]"
+                }`}
               >
-                Pass
-              </p>
-            </div>)}
+                <p
+                  className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                >
+                  Pass
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="flex gap-2.5 w-full h-full">
+          <div className="flex gap-2.5 w-full flex-1 min-h-0">
             <div
               onClick={() => startLocationAction("shoot")}
               className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
@@ -1165,7 +1167,7 @@ function MatchPlay() {
           </div>
 
           {/* Climb row: auto shows Start Climb / Fail; teleop shows L1/L2/L3 or Fail Climb */}
-          <div className="flex gap-2.5 w-full h-full">
+          <div className="flex gap-2.5 w-full flex-1 min-h-0">
             {isAuto ? (
               autoClimbActive ? (
                 <div

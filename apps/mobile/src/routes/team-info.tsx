@@ -201,7 +201,7 @@ function TeamInfoPage() {
     stocking:     matches.some(m => m.data_raw?.postMatch?.canStocking),
     shootMoving:  matches.some(m => m.data_raw?.postMatch?.shootMoving),
     passing:      matches.some(m => m.data_raw?.postMatch?.canPass),
-    autoClimbLevel:       matches.some(m => !!m.data_raw?.auto?.climbLevel),
+    autoClimbLevel:       matches.some(m => !!calculateSingleMatchStats(m)?.climb?.hasAutoClimb),
     autoClimbOrientation: matches
       .map(m => m.data_raw?.postMatch?.autoClimbOrientation)
       .find(v => v != null) ?? null,
@@ -363,16 +363,19 @@ function TeamInfoPage() {
       const userName = session?.user?.email || "Unknown";
       const userId = session?.user?.id || "unknown";
 
+      // Guard against pitData.autos being undefined (older records without autos field)
+      const currentAutos = pitData.autos || [];
+
       // Check if we're adding a new auto or updating existing
-      const isNewAuto = editingAutoIndex >= pitData.autos.length;
+      const isNewAuto = editingAutoIndex >= currentAutos.length;
 
       let updatedAutos;
       if (isNewAuto) {
         // Add new auto entry
         updatedAutos = [
-          ...pitData.autos,
+          ...currentAutos,
           {
-            name: `Auto ${pitData.autos.length + 1}`,
+            name: `Auto ${currentAutos.length + 1}`,
             description: "",
             climbDuringAuto: false,
             drawing,
@@ -380,7 +383,7 @@ function TeamInfoPage() {
         ];
       } else {
         // Update existing auto
-        updatedAutos = [...pitData.autos];
+        updatedAutos = [...currentAutos];
         updatedAutos[editingAutoIndex] = {
           ...updatedAutos[editingAutoIndex],
           drawing,
@@ -1037,7 +1040,7 @@ function TeamInfoPage() {
         onOpenChange={setDrawerOpen}
         autoIndex={editingAutoIndex ?? 0}
         initialDrawing={
-          editingAutoIndex !== null && pitData?.autos[editingAutoIndex]
+          editingAutoIndex !== null && pitData?.autos?.[editingAutoIndex]
             ? pitData.autos[editingAutoIndex].drawing
             : null
         }

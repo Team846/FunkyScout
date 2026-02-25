@@ -455,25 +455,47 @@ impl SyncService {
                                 .collect()
                         };
 
-                        let changed_schedule_records: Vec<serde_json::Value> = schedule_records
-                            .iter()
-                            .filter(|record| {
-                                let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                match cached_schedule.get(&(match_key, team)) {
-                                    None => true, // New row
-                                    Some(&(cet, crs, cbs, crwp, cprs, cpbs)) => {
-                                        record.get("est_time").and_then(|v| v.as_i64()) != cet
-                                            || record.get("red_score").and_then(|v| v.as_i64()) != crs
-                                            || record.get("blue_score").and_then(|v| v.as_i64()) != cbs
-                                            || record.get("red_win_prob").and_then(|v| v.as_f64()) != crwp
-                                            || record.get("predicted_red_score").and_then(|v| v.as_f64()) != cprs
-                                            || record.get("predicted_blue_score").and_then(|v| v.as_f64()) != cpbs
+                        // Build a set of (match, team) pairs present in the Supabase snapshot.
+                        // When snapshot is cold (empty on first run), pass ALL records to
+                        // bulk_upsert_schedule so it can do a full SELECT from Supabase and
+                        // detect rows that are missing (e.g. accidentally deleted).
+                        // When snapshot is warm, only send changed or Supabase-absent rows.
+                        let snapshot_set: std::collections::HashSet<(String, String)> =
+                            self.schedule_snapshot.iter().filter_map(|s| {
+                                let m = s.get("match")?.as_str()?.to_string();
+                                let t = s.get("team")?.as_str()?.to_string();
+                                Some((m, t))
+                            }).collect();
+
+                        let changed_schedule_records: Vec<serde_json::Value> = if self.schedule_snapshot.is_empty() {
+                            // Cold start: bypass local filter — let bulk_upsert_schedule detect
+                            // missing Supabase rows via its own SELECT.
+                            schedule_records.clone()
+                        } else {
+                            schedule_records
+                                .iter()
+                                .filter(|record| {
+                                    let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    // Row absent from Supabase snapshot — always push.
+                                    if !snapshot_set.contains(&(match_key.clone(), team.clone())) {
+                                        return true;
                                     }
-                                }
-                            })
-                            .cloned()
-                            .collect();
+                                    match cached_schedule.get(&(match_key, team)) {
+                                        None => true, // New row
+                                        Some(&(cet, crs, cbs, crwp, cprs, cpbs)) => {
+                                            record.get("est_time").and_then(|v| v.as_i64()) != cet
+                                                || record.get("red_score").and_then(|v| v.as_i64()) != crs
+                                                || record.get("blue_score").and_then(|v| v.as_i64()) != cbs
+                                                || record.get("red_win_prob").and_then(|v| v.as_f64()) != crwp
+                                                || record.get("predicted_red_score").and_then(|v| v.as_f64()) != cprs
+                                                || record.get("predicted_blue_score").and_then(|v| v.as_f64()) != cpbs
+                                        }
+                                    }
+                                })
+                                .cloned()
+                                .collect()
+                        };
 
                         println!("[Sync] {}/{} schedule rows changed",
                             changed_schedule_records.len(), schedule_records.len());

@@ -49,6 +49,7 @@ export function AutoPathDrawer({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-[90vw] max-h-[85vh] p-4 flex flex-col gap-4"
+        aria-describedby={undefined}
         showCloseButton={false}
         style={{
           transitionDuration: "150ms",

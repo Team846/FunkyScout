@@ -350,11 +350,10 @@ export function DashboardPage() {
           console.error("Failed to count completed shifts:", error);
         }
 
-        // Now fetch scheduled assignments (may be empty)
-        const assignments = await getUserEventScheduleAssignments(
-          currentEvent,
-          userData.name
-        );
+        // Now fetch scheduled assignments (prefer uid - name can change)
+        const assignments = currentUid
+          ? await getUserEventScheduleAssignments(currentEvent, currentUid, true)
+          : await getUserEventScheduleAssignments(currentEvent, userData.name || "", false);
 
         if (assignments.length === 0) {
           // User has no scheduled assignments, but may have completed shifts

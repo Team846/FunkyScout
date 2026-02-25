@@ -9,23 +9,27 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { getSession } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
 import { AutoPathDisplay } from "./AutoPathDisplay";
+import type { DrawingData } from "./auto-path-drawer/types";
 
 interface MatchScoutingTabProps {
   eventKey: string;
   teamKey: string;
 }
-interface Frequencies{
-  L1: number,
-  L2: number,
-  L3: number
-}
+
+type TeamAutoDisplay = {
+  name?: string;
+  description?: string;
+  climbDuringAuto?: boolean;
+  drawing?: { paths: unknown[]; canvasWidth: number; canvasHeight: number };
+};
+
 export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const [matchData, setMatchData] = useState<EventMatchData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<string>("");
   const [teamStats, setTeamStats] = useState<{ opr?: number; epa?: any } | null>(null);
   const [nextMatch, setNextMatch] = useState<{ match: string; time?: number } | null>(null);
-  const [teamAutos, setTeamAutos] = useState<Array<{ name?: string; description?: string; climbDuringAuto?: boolean; drawing?: { paths: unknown[]; canvasWidth: number; canvasHeight: number } }>>([]);
+  const [teamAutos, setTeamAutos] = useState<TeamAutoDisplay[]>([]);
 
   useEffect(() => {
     if (!eventKey || !teamKey) return;
@@ -44,15 +48,34 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         setSelectedMatch(validData[0].match);
       }
 
-      // Get team stats (OPR/EPA) and autos
-      const teamData = teamDataResult.find((t) => t.team === teamKey);
+      // Get team stats (OPR/EPA) and autos (normalize team key: event_team_data can store frc1234 or 1234)
+      const teamData = teamDataResult.find(
+        (t) => t.team === teamKey || t.team === teamKey.replace(/^frc/i, "")
+      );
       if (teamData?.data) {
         setTeamStats({
           opr: teamData.data.opr,
           epa: teamData.data.epa,
         });
-        const autos = (teamData.data as { autos?: unknown[] })?.autos ?? [];
-        setTeamAutos(Array.isArray(autos) ? autos : []);
+        const raw = (teamData.data as { autos?: unknown[] })?.autos ?? [];
+        if (!Array.isArray(raw)) {
+          setTeamAutos([]);
+        } else {
+          const autos: TeamAutoDisplay[] = raw.map((a: any) => ({
+            name: a.name ?? undefined,
+            description: a.description ?? undefined,
+            climbDuringAuto: a.climbDuringAuto ?? a.climb ?? false,
+            drawing:
+              a.drawing && typeof a.drawing === "object"
+                ? {
+                    paths: Array.isArray(a.drawing.paths) ? a.drawing.paths : [],
+                    canvasWidth: a.drawing.canvasWidth ?? 400,
+                    canvasHeight: a.drawing.canvasHeight ?? 200,
+                  }
+                : undefined,
+          }));
+          setTeamAutos(autos);
+        }
       } else {
         setTeamAutos([]);
       }
@@ -253,7 +276,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
       <div className="grid grid-cols-2 gap-3">
         {aggregateStats?.averages.auto && (<div className="rounded-2xl bg-muted px-5 py-4">
           <p className="text-s font-semibold text-primary mb-3">AUTO</p>
-          <div className="flex flex-col gap-3 gap-3">
+          <div className="flex flex-col gap-3">
             
             
             <p className="text-xs">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.auto.shoots.toFixed(1)}</span></p>
@@ -305,7 +328,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   );
 }
 
-function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; teamKey: string; teamAutos: Array<{ name?: string; description?: string; climbDuringAuto?: boolean; drawing?: { paths: unknown[]; canvasWidth: number; canvasHeight: number } }> }) {
+function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; teamKey: string; teamAutos: TeamAutoDisplay[] }) {
   const navigate = useNavigate();
   const matchDataRaw = data.data_raw as MatchDataRaw;
   const [canEdit, setCanEdit] = useState(false);
@@ -347,7 +370,6 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
     matchStats.teleop.passes +
     matchStats.teleop.shoots +
     matchStats.teleop.stocking;
-  const totalActions = autoScore + teleopScore;
   const climbLevel = matchStats.climb.level || "None";
 
   const handleEdit = () => {
@@ -476,7 +498,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
               {matchedAuto.drawing && (
                 <div className="flex justify-center">
                   <AutoPathDisplay
-                    drawing={matchedAuto.drawing}
+                    drawing={matchedAuto.drawing as DrawingData}
                     alliance={data.alliance === "blue" ? "blue" : "red"}
                     className="max-w-[280px] w-full"
                   />

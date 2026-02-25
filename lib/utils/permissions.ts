@@ -13,7 +13,7 @@ export function canViewPicklist(
 ): boolean {
   if (role === "admin") return true;
   if (picklistType === "public") return role === "scouter";
-  if (picklistType === "default") return role === "scouter";
+  if (picklistType === "default") return false; // Admin-only — not yet published
   if (picklistType === "private") return picklistUid === currentUid;
   return false;
 }
@@ -24,11 +24,9 @@ export function canEditPicklist(
   picklistUid?: string,
   currentUid?: string,
 ): boolean {
-  if (role === "admin") return true; // Admins can always edit public and default
-  if (picklistType === "default") return false; // Only admins can edit default picklists
-  if (picklistType === "public") {
-    return role === "scouter"; // All scouters can edit public picklists
-  }
+  if (role === "admin") return true;
+  if (picklistType === "default") return false; // Admin-only
+  if (picklistType === "public") return false; // Admin edits, scouters view-only
   if (picklistType === "private") {
     return picklistUid === currentUid; // Only creator can edit private
   }

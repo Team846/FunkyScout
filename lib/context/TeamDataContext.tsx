@@ -22,7 +22,6 @@ import {
   PollingController,
   LIVE_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
-import supabase from "@lib/supabase/supabase";
 
 export interface Team {
   key: string;
@@ -302,81 +301,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     });
   }, [currentEvent, dbInitialized]);
 
-  // Subscribe to Supabase realtime for event_team_data updates
-  useEffect(() => {
-    if (!currentEvent || !dbInitialized || !isOnline) return;
-
-    // Disable realtime in development to save on Supabase free tier limits
-    if (import.meta.env.DEV) {
-      console.log(  
-        "[TeamData] Realtime subscriptions disabled in development mode"
-      );
-      return;
-    }
-
-    console.log(
-      "[TeamData] Setting up realtime subscription for event_team_data"
-    );
-
-    // Debounce timer to batch multiple realtime updates
-    let debounceTimer: NodeJS.Timeout | null = null;
-    let updateCount = 0;
-
-    const channel = supabase
-      .channel(`event-team-data-${currentEvent}`)
-      // Monitor channel status for debugging
-      .on("system", { event: "CHANNEL_STATE" }, (payload) => {
-        console.log("[TeamData] Realtime channel state:", payload);
-      })
-      .on("system", { event: "CHANNEL_ERROR" }, (error) => {
-        console.error("[TeamData] Realtime channel error:", error);
-      })
-      .on(
-        "postgres_changes",
-        {
-          event: "*", // INSERT, UPDATE, DELETE
-          schema: "public",
-          table: "event_team_data",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => {
-          updateCount++;
-
-          // Clear existing timer
-          if (debounceTimer) {
-            clearTimeout(debounceTimer);
-          }
-
-          // Set new timer - only fetch after 2s of no updates
-          debounceTimer = setTimeout(() => {
-            console.log(
-              `[TeamData] Realtime: Batched ${updateCount} updates, fetching now`
-            );
-            updateCount = 0;
-            fetchTeams();
-          }, 2000); // 2 second debounce
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === "SUBSCRIBED") {
-          console.log("[TeamData] ✅ Realtime subscribed successfully");
-        } else if (status === "CHANNEL_ERROR") {
-          console.error("[TeamData] ❌ Realtime subscription error:", err);
-        } else if (status === "TIMED_OUT") {
-          console.warn("[TeamData] ⏱️ Realtime subscription timed out");
-        } else if (status === "CLOSED") {
-          console.log("[TeamData] 🔌 Realtime channel closed");
-        }
-      });
-
-    return () => {
-      console.log("[TeamData] Cleaning up realtime subscription");
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      supabase.removeChannel(channel);
-    };
-  }, [currentEvent, dbInitialized, isOnline, fetchTeams]);
+  // No realtime subscription for event_team_data on mobile — pit scouting data
+  // submitted by this device is already in local SQLite immediately, and TBA/EPA
+  // updates from desktop are non-urgent and covered by the 5-minute poll.
 
   const refresh = useCallback(async () => {
     // Use ref to call current fetch function without changing callback identity.

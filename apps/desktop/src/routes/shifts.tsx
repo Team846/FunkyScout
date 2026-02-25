@@ -629,7 +629,7 @@ function ShiftViewerPage() {
                   disabled={saving}
                   onClick={handleSaveAll}
                 >
-                  {saving ? "Saving…" : "Save"}
+                  {saving ? "Saving…" : `Save (${Object.keys(dirtyRatings).length})`}
                 </Button>
                 <Button
                   size="sm"
@@ -638,7 +638,7 @@ function ShiftViewerPage() {
                   disabled={saving}
                   onClick={handleReset}
                 >
-                  Reset
+                  Reset ({Object.keys(dirtyRatings).length})
                 </Button>
               </>
             )}
@@ -685,7 +685,7 @@ function ShiftViewerPage() {
                   disabled={saving}
                   onClick={handleSaveAll}
                 >
-                  {saving ? "Saving…" : "Save"}
+                  {saving ? "Saving…" : `Save (${Object.keys(dirtyPriorities).length})`}
                 </Button>
                 <Button
                   size="sm"
@@ -694,7 +694,7 @@ function ShiftViewerPage() {
                   disabled={saving}
                   onClick={handleReset}
                 >
-                  Reset
+                  Reset ({Object.keys(dirtyPriorities).length})
                 </Button>
               </>
             )}

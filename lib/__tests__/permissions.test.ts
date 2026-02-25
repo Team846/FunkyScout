@@ -32,8 +32,8 @@ describe('Picklist Permissions', () => {
         expect(canViewPicklist('scouter', 'public')).toBe(true);
       });
 
-      it('should allow scouter to view default picklists', () => {
-        expect(canViewPicklist('scouter', 'default')).toBe(true);
+      it('should NOT allow scouter to view default picklists', () => {
+        expect(canViewPicklist('scouter', 'default')).toBe(false);
       });
 
       it('should allow scouter to view own private picklists', () => {
@@ -80,16 +80,16 @@ describe('Picklist Permissions', () => {
     });
 
     describe('Scouter Role', () => {
-      it('should allow scouter to edit own public picklist', () => {
-        expect(canEditPicklist('scouter', 'public', 'uid123', 'uid123')).toBe(true);
+      it('should NOT allow scouter to edit public picklist (view-only)', () => {
+        expect(canEditPicklist('scouter', 'public', 'uid123', 'uid123')).toBe(false);
       });
 
       it('should NOT allow scouter to edit other users public picklist', () => {
         expect(canEditPicklist('scouter', 'public', 'other-uid', 'uid123')).toBe(false);
       });
 
-      it('should allow scouter to edit default picklist', () => {
-        expect(canEditPicklist('scouter', 'default')).toBe(true);
+      it('should NOT allow scouter to edit default picklist', () => {
+        expect(canEditPicklist('scouter', 'default')).toBe(false);
       });
 
       it('should allow scouter to edit own private picklist', () => {

@@ -287,22 +287,26 @@ export async function getEventSchedule(
 
 export async function getUserEventScheduleAssignments(
   event: string,
-  userName: string,
+  userNameOrUid: string,
+  byUid = false,
 ): Promise<EventScheduleEntry[]> {
-  // Tauri: read from local SQLite cache and filter by userName
+  // Prefer uid when available (name can change, existing entries keep old name)
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
     const all = await invoke<EventScheduleEntry[]>("get_schedule", { event });
-    return all.filter((s) => s.name === userName);
+    return all.filter((s) => (byUid ? s.uid === userNameOrUid : s.name === userNameOrUid));
   }
 
-  // Mobile: use WASM SQLite
   await initDatabase();
-  const rows = await execWorker(
-    `SELECT * FROM event_schedule
-     WHERE event = ? AND name = ? AND deleted_at IS NULL`,
-    [event, userName],
-  );
+  const rows = byUid
+    ? await execWorker(
+        "SELECT * FROM event_schedule WHERE event = ? AND uid = ? AND deleted_at IS NULL",
+        [event, userNameOrUid],
+      )
+    : await execWorker(
+        "SELECT * FROM event_schedule WHERE event = ? AND name = ? AND deleted_at IS NULL",
+        [event, userNameOrUid],
+      );
   return rows as EventScheduleEntry[];
 }
 

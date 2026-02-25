@@ -61,15 +61,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     }, 500); // 500ms debounce (shorter than mobile's 2s, for snappier desktop UX)
   }, []);
   
-  // Subscribe to Supabase realtime
+  // Subscribe to Supabase realtime for user-generated data from mobile.
+  // event_schedule is intentionally excluded — desktop is the writer for schedule
+  // (TBA sync), so subscribing would create a feedback loop.
   useEffect(() => {
-    // TEMPORARILY DISABLED: Realtime disabled to conserve Supabase limits
-    // Re-enable after monthly reset or upgrade to paid plan
-    console.log("[DesktopRealtime] Realtime subscriptions DISABLED (conserving limits)");
-    setIsConnected(false);
-    return;
-
-    // eslint-disable-next-line no-unreachable
     if (!currentEvent) {
       setIsConnected(false);
       return;
@@ -77,7 +72,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
 
     const channel = supabase
       .channel(`desktop-realtime-${currentEvent}`)
-      // Team data (pit scouting from mobile)
+      // Team data (pit scouting submissions from mobile)
       .on(
         "postgres_changes",
         {
@@ -88,18 +83,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         },
         () => triggerRefresh()
       )
-      // Schedule (shift assignments from mobile, match data from backend)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_schedule",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => triggerRefresh()
-      )
-      // Picklists (picklist updates from mobile/desktop)
+      // Picklists (admin edits from mobile or other desktop sessions)
       .on(
         "postgres_changes",
         {
@@ -110,7 +94,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         },
         () => triggerRefresh()
       )
-      // Match data (match scouting from mobile)
+      // Match data (match scouting submissions from mobile)
       .on(
         "postgres_changes",
         {
@@ -126,6 +110,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           console.error("[DesktopRealtime] Subscription error:", err);
         }
         if (status === "SUBSCRIBED") {
+          console.log("[DesktopRealtime] ✅ Realtime subscribed");
           setIsConnected(true);
         } else if (status === "CHANNEL_ERROR") {
           console.error("[DesktopRealtime] Channel error");
@@ -138,18 +123,13 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         }
       });
 
-    // Cleanup on event change or unmount
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
-
-      // Best practice: unsubscribe before removing
       channel.unsubscribe();
       supabase.removeChannel(channel);
       setIsConnected(false);
-
-      console.log("[DesktopRealtime] ✅ Channel removed");
     };
   }, [currentEvent, triggerRefresh]);
 

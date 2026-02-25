@@ -452,7 +452,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     isOnline,
   ]);
 
-  // Subscribe to Supabase realtime for schedule/match/picklist updates
+  // Subscribe to Supabase realtime for schedule changes only.
+  // Match data and picklists are written locally before sync, so realtime
+  // is only needed to catch admin schedule edits from desktop on mobile devices.
   useEffect(() => {
     if (!currentEvent || !dbInitialized || !isOnline) return;
 
@@ -464,24 +466,17 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    console.log("[Competition] Setting up realtime subscriptions");
+    console.log("[Competition] Setting up schedule realtime subscription");
 
-    // Debounce timers to batch multiple realtime updates
-    let scheduleDebounceTimer: NodeJS.Timeout | null = null;
-    let picklistDebounceTimer: NodeJS.Timeout | null = null;
-    let scheduleUpdateCount = 0;
-    let picklistUpdateCount = 0;
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let updateCount = 0;
 
     const channel = supabase
-      .channel(`competition-data-${currentEvent}`)
-      // Monitor channel status for debugging
-      .on("system", { event: "CHANNEL_STATE" }, (payload) => {
-        console.log("[Competition] Realtime channel state:", payload);
-      })
+      .channel(`competition-schedule-${currentEvent}`)
       .on("system", { event: "CHANNEL_ERROR" }, (error) => {
         console.error("[Competition] Realtime channel error:", error);
       })
-      // Listen for schedule changes (rare - manual updates by admin)
+      // Listen for schedule changes (admin assignment updates from desktop)
       .on(
         "postgres_changes",
         {
@@ -491,64 +486,21 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           filter: `event=eq.${currentEvent}`,
         },
         () => {
-          scheduleUpdateCount++;
-          if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
-          scheduleDebounceTimer = setTimeout(async () => {
+          updateCount++;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(async () => {
             console.log(
-              `[Competition] Realtime: Batched ${scheduleUpdateCount} schedule updates`
+              `[Competition] Realtime: Batched ${updateCount} schedule updates`
             );
-            scheduleUpdateCount = 0;
+            updateCount = 0;
             fetchSchedule();
-            // Sync shift assignments to match data
             await syncShiftAssignments(currentEvent);
-          }, 2000);
-        }
-      )
-      // Listen for match data changes (mobile scouts, desktop posts results)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_match_data",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => {
-          scheduleUpdateCount++;
-          if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
-          scheduleDebounceTimer = setTimeout(() => {
-            console.log(
-              `[Competition] Realtime: Batched ${scheduleUpdateCount} match data updates`
-            );
-            scheduleUpdateCount = 0;
-            fetchMatchData();
-          }, 2000);
-        }
-      )
-      // Listen for picklist changes (desktop or other mobile users edit)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_picklist",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => {
-          picklistUpdateCount++;
-          if (picklistDebounceTimer) clearTimeout(picklistDebounceTimer);
-          picklistDebounceTimer = setTimeout(() => {
-            console.log(
-              `[Competition] Realtime: Batched ${picklistUpdateCount} picklist updates`
-            );
-            picklistUpdateCount = 0;
-            fetchPicklists();
           }, 2000);
         }
       )
       .subscribe((status, err) => {
         if (status === "SUBSCRIBED") {
-          console.log("[Competition] ✅ Realtime subscribed successfully");
+          console.log("[Competition] ✅ Schedule realtime subscribed");
         } else if (status === "CHANNEL_ERROR") {
           console.error("[Competition] ❌ Realtime subscription error:", err);
         } else if (status === "TIMED_OUT") {
@@ -559,17 +511,11 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       });
 
     return () => {
-      console.log("[Competition] Cleaning up realtime subscriptions");
-      if (scheduleDebounceTimer) clearTimeout(scheduleDebounceTimer);
-      if (picklistDebounceTimer) clearTimeout(picklistDebounceTimer);
-
-      // Best practice: unsubscribe before removing
+      if (debounceTimer) clearTimeout(debounceTimer);
       channel.unsubscribe();
       supabase.removeChannel(channel);
-
-      console.log("[Competition] ✅ Realtime channel removed");
     };
-  }, [currentEvent, dbInitialized, isOnline, fetchSchedule, fetchPicklists]);
+  }, [currentEvent, dbInitialized, isOnline, fetchSchedule]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");

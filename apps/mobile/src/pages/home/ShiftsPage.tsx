@@ -64,12 +64,16 @@ export function ShiftsPage() {
   const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentEvent || !userData.name) {
+    if (!currentEvent) {
       setInitialLoading(false);
       return;
     }
-
-    getUserEventScheduleAssignments(currentEvent, userData.name)
+    const byUid = !!userData.uid;
+    getUserEventScheduleAssignments(
+      currentEvent,
+      byUid ? userData.uid : (userData.name || ""),
+      byUid
+    )
       .then((assignments) => {
         console.log(
           `[ShiftsPage] Found ${assignments.length} shift assignments for user: ${userData.name}`

@@ -17,8 +17,6 @@ import type {
   PresetAction,
   LocationAction,
   ToggleAction,
-  PresetActionType,
-  LocationActionType,
   ToggleActionType,
 } from "@lib/types/matchScouting";
 import { getActiveToggles } from "@lib/types/matchScouting";
@@ -31,6 +29,7 @@ import { useEvent } from "@lib/context/EventContext";
 import { getMatchData } from "@lib/data/match-data";
 import { getEventTeamData } from "@lib/db";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
+import type { DrawingData } from "../components/auto-path-drawer/types";
 import { toast } from "sonner";
 
 type TeamAuto = {
@@ -86,6 +85,10 @@ function MatchEditStats() {
     setActionsOpen(open);
     setEndgameOpen(open);
   }, [fromMatchEnd]);
+
+  useEffect(() => {
+    if (teamAutos.length > 0) setAutoSelectOpen(true);
+  }, [teamAutos.length]);
 
   // Load match data - check both sessionStorage (from match_play) and Supabase (for editing)
   useEffect(() => {
@@ -143,60 +146,40 @@ function MatchEditStats() {
         return;
       }
 
-      // If no sessionStorage and we have route params, decide whether to load from Supabase or start fresh
+      // If no sessionStorage and we have route params, load from Supabase
+      // (covers team view edit, past matches from ScoutingPage, etc.)
       if (currentEvent && teamNum && matchNum) {
         try {
-          // If from team view, load existing data for editing
-          // Otherwise (scouting flow), start with fresh form for new scout
-          if (fromView === "teamView") {
-            console.log(
-              "[MatchEditStats] Team view edit - loading existing data from Supabase"
-            );
+          console.log("[MatchEditStats] Loading existing data from Supabase");
 
-            const allMatchData = await getMatchData(currentEvent);
-            const existingData = allMatchData.find(
-              (m) => m.team === teamNum && m.match === matchNum
-            );
+          const allMatchData = await getMatchData(currentEvent);
+          const existingData = allMatchData.find(
+            (m) => m.team === teamNum && m.match === matchNum
+          );
 
-            console.log("[MatchEditStats] Supabase query result:", {
-              totalMatches: allMatchData.length,
-              foundMatch: !!existingData,
-              hasDataRaw: !!existingData?.data_raw,
-              dataRawKeys: existingData?.data_raw
-                ? Object.keys(existingData.data_raw)
-                : [],
-            });
+          console.log("[MatchEditStats] Supabase query result:", {
+            totalMatches: allMatchData.length,
+            foundMatch: !!existingData,
+            hasDataRaw: !!existingData?.data_raw,
+            dataRawKeys: existingData?.data_raw
+              ? Object.keys(existingData.data_raw)
+              : [],
+          });
 
-            // Check if data_raw exists and is not empty (ignore EPA/OPR - that's in team_data)
-            if (
-              existingData?.data_raw &&
-              Object.keys(existingData.data_raw).length > 0
-            ) {
-              // Has actual scouting data - pre-populate form for editing
-              const uiData = reverseTransformMatchData(existingData.data_raw);
-              console.log("[MatchEditStats] Pre-populating form with existing data");
-              setMatchData(uiData);
-              setNotes(uiData.notes || "");
-            } else {
-              // No existing data - initialize empty form
-              console.log(
-                "[MatchEditStats] No existing data found, initializing empty form"
-              );
-              setMatchData({
-                presetActions: [],
-                locationActions: [],
-                toggleActions: [],
-                postMatch: {
-                  ratings: {},
-                },
-                notes: "",
-              });
-              setNotes("");
-            }
+          // Check if data_raw exists and is not empty (ignore EPA/OPR - that's in team_data)
+          if (
+            existingData?.data_raw &&
+            Object.keys(existingData.data_raw).length > 0
+          ) {
+            // Has actual scouting data - pre-populate form for editing
+            const uiData = reverseTransformMatchData(existingData.data_raw);
+            console.log("[MatchEditStats] Pre-populating form with existing data");
+            setMatchData(uiData);
+            setNotes(uiData.notes || "");
           } else {
-            // Scouting flow - always start fresh (even if previous data exists)
+            // No existing data - initialize empty form
             console.log(
-              "[MatchEditStats] Scouting flow - starting with fresh form (re-scout)"
+              "[MatchEditStats] No existing data found, initializing empty form"
             );
             setMatchData({
               presetActions: [],
@@ -205,6 +188,8 @@ function MatchEditStats() {
               postMatch: {
                 ratings: {},
               },
+              selectedAuto: null,
+              autoDescription: null,
               notes: "",
             });
             setNotes("");
@@ -229,9 +214,27 @@ function MatchEditStats() {
       return;
     }
     getEventTeamData(currentEvent).then((data) => {
-      const teamData = data.find((t) => t.team === teamNum);
-      const autos = (teamData?.data as { autos?: TeamAuto[] } | null)?.autos ?? [];
-      setTeamAutos(Array.isArray(autos) ? autos : []);
+      const teamData = data.find(
+        (t) => t.team === teamNum || t.team === teamNum.replace(/^frc/i, "")
+      );
+      const raw = (teamData?.data as { autos?: unknown[] } | null)?.autos ?? [];
+      if (!Array.isArray(raw)) {
+        setTeamAutos([]);
+        return;
+      }
+      const autos: TeamAuto[] = raw.map((a: any) => ({
+        name: a.name ?? undefined,
+        description: a.description ?? undefined,
+        climbDuringAuto: a.climbDuringAuto ?? a.climb ?? false,
+        drawing: a.drawing && typeof a.drawing === "object"
+          ? {
+              paths: Array.isArray(a.drawing.paths) ? a.drawing.paths : [],
+              canvasWidth: a.drawing.canvasWidth ?? 400,
+              canvasHeight: a.drawing.canvasHeight ?? 200,
+            }
+          : { paths: [], canvasWidth: 400, canvasHeight: 200 },
+      }));
+      setTeamAutos(autos);
       setAutoIndex(0);
     });
   }, [currentEvent, teamNum]);
@@ -398,92 +401,6 @@ function MatchEditStats() {
     matchData?.postMatch?.ratings?.passing !== undefined &&
     matchData?.postMatch?.ratings?.driver !== undefined &&
     notes.trim() !== "";
-
-  // Helper functions to add/remove actions
-  const addFuelAction = (
-    fuelType: PresetActionType,
-    phase: "auto" | "teleop"
-  ) => {
-    if (!matchData) return;
-    const newAction: PresetAction = {
-      type: fuelType,
-      timestamp: Date.now(),
-      phase,
-    };
-    setMatchData({
-      ...matchData,
-      presetActions: [...matchData.presetActions, newAction],
-    });
-  };
-
-  const removeFuelAction = (
-    fuelType: PresetActionType,
-    phase: "auto" | "teleop"
-  ) => {
-    if (!matchData) return;
-    // Find last index manually (findLastIndex requires ES2023)
-    let index = -1;
-    for (let i = matchData.presetActions.length - 1; i >= 0; i--) {
-      if (
-        matchData.presetActions[i].type === fuelType &&
-        matchData.presetActions[i].phase === phase
-      ) {
-        index = i;
-        break;
-      }
-    }
-    if (index !== -1) {
-      const newActions = [...matchData.presetActions];
-      newActions.splice(index, 1);
-      setMatchData({
-        ...matchData,
-        presetActions: newActions,
-      });
-    }
-  };
-
-  const addLocationAction = (
-    actionType: LocationActionType,
-    phase: "auto" | "teleop"
-  ) => {
-    if (!matchData) return;
-    const newAction: LocationAction = {
-      type: actionType,
-      timestamp: Date.now(),
-      coords: [0.5, 0.5], // Default center position for manually added actions
-      phase,
-    };
-    setMatchData({
-      ...matchData,
-      locationActions: [...matchData.locationActions, newAction],
-    });
-  };
-
-  const removeLocationAction = (
-    actionType: LocationActionType,
-    phase: "auto" | "teleop"
-  ) => {
-    if (!matchData) return;
-    // Find last index manually (findLastIndex requires ES2023)
-    let index = -1;
-    for (let i = matchData.locationActions.length - 1; i >= 0; i--) {
-      if (
-        matchData.locationActions[i].type === actionType &&
-        matchData.locationActions[i].phase === phase
-      ) {
-        index = i;
-        break;
-      }
-    }
-    if (index !== -1) {
-      const newActions = [...matchData.locationActions];
-      newActions.splice(index, 1);
-      setMatchData({
-        ...matchData,
-        locationActions: newActions,
-      });
-    }
-  };
 
   // Get active toggle states using the same helper as match_play
   const activeToggles = useMemo(
@@ -1533,7 +1450,7 @@ function MatchEditStats() {
                         <div className="flex-1 flex justify-center min-h-[200px] items-center bg-background rounded-xl border border-border p-4">
                           {currentAuto?.drawing ? (
                             <AutoPathDisplay
-                              drawing={currentAuto.drawing}
+                              drawing={currentAuto.drawing as DrawingData}
                               alliance={alliance === "blue" ? "blue" : "red"}
                               className="max-w-full max-h-[240px]"
                             />
