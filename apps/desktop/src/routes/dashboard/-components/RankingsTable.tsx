@@ -1,5 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useImperativeHandle, forwardRef } from "react";
 import { ChevronDown } from "lucide-react";
+
+export interface RankingsTableHandle {
+  scrollToTeam: (teamKey: string) => void;
+}
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
 import type { MatchScoutingData } from "../../../lib/db";
 import { calculateAllTeamStats } from "@lib/data/matchStats";
@@ -42,8 +46,10 @@ function useEpaColors(tbaTeams: TBATeam[]) {
   }, [tbaTeams]);
 }
 
-export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, useTbaClimb, homeTeamKey }: RankingsTableProps) {
+export const RankingsTable = forwardRef<RankingsTableHandle, RankingsTableProps>(
+  function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, useTbaClimb, homeTeamKey }, ref) {
   const [sortCol, setSortCol] = useState<SortColumn>("rank");
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const { q25, q75 } = useEpaColors(tbaTeams);
 
@@ -144,6 +150,17 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
     setSortCol(col);
   };
 
+  useImperativeHandle(ref, () => ({
+    scrollToTeam: (teamKey: string) => {
+      if (!scrollContainerRef.current || !teamKey) return;
+      const container = scrollContainerRef.current;
+      const targetRow = container.querySelector(`[data-team-row="${teamKey}"]`) as HTMLElement;
+      if (targetRow) {
+        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    },
+  }), []);
+
   const getEpaClass = (epa: number | null) => {
     if (epa == null) return "text-muted-foreground";
     if (epa >= q75) return "text-chart-2 font-semibold";
@@ -187,7 +204,7 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
       </div>
 
       {/* Scrollable rows */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         {sortedRows.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
             {searchQuery ? "No teams found" : "No team data"}
@@ -198,6 +215,7 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
             return (
               <div
                 key={row.key}
+                data-team-row={row.key}
                 className="grid grid-cols-[100px_1fr_80px_80px_100px_90px] gap-0 items-center px-8 py-3 border-b border-border/50 hover:bg-secondary/20 transition-colors"
               >
                 {/* Team chip */}
@@ -238,4 +256,4 @@ export function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, 
       </div>
     </div>
   );
-}
+});

@@ -108,7 +108,9 @@ export function transformMatchData(
       }
     },
     driverRating: scoutingData.postMatch?.ratings?.driver, // Extract driver rating to top level
-    notes: scoutingData.notes
+    notes: scoutingData.notes,
+    selectedAuto: scoutingData.selectedAuto ?? undefined,
+    autoDescription: scoutingData.autoDescription ?? undefined
   };
 }
 
@@ -200,6 +202,8 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
       teleopDismountTime: dataRaw.postMatch?.teleopDismountTime,
       teleopFailedClimbCount: dataRaw.postMatch?.teleopFailedClimbCount,
     },
-    notes: dataRaw.notes || ''
+    notes: dataRaw.notes || '',
+    selectedAuto: dataRaw.selectedAuto ?? undefined,
+    autoDescription: dataRaw.autoDescription ?? undefined
   };
 }

@@ -113,6 +113,12 @@ export interface MatchScoutingData {
   // Post-match data (all optional)
   postMatch: PostMatchData;
 
+  /** Selected auto name from team's pit autos (or null if none ran) */
+  selectedAuto?: string | null;
+
+  /** Short auto description when "None" selected (custom auto not in pit list) */
+  autoDescription?: string | null;
+
   // Free-form notes
   notes?: string;
 

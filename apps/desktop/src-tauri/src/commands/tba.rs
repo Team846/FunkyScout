@@ -96,7 +96,7 @@ pub async fn bootstrap_event_schedule(
         .collect();
 
     supabase_service
-        .bulk_upsert_team_data(&event, team_records)
+        .bulk_upsert_team_data(&event, team_records, None)
         .await
         .map_err(|e| format!("Failed to seed team data: {}", e))?;
 

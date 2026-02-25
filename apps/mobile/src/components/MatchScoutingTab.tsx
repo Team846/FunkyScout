@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { getSession } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
+import { AutoPathDisplay } from "./AutoPathDisplay";
 
 interface MatchScoutingTabProps {
   eventKey: string;
@@ -24,6 +25,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const [selectedMatch, setSelectedMatch] = useState<string>("");
   const [teamStats, setTeamStats] = useState<{ opr?: number; epa?: any } | null>(null);
   const [nextMatch, setNextMatch] = useState<{ match: string; time?: number } | null>(null);
+  const [teamAutos, setTeamAutos] = useState<Array<{ name?: string; description?: string; climbDuringAuto?: boolean; drawing?: { paths: unknown[]; canvasWidth: number; canvasHeight: number } }>>([]);
 
   useEffect(() => {
     if (!eventKey || !teamKey) return;
@@ -42,13 +44,17 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         setSelectedMatch(validData[0].match);
       }
 
-      // Get team stats (OPR/EPA)
+      // Get team stats (OPR/EPA) and autos
       const teamData = teamDataResult.find((t) => t.team === teamKey);
       if (teamData?.data) {
         setTeamStats({
           opr: teamData.data.opr,
           epa: teamData.data.epa,
         });
+        const autos = (teamData.data as { autos?: unknown[] })?.autos ?? [];
+        setTeamAutos(Array.isArray(autos) ? autos : []);
+      } else {
+        setTeamAutos([]);
       }
 
       // Find next qual match for this team
@@ -291,7 +297,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
             {getMatchLabel(selectedMatch)}
           </p>
           {selectedMatchData.map((entry) => (
-            <MatchDataCard key={entry.timestamp} data={entry} teamKey={teamKey} />
+            <MatchDataCard key={entry.timestamp} data={entry} teamKey={teamKey} teamAutos={teamAutos} />
           ))}
         </div>
       )}
@@ -299,7 +305,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   );
 }
 
-function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: string }) {
+function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; teamKey: string; teamAutos: Array<{ name?: string; description?: string; climbDuringAuto?: boolean; drawing?: { paths: unknown[]; canvasWidth: number; canvasHeight: number } }> }) {
   const navigate = useNavigate();
   const matchDataRaw = data.data_raw as MatchDataRaw;
   const [canEdit, setCanEdit] = useState(false);
@@ -452,6 +458,44 @@ function MatchDataCard({ data, teamKey }: { data: EventMatchData; teamKey: strin
               )}
           </div>
         </div>
+      )}
+
+      {/* Selected auto display - preset (name, image, climb, description) or custom auto description */}
+      {(matchDataRaw.selectedAuto || matchDataRaw.autoDescription) && (
+        matchDataRaw.selectedAuto && teamAutos.length > 0 ? (() => {
+          const matchedAuto = teamAutos.find(
+            (a) => (a.name || "").toLowerCase() === (matchDataRaw.selectedAuto || "").toLowerCase()
+          ) ?? teamAutos.find((_, i) => `Auto ${i + 1}` === matchDataRaw.selectedAuto);
+          if (!matchedAuto) return null;
+          const autoName = matchDataRaw.selectedAuto;
+          const climbStatus = matchedAuto.climbDuringAuto ? "Yes" : "No";
+          const hasDescription = !!matchedAuto.description?.trim();
+          return (
+            <div className="flex flex-col gap-3 p-4 bg-background rounded-lg border border-border">
+              <p className="text-sm font-semibold text-foreground">{autoName}</p>
+              {matchedAuto.drawing && (
+                <div className="flex justify-center">
+                  <AutoPathDisplay
+                    drawing={matchedAuto.drawing}
+                    alliance={data.alliance === "blue" ? "blue" : "red"}
+                    className="max-w-[280px] w-full"
+                  />
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Climb during auto: <span className="font-medium text-foreground">{climbStatus}</span>
+              </p>
+              {hasDescription && (
+                <p className="text-sm text-muted-foreground leading-relaxed">{matchedAuto.description}</p>
+              )}
+            </div>
+          );
+        })() : matchDataRaw.autoDescription ? (
+          <div className="flex flex-col gap-2 p-4 bg-background rounded-lg border border-border">
+            <p className="text-sm font-semibold text-foreground">Auto</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">{matchDataRaw.autoDescription}</p>
+          </div>
+        ) : null
       )}
 
       {matchDataRaw.notes && (

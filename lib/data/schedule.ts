@@ -92,11 +92,13 @@ export async function getSchedule(eventKey: string) {
         predicted_red_score,
         predicted_blue_score
       `)
-      .eq("event", eventKey)
-      .is("deleted_at", null);
+      .eq("event", eventKey);
 
     if (isIncremental) {
+      // Include soft-deleted rows so deletions propagate to local cache
       query = query.gte("last_modified", cutoffISO!);
+    } else {
+      query = query.is("deleted_at", null);
     }
 
     const { data, error } = await query;

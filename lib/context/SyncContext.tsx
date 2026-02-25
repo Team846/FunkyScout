@@ -89,7 +89,26 @@ export function SyncProvider({
       await syncManagerRef.current.forceSyncNow();
       console.log("[SyncContext] Sync completed, triggering data refresh");
 
-      // Step 2: Refresh all data contexts
+      // Step 2: Clear sync keys for the current event so refresh callbacks
+      // do full loads instead of incremental. This handles the case where
+      // the sync key was advanced after a partial full fetch (e.g. auth hiccup
+      // on startup), which would cause incremental syncs to miss rows that were
+      // present before the sync key window.
+      if (currentEvent) {
+        [
+          "lastTeamSync_",
+          "lastScheduleSync_",
+          "lastMatchSync_",
+          "lastPicklistSync_",
+        ].forEach((prefix) => {
+          localStorage.removeItem(`${prefix}${currentEvent}`);
+        });
+        console.log(
+          `[SyncContext] Cleared sync keys for event ${currentEvent} — next fetch will be full load`,
+        );
+      }
+
+      // Step 3: Refresh all data contexts
       refreshCallbacks.current.forEach((callback) => {
         try {
           callback();
@@ -108,7 +127,7 @@ export function SyncProvider({
     } finally {
       setIsSyncing(false);
     }
-  }, [isOnline]);
+  }, [isOnline, currentEvent]);
 
   // Register forceSyncNow as the global sync trigger for instant sync
   useEffect(() => {
@@ -116,7 +135,9 @@ export function SyncProvider({
     console.log("[SyncContext] Registered global sync trigger for instant sync");
   }, [forceSyncNow]);
 
-  // Trigger 1: Event Switch
+  // Trigger 1: Event Switch — push-only (flush pending writes, no data refresh).
+  // Each data context already handles its own refetch via event-change effects;
+  // firing refresh callbacks here would double every fetch on every event switch.
   useEffect(() => {
     if (
       currentEvent &&
@@ -124,14 +145,14 @@ export function SyncProvider({
       currentEvent !== prevEventRef.current
     ) {
       console.log(
-        `[SyncContext] Event switched from ${prevEventRef.current} to ${currentEvent}, triggering sync`,
+        `[SyncContext] Event switched from ${prevEventRef.current} to ${currentEvent}, flushing writes`,
       );
-      forceSyncNow().catch((error) => {
-        console.error("[SyncContext] Event switch sync failed:", error);
+      syncManagerRef.current?.forceSyncNow().catch((error) => {
+        console.error("[SyncContext] Event switch flush failed:", error);
       });
     }
     prevEventRef.current = currentEvent;
-  }, [currentEvent, forceSyncNow]);
+  }, [currentEvent]); // forceSyncNow intentionally excluded — push-only, no refresh
 
   // Trigger 2: Online/Offline transitions
   useEffect(() => {
@@ -189,21 +210,8 @@ export function SyncProvider({
     } = supabase.auth.onAuthStateChange((event: string) => {
       if (event === "SIGNED_IN") {
         console.log("[SyncContext] User signed in, triggering sync and data refresh");
-        forceSyncNow()
-          .then(() => {
-            // Refresh all data contexts after successful login
-            refreshCallbacks.current.forEach((callback) => {
-              try {
-                callback();
-              } catch (error) {
-                console.error("[SyncContext] Refresh callback failed:", error);
-              }
-            });
-            console.log(
-              `[SyncContext] Login: Triggered ${refreshCallbacks.current.size} refresh callbacks`
-            );
-          })
-          .catch((error) => {
+        // forceSyncNow() already fires all refresh callbacks internally — no need to call them again
+        forceSyncNow().catch((error) => {
             console.error("[SyncContext] Sign-in sync failed:", error);
           });
       } else if (event === "SIGNED_OUT") {

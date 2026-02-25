@@ -82,9 +82,18 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   const currentEventRef = useRef(currentEvent);
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
+  const isFetchingRef = useRef(false);
 
   const fetchTeams = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
+
+    // Prevent concurrent fetches — if one is already in progress, skip this call.
+    // The in-progress fetch will still complete and update state correctly.
+    if (isFetchingRef.current) {
+      console.log("[TeamData] Skipping fetch — already in progress");
+      return;
+    }
+    isFetchingRef.current = true;
 
     // Check if we should skip cache this time (only on event change when online)
     const shouldSkipCache = skipCacheOnceRef.current && isOnline;
@@ -92,8 +101,10 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       skipCacheOnceRef.current = false; // Clear immediately
     }
 
-    // 1. Load from cache (only if not skipping)
-    if (!shouldSkipCache) {
+    // 1. Load from cache only on first load (no live data yet) and if not skipping.
+    // Once hasLoadedDataRef is true we have live data in state — don't overwrite it
+    // with potentially stale cache (avoids the flash-then-revert race condition).
+    if (!shouldSkipCache && !hasLoadedDataRef.current) {
       const cached = await getTbaTeams(currentEvent);
       if (cached.length > 0) {
         setTeams(
@@ -194,10 +205,12 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       } finally {
         setLoading(false);
         setInitialLoading(false);
+        isFetchingRef.current = false;
       }
     } else {
       // Offline: done after cache
       setInitialLoading(false);
+      isFetchingRef.current = false;
     }
   }, [currentEvent, dbInitialized, isOnline]);
 
@@ -240,6 +253,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       setTbaTeams([]);
       setInitialLoading(false);
       hasLoadedDataRef.current = false;
+      isFetchingRef.current = false;
       return;
     }
 
@@ -249,6 +263,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }
+      // Allow the new event's fetch to run even if a previous fetch is in flight.
+      // The old fetch belongs to a different event and should be superseded.
+      isFetchingRef.current = false;
       // Trigger one immediate fetch. Poller handles periodic background refresh.
       // forceRefresh() is NOT called here — that would duplicate this fetch.
       fetchTeams();

@@ -69,8 +69,10 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
       skipCacheOnceRef.current = false; // Clear immediately
     }
 
-    // 1. Load from cache (only if not skipping)
-    if (!shouldSkipCache) {
+    // 1. Load from cache only on first load (no live data yet) and if not skipping.
+    // Once hasLoadedDataRef is true we have live data in state — don't overwrite it
+    // with potentially stale cache.
+    if (!shouldSkipCache && !hasLoadedDataRef.current) {
       const [cachedEpas, cachedPreds] = await Promise.all([
         getStatboticsEpa(currentEvent),
         getStatboticsMatchPred(currentEvent),

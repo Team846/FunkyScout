@@ -12,7 +12,7 @@ import { getMatchScoutingData } from "../../lib/db";
 import type { MatchScoutingData } from "../../lib/db";
 import { LeftPanel } from "./-components/LeftPanel";
 import { ScheduleTable, type ScheduleTableHandle } from "./-components/ScheduleTable";
-import { RankingsTable } from "./-components/RankingsTable";
+import { RankingsTable, type RankingsTableHandle } from "./-components/RankingsTable";
 import { RightPanel } from "./-components/RightPanel";
 
 export const Route = createFileRoute("/dashboard/")({
@@ -39,6 +39,7 @@ function DashboardPage() {
   const { currentEvent, homeTeam, useTbaClimb } = useDesktopEvent();
 
   const scheduleTableRef = useRef<ScheduleTableHandle>(null);
+  const rankingsTableRef = useRef<RankingsTableHandle>(null);
   const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -112,12 +113,21 @@ function DashboardPage() {
               />
             </div>
 
-            {/* Jump to last completed match */}
+            {/* Jump to last completed match (schedule) or selected team (rankings) */}
             {activeTab === "schedule" && (
               <button
                 onClick={() => scheduleTableRef.current?.scrollToLastCompleted()}
                 className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors"
                 title="Jump to last completed match"
+              >
+                <ArrowDown className="w-4 h-4" />
+              </button>
+            )}
+            {activeTab === "rankings" && homeTeamKey && (
+              <button
+                onClick={() => rankingsTableRef.current?.scrollToTeam(homeTeamKey)}
+                className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors"
+                title="Jump to selected team"
               >
                 <ArrowDown className="w-4 h-4" />
               </button>
@@ -142,6 +152,7 @@ function DashboardPage() {
           <TabsContent value="rankings" className="flex-1 m-0 px-2 data-[state=active]:flex data-[state=active]:flex-col overflow-hidden">
             <div className="flex-1 overflow-hidden rounded-lg border border-border">
               <RankingsTable
+                ref={rankingsTableRef}
                 tbaTeams={tbaTeams}
                 matchData={matchData}
                 searchQuery={searchQuery}

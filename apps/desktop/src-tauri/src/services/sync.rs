@@ -20,6 +20,13 @@ pub struct SyncService {
     sqlx_pool: sqlx::SqlitePool,
     /// Updated after each successful sync — used to filter incremental fetches
     last_sync_time: std::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>,
+    /// Snapshot of event_team_data as last pulled from Supabase (full on cold start,
+    /// incrementally merged thereafter). Passed to bulk_upsert_team_data so it can
+    /// skip its own redundant full SELECT every 120s.
+    team_data_snapshot: Vec<serde_json::Value>,
+    /// Snapshot of event_schedule as last pulled from Supabase.
+    /// Same pattern as team_data_snapshot — eliminates the SELECT in bulk_upsert_schedule.
+    schedule_snapshot: Vec<serde_json::Value>,
 }
 
 impl SyncService {
@@ -39,6 +46,47 @@ impl SyncService {
             current_event_shared,
             sqlx_pool,
             last_sync_time: std::sync::Mutex::new(None),
+            team_data_snapshot: Vec::new(),
+            schedule_snapshot: Vec::new(),
+        }
+    }
+
+    /// Merge newly pulled team_data rows into the in-memory snapshot.
+    /// Full pull (is_full=true) replaces the snapshot; incremental upserts changed rows.
+    fn update_team_data_snapshot(&mut self, rows: &[serde_json::Value], is_full: bool) {
+        if is_full {
+            self.team_data_snapshot = rows.to_vec();
+            return;
+        }
+        for row in rows {
+            let team = row.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            if team.is_empty() { continue; }
+            match self.team_data_snapshot.iter().position(|r| {
+                r.get("team").and_then(|v| v.as_str()) == Some(team)
+            }) {
+                Some(pos) => self.team_data_snapshot[pos] = row.clone(),
+                None => self.team_data_snapshot.push(row.clone()),
+            }
+        }
+    }
+
+    /// Merge newly pulled schedule rows into the in-memory snapshot.
+    fn update_schedule_snapshot(&mut self, rows: &[serde_json::Value], is_full: bool) {
+        if is_full {
+            self.schedule_snapshot = rows.to_vec();
+            return;
+        }
+        for row in rows {
+            let mk = row.get("match").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let t = row.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if mk.is_empty() || t.is_empty() { continue; }
+            match self.schedule_snapshot.iter().position(|r| {
+                r.get("match").and_then(|v| v.as_str()).unwrap_or("") == mk
+                    && r.get("team").and_then(|v| v.as_str()).unwrap_or("") == t
+            }) {
+                Some(pos) => self.schedule_snapshot[pos] = row.clone(),
+                None => self.schedule_snapshot.push(row.clone()),
+            }
         }
     }
 
@@ -53,7 +101,14 @@ impl SyncService {
                 _ = ticker.tick() => {
                     // Refresh current event in case user changed events since last sync
                     let ev = self.current_event_shared.read().unwrap().clone();
-                    if !ev.is_empty() { self.current_event = ev; }
+                    if !ev.is_empty() && ev != self.current_event {
+                        self.current_event = ev;
+                        // Clear snapshots — they belong to the old event
+                        self.team_data_snapshot.clear();
+                        self.schedule_snapshot.clear();
+                    } else if !ev.is_empty() {
+                        self.current_event = ev;
+                    }
                     println!("[Sync] Periodic sync (120s interval)");
                     if let Err(e) = self.sync_once().await {
                         eprintln!("[Sync] Error during periodic sync: {:#}", e);
@@ -80,7 +135,7 @@ impl SyncService {
     /// 1. Processes sync queue (push local changes to Supabase)
     /// 2. Fetches TBA/Statbotics: rankings, EPA, OPR, match predictions → pushes to Supabase
     /// 3. Polls Supabase: picklists, match data, user profiles → caches locally
-    pub async fn sync_once(&self) -> Result<()> {
+    pub async fn sync_once(&mut self) -> Result<()> {
         // 0. Process sync queue (desktop offline writes)
         if let Err(e) = self.process_sync_queue().await {
             eprintln!("[Sync] Queue processing failed: {}", e);
@@ -273,20 +328,22 @@ impl SyncService {
                     .await
                     .context("Failed to cache team data to SQLite")?;
 
-                // Always push to Supabase — bulk_upsert_team_data fetches the current
-                // Supabase state, merges (preserving pit scouting), and only upserts
-                // rows that actually changed. Using SQLite for change detection here
-                // was incorrect: SQLite may be ahead of Supabase (e.g., when an earlier
-                // Supabase push was silently blocked), causing OPR/DPR/EPA to never
-                // reach Supabase even though they exist in the local cache.
+                // Pass the pull-phase snapshot so bulk_upsert_team_data can skip
+                // its own redundant Supabase SELECT. On cold start the snapshot is
+                // empty — the function falls back to fetching from Supabase once.
                 let teams_with_epa = team_data_records.iter()
                     .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
                     .count();
-                println!("[Sync] Pushing {} teams to Supabase ({} with EPA)",
-                    team_data_records.len(), teams_with_epa);
+                println!("[Sync] Pushing {} teams to Supabase ({} with EPA, snapshot={} rows)",
+                    team_data_records.len(), teams_with_epa, self.team_data_snapshot.len());
+                let team_snapshot = if self.team_data_snapshot.is_empty() {
+                    None
+                } else {
+                    Some(self.team_data_snapshot.as_slice())
+                };
 
                 match self.supabase
-                    .bulk_upsert_team_data(&self.current_event, team_data_records)
+                    .bulk_upsert_team_data(&self.current_event, team_data_records, team_snapshot)
                     .await
                 {
                     Ok(_) => println!("[Sync] ✓ Pushed team data to Supabase"),
@@ -426,10 +483,16 @@ impl SyncService {
                             .await
                             .context("Failed to cache schedule to SQLite")?;
 
-                        // Only push changed rows to Supabase
+                        // Only push changed rows to Supabase.
+                        // Pass snapshot so bulk_upsert_schedule skips its own SELECT.
                         if !changed_schedule_records.is_empty() {
+                            let sched_snapshot = if self.schedule_snapshot.is_empty() {
+                                None
+                            } else {
+                                Some(self.schedule_snapshot.as_slice())
+                            };
                             if let Err(e) = self.supabase
-                                .bulk_upsert_schedule(changed_schedule_records)
+                                .bulk_upsert_schedule(changed_schedule_records, sched_snapshot)
                                 .await
                             {
                                 eprintln!("[Sync] ✗ Failed to push schedule to Supabase: {}", e);
@@ -578,6 +641,8 @@ impl SyncService {
             self.cache_teams_to_sqlite(&team_data)
                 .await
                 .context("Failed to cache team data to SQLite")?;
+            // Update snapshot for next push cycle's change detection
+            self.update_team_data_snapshot(&team_data, team_since.is_none());
         }
 
         // 17. Fetch schedule — incremental if SQLite has rows, full if empty.
@@ -603,6 +668,8 @@ impl SyncService {
             self.cache_schedule_to_sqlite(&schedule_data)
                 .await
                 .context("Failed to cache schedule to SQLite")?;
+            // Update snapshot for next push cycle's change detection
+            self.update_schedule_snapshot(&schedule_data, schedule_since.is_none());
         }
 
         // Only advance last_sync_time if:
@@ -1374,7 +1441,7 @@ impl SyncService {
             .collect();
 
         self.supabase
-            .bulk_upsert_team_data(&self.current_event, team_records)
+            .bulk_upsert_team_data(&self.current_event, team_records, None)
             .await
             .context("Failed to push teams to Supabase (bootstrap)")?;
 

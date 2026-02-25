@@ -352,27 +352,35 @@ impl SupabaseService {
         Ok(profiles)
     }
 
-    /// Bulk upsert team data from TBA with merge logic and change detection
-    /// Only updates teams where data actually changed (reduces postgres_changes events by 90%)
-    pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>) -> Result<()> {
+    /// Bulk upsert team data from TBA with merge logic and change detection.
+    /// Only updates teams where data actually changed (reduces postgres_changes events by 90%).
+    /// `snapshot` is the team data last pulled from Supabase (passed from SyncService).
+    /// When Some, skips the redundant full SELECT — only fetches on cold start (None).
+    pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>, snapshot: Option<&[Value]>) -> Result<()> {
         if teams.is_empty() {
             return Ok(());
         }
 
-        // 1. Fetch existing team data from Supabase to preserve pit scouting
-        let response = self.auth_client()
-            .from("event_team_data")
-            .select("event,team,data")
-            .eq("event", event)
-            .execute()
-            .await
-            .context("Failed to fetch existing team data for merge")?;
-
-        let existing_data: Vec<Value> = if response.status().is_success() {
-            let body = response.text().await?;
-            serde_json::from_str(&body).unwrap_or_default()
+        // 1. Get existing team data — use snapshot if warm, fetch from Supabase if cold start.
+        let existing_data: Vec<Value> = if let Some(snap) = snapshot {
+            println!("[Supabase] team_data snapshot hit ({} rows) — skipping SELECT", snap.len());
+            snap.to_vec()
         } else {
-            vec![]
+            println!("[Supabase] team_data snapshot cold — fetching from Supabase");
+            let response = self.auth_client()
+                .from("event_team_data")
+                .select("event,team,data")
+                .eq("event", event)
+                .execute()
+                .await
+                .context("Failed to fetch existing team data for merge")?;
+
+            if response.status().is_success() {
+                let body = response.text().await?;
+                serde_json::from_str(&body).unwrap_or_default()
+            } else {
+                vec![]
+            }
         };
 
         // 2. Build lookup map of existing data
@@ -446,32 +454,42 @@ impl SupabaseService {
 
     /// Sync schedule from TBA to Supabase with change detection.
     /// Bulk UPSERTs only new or changed rows to minimize postgres_changes events.
-    pub async fn bulk_upsert_schedule(&self, schedule: Vec<Value>) -> Result<()> {
+    /// `snapshot` is the schedule last pulled from Supabase (passed from SyncService).
+    /// When Some, skips the redundant full SELECT — only fetches on cold start (None).
+    pub async fn bulk_upsert_schedule(&self, schedule: Vec<Value>, snapshot: Option<&[Value]>) -> Result<()> {
         if schedule.is_empty() {
             return Ok(());
         }
 
-        // 1. Fetch existing schedule to detect new vs changed rows
         let event = schedule[0].get("event").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let fetch_response = self.auth_client()
-            .from("event_schedule")
-            .select("event,match,team,est_time,red_score,blue_score,red_win_prob,predicted_red_score,predicted_blue_score,alliance")
-            .eq("event", &event)
-            .execute()
-            .await
-            .context("Failed to fetch existing schedule for change detection")?;
 
-        let existing_schedule: Vec<Value> = if fetch_response.status().is_success() {
-            let body = fetch_response.text().await?;
-            serde_json::from_str(&body).unwrap_or_default()
+        // 1. Get existing schedule — use snapshot if warm, fetch from Supabase if cold start.
+        let existing_schedule: Vec<Value> = if let Some(snap) = snapshot {
+            println!("[Supabase] schedule snapshot hit ({} rows) — skipping SELECT", snap.len());
+            snap.to_vec()
         } else {
-            let status = fetch_response.status();
-            let body = fetch_response.text().await.unwrap_or_default();
-            eprintln!("[Supabase] Schedule SELECT failed (HTTP {}): {} — treating as no existing rows", status, body);
-            vec![]
+            println!("[Supabase] schedule snapshot cold — fetching from Supabase");
+            let fetch_response = self.auth_client()
+                .from("event_schedule")
+                .select("event,match,team,est_time,red_score,blue_score,red_win_prob,predicted_red_score,predicted_blue_score,alliance")
+                .eq("event", &event)
+                .execute()
+                .await
+                .context("Failed to fetch existing schedule for change detection")?;
+
+            if fetch_response.status().is_success() {
+                let body = fetch_response.text().await?;
+                serde_json::from_str(&body).unwrap_or_default()
+            } else {
+                let status = fetch_response.status();
+                let body = fetch_response.text().await.unwrap_or_default();
+                eprintln!("[Supabase] Schedule SELECT failed (HTTP {}): {} — treating as no existing rows", status, body);
+                vec![]
+            }
         };
 
-        println!("[Supabase] Fetched {} existing schedule rows for event {}", existing_schedule.len(), event);
+        println!("[Supabase] {} existing schedule rows for event {} ({})",
+            existing_schedule.len(), event, if snapshot.is_some() { "snapshot" } else { "fetched" });
 
         // 2. Build lookup map by (match, team)
         let existing_map: std::collections::HashMap<(String, String), Value> = existing_schedule

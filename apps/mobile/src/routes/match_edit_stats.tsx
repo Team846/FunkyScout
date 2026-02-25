@@ -29,7 +29,16 @@ import { getSession } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
 import { useEvent } from "@lib/context/EventContext";
 import { getMatchData } from "@lib/data/match-data";
+import { getEventTeamData } from "@lib/db";
+import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { toast } from "sonner";
+
+type TeamAuto = {
+  name?: string;
+  description?: string;
+  climbDuringAuto: boolean;
+  drawing: { paths: unknown[]; canvasWidth: number; canvasHeight: number };
+};
 
 type MatchEditStatsType = {
   teamNum?: string | null;
@@ -67,6 +76,10 @@ function MatchEditStats() {
   const sectionsStartOpen = fromMatchEnd !== true;
   const [actionsOpen, setActionsOpen] = useState(sectionsStartOpen);
   const [endgameOpen, setEndgameOpen] = useState(sectionsStartOpen);
+  const [autoSelectOpen, setAutoSelectOpen] = useState(sectionsStartOpen);
+
+  const [teamAutos, setTeamAutos] = useState<TeamAuto[]>([]);
+  const [autoIndex, setAutoIndex] = useState(0);
 
   useEffect(() => {
     const open = fromMatchEnd !== true;
@@ -122,6 +135,8 @@ function MatchEditStats() {
           locationActions: [],
           toggleActions: [],
           postMatch: { ratings: {} },
+          selectedAuto: null,
+          autoDescription: null,
           notes: "",
         });
         setNotes("");
@@ -206,6 +221,20 @@ function MatchEditStats() {
 
     loadMatchData();
   }, [currentEvent, teamNum, matchNum, practice]);
+
+  // Load team autos from event_team_data (pit scouting) for auto selection
+  useEffect(() => {
+    if (!currentEvent || !teamNum) {
+      setTeamAutos([]);
+      return;
+    }
+    getEventTeamData(currentEvent).then((data) => {
+      const teamData = data.find((t) => t.team === teamNum);
+      const autos = (teamData?.data as { autos?: TeamAuto[] } | null)?.autos ?? [];
+      setTeamAutos(Array.isArray(autos) ? autos : []);
+      setAutoIndex(0);
+    });
+  }, [currentEvent, teamNum]);
 
   const handleBack = () => {
     if (practice) {
@@ -712,6 +741,21 @@ function MatchEditStats() {
       locationActions: [...filtered, ...newActions],
     });
   };
+
+  const selectCurrentAuto = () => {
+    if (!matchData || teamAutos.length === 0) return;
+    const auto = teamAutos[autoIndex];
+    const autoName = auto.name || `Auto ${autoIndex + 1}`;
+    setMatchData({ ...matchData, selectedAuto: autoName, autoDescription: null });
+  };
+
+  const clearSelectedAuto = () => {
+    if (!matchData) return;
+    setMatchData({ ...matchData, selectedAuto: null });
+  };
+
+  const currentAuto = teamAutos[autoIndex];
+  const selectedAutoName = matchData?.selectedAuto ?? null;
 
   return (
     <>
@@ -1437,6 +1481,134 @@ function MatchEditStats() {
                 })}
               </div>
             </div>
+
+            {/* Auto Selection - show when team has pit autos, below ratings above notes */}
+            {teamAutos.length > 0 && (
+              <Collapsible open={autoSelectOpen} onOpenChange={setAutoSelectOpen}>
+                <div className="rounded-2xl bg-muted p-6 space-y-4">
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between text-left"
+                    >
+                      <h2 className="text-lg font-semibold text-primary">
+                        Auto selection
+                      </h2>
+                      {selectedAutoName ? (
+                        <span className="text-sm text-muted-foreground">
+                          Selected: {selectedAutoName}
+                        </span>
+                      ) : null}
+                      {autoSelectOpen ? (
+                        <ChevronUp className="size-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="size-5 text-muted-foreground" />
+                      )}
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="pt-2 space-y-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAutoIndex((i) =>
+                              i <= 0 ? teamAutos.length - 1 : i - 1
+                            )
+                          }
+                          className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                          aria-label="Previous auto"
+                        >
+                          <svg
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M15 18l-6-6 6-6" />
+                          </svg>
+                        </button>
+                        <div className="flex-1 flex justify-center min-h-[200px] items-center bg-background rounded-xl border border-border p-4">
+                          {currentAuto?.drawing ? (
+                            <AutoPathDisplay
+                              drawing={currentAuto.drawing}
+                              alliance={alliance === "blue" ? "blue" : "red"}
+                              className="max-w-full max-h-[240px]"
+                            />
+                          ) : (
+                            <div className="text-muted-foreground text-sm">
+                              No path for this auto
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAutoIndex((i) =>
+                              i >= teamAutos.length - 1 ? 0 : i + 1
+                            )
+                          }
+                          className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                          aria-label="Next auto"
+                        >
+                          <svg
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </button>
+                      </div>
+                      <p className="text-center text-sm text-muted-foreground">
+                        {currentAuto?.name || `Auto ${(autoIndex ?? 0) + 1}`}
+                        {teamAutos.length > 1
+                          ? ` (${(autoIndex ?? 0) + 1} of ${teamAutos.length})`
+                          : ""}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="default"
+                          className="flex-1"
+                          onClick={selectCurrentAuto}
+                        >
+                          Select this auto
+                        </Button>
+                        {selectedAutoName ? (
+                          <Button
+                            variant="outline"
+                            onClick={clearSelectedAuto}
+                          >
+                            None
+                          </Button>
+                        ) : null}
+                      </div>
+                      {!selectedAutoName && (
+                        <div className="pt-2 space-y-2">
+                          <p className="text-sm text-muted-foreground">Short auto description (if no auto matches)</p>
+                          <Input
+                            value={matchData?.autoDescription ?? ""}
+                            onChange={(e) =>
+                              setMatchData({
+                                ...matchData!,
+                                autoDescription: e.target.value || null,
+                              })
+                            }
+                            placeholder="e.g. Drove to wing, scored 2"
+                            className="bg-background border-border"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            )}
 
             {/* Notes */}
             <div className="rounded-2xl bg-muted p-6 space-y-4">

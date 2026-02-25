@@ -152,6 +152,12 @@ export interface MatchDataRaw {
 
   /** Scouter notes/observations */
   notes?: string;
+
+  /** Auto name from team's pit autos that the robot ran this match (or null) */
+  selectedAuto?: string | null;
+
+  /** Short auto description when no preset auto selected */
+  autoDescription?: string | null;
 }
 
 /**
