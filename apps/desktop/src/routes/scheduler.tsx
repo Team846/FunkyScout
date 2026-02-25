@@ -12,6 +12,7 @@ import { getMatchLabel } from "@lib/utils/match";
 import { fetchAllUserDetails } from "@lib/supabase/user";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
+import { X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getSchedule } from "@lib/data/schedule";
 
@@ -400,7 +401,7 @@ function SchedulerPage() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span
-                                className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"} ${isEditingAssignments ? "cursor-pointer" : ""}`}
+                                className={`text-xs text-center ${isAssigned ? "text-yellow-500" : "text-gray-500"} ${isEditingAssignments ? "cursor-pointer" : ""}`}
                                 onClick={() => {
                                   if (isEditingAssignments) {
                                     setSelectedMatchKey(match.matchKey);
@@ -430,7 +431,7 @@ function SchedulerPage() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span
-                                className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"} ${isEditingAssignments ? "cursor-pointer" : ""}`}
+                                className={`text-xs text-center ${isAssigned ? "text-yellow-500" : "text-gray-500"} ${isEditingAssignments ? "cursor-pointer" : ""}`}
                                 onClick={() => {
                                   if (isEditingAssignments) {
                                     setSelectedMatchKey(match.matchKey);
@@ -466,9 +467,9 @@ function SchedulerPage() {
           <div className="bg-card rounded-lg p-6 w-96 max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4">
               <h3 className="text-lg font-semibold">Assign Scouter</h3>
-              <button onClick={() => setShowScouterPopup(false)} className="text-muted-foreground hover:text-foreground">
-                X
-              </button>
+              <Button onClick={() => setShowScouterPopup(false)} variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </Button>
             </div>
             <div className="flex-1 overflow-y-auto pr-2">
               {matchScouterMap[`${selectedMatchKey}|${selectedTeamKey}`] && (
