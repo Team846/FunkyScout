@@ -89,6 +89,7 @@ function SchedulerPage() {
   const [matchScouterMap, setMatchScouterMap] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [isEditingAssignments, setIsEditingAssignments] = useState(false);
 
   // Scouter selection — initialized from persisted state if available
   const [allScouters, setAllScouters] = useState<ScouterProfile[]>([]);
@@ -102,6 +103,9 @@ function SchedulerPage() {
   const [pitAssignments, setPitAssignments] = useState<PitAssignment[]>([]);
   const [schedulingTeams, setSchedulingTeams] = useState(false);
   const [applyingTeams, setApplyingTeams] = useState(false);
+  const [showScouterPopup, setShowScouterPopup] = useState(false);
+  const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
+  const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
 
   // Persist selectedUids to module-level on every change
   useEffect(() => {
@@ -355,6 +359,20 @@ function SchedulerPage() {
         <div className="flex-2 flex flex-col">
           <div className="flex items-center justify-between pb-4">
             <h2 className="text-xl font-semibold">Match Schedule</h2>
+            {isEditingAssignments ? (
+              <div className="flex gap-2">
+                <Button onClick={() => setIsEditingAssignments(false)} variant="outline" size="sm">
+                  Cancel
+                </Button>
+                <Button onClick={() => setIsEditingAssignments(false)} size="sm">
+                  Save
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={() => setIsEditingAssignments(true)} variant="outline" size="sm">
+                Edit Assignments
+              </Button>
+            )}
             <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Jump to last completed match">
               {/* <ArrowDown className="w-4 h-4" /> */}
               Jump to Current Match
@@ -381,8 +399,16 @@ function SchedulerPage() {
                         <TooltipProvider key={team.teamKey}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"}`}>
-                                {team.teamNumber}
+                              <span
+                                className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"} ${isEditingAssignments ? "cursor-pointer" : ""}`}
+                                onClick={() => {
+                                  if (isEditingAssignments) {
+                                    setSelectedMatchKey(match.matchKey);
+                                    setSelectedTeamKey(team.teamKey);
+                                    setShowScouterPopup(true);
+                                  }
+                                }}>
+                                {team.teamNumber} {isEditingAssignments && "x"}
                               </span>
                             </TooltipTrigger>
                             {isAssigned && scouterName && (
@@ -403,8 +429,16 @@ function SchedulerPage() {
                         <TooltipProvider key={team.teamKey}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"}`}>
-                                {team.teamNumber}
+                              <span
+                                className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"} ${isEditingAssignments ? "cursor-pointer" : ""}`}
+                                onClick={() => {
+                                  if (isEditingAssignments) {
+                                    setSelectedMatchKey(match.matchKey);
+                                    setSelectedTeamKey(team.teamKey);
+                                    setShowScouterPopup(true);
+                                  }
+                                }}>
+                                {team.teamNumber} {isEditingAssignments && "x"}
                               </span>
                             </TooltipTrigger>
                             {isAssigned && scouterName && (
@@ -426,6 +460,71 @@ function SchedulerPage() {
           </div>
         </div>
       </div>
+
+      {showScouterPopup && selectedMatchKey && selectedTeamKey && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-lg p-6 w-96 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center border-b pb-3 mb-4">
+              <h3 className="text-lg font-semibold">Assign Scouter</h3>
+              <button onClick={() => setShowScouterPopup(false)} className="text-muted-foreground hover:text-foreground">
+                X
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto pr-2">
+              {matchScouterMap[`${selectedMatchKey}|${selectedTeamKey}`] && (
+                <div className="mb-4 p-2 border rounded-md bg-secondary/30">
+                  <p className="text-sm text-muted-foreground">Current Scouter:</p>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="font-medium">{matchScouterMap[`${selectedMatchKey}|${selectedTeamKey}`]}</span>
+                    <Button variant="destructive" size="sm" onClick={() => {
+                      setMatchScouterMap(prev => {
+                        const next = { ...prev };
+                        if (selectedMatchKey && selectedTeamKey) {
+                          delete next[`${selectedMatchKey}|${selectedTeamKey}`];
+                        }
+                        return next;
+                      });
+                      setAssignedMatchTeams(prev => {
+                        const next = new Set(prev);
+                        if (selectedMatchKey && selectedTeamKey) {
+                          next.delete(`${selectedMatchKey}|${selectedTeamKey}`);
+                        }
+                        return next;
+                      });
+                      setShowScouterPopup(false);
+                    }}>Deselect</Button>
+                  </div>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground mb-2">Available Scouters:</p>
+              <div className="divide-y divide-border">
+                {allScouters.map((s) => (
+                  <button
+                    key={s.uid}
+                    className="flex items-center gap-3 px-2 py-2 w-full text-left hover:bg-secondary/40"
+                    onClick={() => {
+                      if (selectedMatchKey && selectedTeamKey) {
+                        setMatchScouterMap(prev => ({
+                          ...prev,
+                          [`${selectedMatchKey}|${selectedTeamKey}`]: s.name,
+                        }));
+                        setAssignedMatchTeams(prev => {
+                          const next = new Set(prev);
+                          next.add(`${selectedMatchKey}|${selectedTeamKey}`);
+                          return next;
+                        });
+                      }
+                      setShowScouterPopup(false);
+                    }}
+                  >
+                    <span className="text-sm flex-1">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
