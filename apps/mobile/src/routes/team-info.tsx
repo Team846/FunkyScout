@@ -979,11 +979,6 @@ function TeamInfoPage() {
                   >
                     + Add New Auto
                   </Button>
-                  {aggregateStats?.autoRunCounts?.["Custom"] ? (
-                    <p className="text-sm text-muted-foreground mt-3">
-                      Custom auto: {aggregateStats.autoRunCounts["Custom"]} match{aggregateStats.autoRunCounts["Custom"] !== 1 ? "es" : ""}
-                    </p>
-                  ) : null}
                 </div>
               )}
 

@@ -1415,11 +1415,6 @@ function MatchEditStats() {
                       <h2 className="text-lg font-semibold text-primary">
                         Auto selection
                       </h2>
-                      {selectedAutoName ? (
-                        <span className="text-sm text-muted-foreground">
-                          Selected: {selectedAutoName}
-                        </span>
-                      ) : null}
                       {autoSelectOpen ? (
                         <ChevronUp className="size-5 text-muted-foreground" />
                       ) : (
@@ -1437,7 +1432,7 @@ function MatchEditStats() {
                               i <= 0 ? teamAutos.length - 1 : i - 1
                             )
                           }
-                          className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                          className={`p-2 transition-colors ${teamAutos.length > 1 ? "text-primary hover:text-primary/80" : "text-muted-foreground/50 hover:text-muted-foreground"}`}
                           aria-label="Previous auto"
                         >
                           <svg
@@ -1471,7 +1466,7 @@ function MatchEditStats() {
                               i >= teamAutos.length - 1 ? 0 : i + 1
                             )
                           }
-                          className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                          className={`p-2 transition-colors ${teamAutos.length > 1 ? "text-primary hover:text-primary/80" : "text-muted-foreground/50 hover:text-muted-foreground"}`}
                           aria-label="Next auto"
                         >
                           <svg
@@ -1486,19 +1481,19 @@ function MatchEditStats() {
                           </svg>
                         </button>
                       </div>
-                      <p className="text-center text-sm text-muted-foreground">
+                      <p className={`text-center text-sm ${selectedAutoName === (currentAuto?.name || `Auto ${(autoIndex ?? 0) + 1}`) ? "text-primary font-medium" : "text-muted-foreground"}`}>
                         {currentAuto?.name || `Auto ${(autoIndex ?? 0) + 1}`}
                         {teamAutos.length > 1
                           ? ` (${(autoIndex ?? 0) + 1} of ${teamAutos.length})`
-                          : ""}
+                          : " (only auto)"}
                       </p>
                       <p className="text-center text-xs text-muted-foreground">
                         Climb during auto: <span className={currentAuto?.climbDuringAuto ? "text-chart-2 font-medium" : "text-muted-foreground"}>{currentAuto?.climbDuringAuto ? "Yes" : "No"}</span>
                       </p>
                       <div className="flex gap-2">
                         <Button
-                          variant="default"
-                          className="flex-1"
+                          variant={selectedAutoName === (currentAuto?.name || `Auto ${(autoIndex ?? 0) + 1}`) ? "secondary" : "default"}
+                          className={`flex-1 ${selectedAutoName !== (currentAuto?.name || `Auto ${(autoIndex ?? 0) + 1}`) ? "bg-[#CDA745] hover:bg-[#CDA745]/90 text-black" : ""}`}
                           onClick={selectCurrentAuto}
                         >
                           Select this auto

@@ -283,16 +283,6 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           <div className="flex flex-col gap-3">
             <p className="text-sm">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.auto.shoots.toFixed(1)}</span></p>
             <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.auto.groundIntakes + aggregateStats.averages.auto.stationIntakes).toFixed(1)}</span></p>
-            {aggregateStats?.autoRunCounts && Object.keys(aggregateStats.autoRunCounts).length > 0 && (
-              <div className="pt-1 border-t border-border/50">
-                <p className="text-sm text-muted-foreground mb-1">Auto usage</p>
-                {Object.entries(aggregateStats.autoRunCounts).map(([name, count]) => (
-                  <p key={name} className="text-sm">
-                    {name}: <span className="font-bold text-primary">{count}</span>
-                  </p>
-                ))}
-              </div>
-            )}
           </div>
         </div>)}
           {aggregateStats?.averages.teleop && (<div className="rounded-2xl bg-muted px-5 py-4">

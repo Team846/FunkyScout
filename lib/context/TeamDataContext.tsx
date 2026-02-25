@@ -201,6 +201,21 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           );
           hasLoadedDataRef.current = true;
         }
+
+        // getTeams() fetches the full event_team_data from Supabase (including pit
+        // scouting name + assigned fields) and caches it. Use it to keep scoutedTeams
+        // and teamAssignments in sync after every poll, not just on mount.
+        const scouted = new Set(
+          (supabaseTeams ?? [])
+            .filter((t: EventTeamData) => !!t.name)
+            .map((t: EventTeamData) => t.team)
+        );
+        setScoutedTeams(scouted);
+        const assignments = new Map<string, string>();
+        (supabaseTeams ?? []).forEach((t: EventTeamData) => {
+          if (t.assigned) assignments.set(t.team, t.assigned);
+        });
+        setTeamAssignments(assignments);
       } finally {
         setLoading(false);
         setInitialLoading(false);
