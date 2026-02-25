@@ -11,7 +11,9 @@ import type { CycleAssignment, Scouter } from "@lib/schedule/cycle";
 import { getMatchLabel } from "@lib/utils/match";
 import { fetchAllUserDetails } from "@lib/supabase/user";
 import { toast } from "sonner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
 import { invoke } from "@tauri-apps/api/core";
+import { getSchedule } from "@lib/data/schedule";
 
 export const Route = createFileRoute("/scheduler")({
   component: SchedulerPage,
@@ -26,6 +28,15 @@ interface ScouterProfile {
   role: string;
 }
 
+interface TeamSchedule {
+  matchKey: string;
+  teams: {
+    teamKey: string;
+    teamNumber: number;
+  }[];
+  predictedTime: number;
+}
+
 interface PitAssignment {
   teamKey: string;
   teamNumber: number;
@@ -36,9 +47,46 @@ interface PitAssignment {
 
 function SchedulerPage() {
   const { currentEvent } = useDesktopEvent();
+  const [schedule, setSchedule] = useState<TeamSchedule[] | null>(null);
+
+  useEffect(() => {
+    if (currentEvent) {
+      getSchedule(currentEvent).then((data) => {
+        const transformedData: TeamSchedule[] = [];
+        const scheduleMap = new Map<string, {
+          matchKey: string;
+          teams: { teamKey: string; teamNumber: number; }[];
+          predictedTime: number;
+        }>();
+
+        data.forEach((entry) => {
+          if (!scheduleMap.has(entry.match)) {
+            scheduleMap.set(entry.match, {
+              matchKey: entry.match,
+              teams: [],
+              predictedTime: entry.est_time || 0,
+            });
+          }
+          const matchEntry = scheduleMap.get(entry.match)!;
+          matchEntry.teams.push({
+            teamKey: entry.team,
+            teamNumber: parseInt(entry.team.replace("frc", ""), 10),
+          });
+        });
+
+        transformedData.push(...Array.from(scheduleMap.values()));
+        setSchedule(transformedData);
+      });
+    } else {
+      setSchedule(null);
+    }
+  }, [currentEvent]);
+
   const [w, setW] = useState(3);
   const [r, setR] = useState(1);
   const [assignments, setAssignments] = useState<CycleAssignment[]>([]);
+  const [assignedMatchTeams, setAssignedMatchTeams] = useState<Set<string>>(new Set());
+  const [matchScouterMap, setMatchScouterMap] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
 
@@ -67,7 +115,7 @@ function SchedulerPage() {
         .filter((p) => p.role === "scouter" || p.role === "admin")
         .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: p.role ?? "scouter" }));
       setAllScouters(eligible);
-      // Only initialize selection if there's no saved state (first visit)
+      // Only initialize selection if there\\\`s no saved state (first visit)
       if (_persistedSelectedUids === null) {
         setSelectedUids(new Set(eligible.map((s) => s.uid)));
       }
@@ -105,10 +153,19 @@ function SchedulerPage() {
         .map((s) => ({ uid: s.uid, name: s.name }));
       const result = await runCycleForEvent(currentEvent, [w, r], scouters);
       setAssignments(result);
+      const newAssignedMatchTeams = new Set<string>();
+      const newMatchScouterMap: Record<string, string> = {};
+      result.forEach(assignment => {
+        newAssignedMatchTeams.add(`${assignment.matchKey}|${assignment.teamKey}`);
+        newMatchScouterMap[`${assignment.matchKey}|${assignment.teamKey}`] = assignment.name!; // Store scouter name
+      });
+      setAssignedMatchTeams(newAssignedMatchTeams);
+      setMatchScouterMap(newMatchScouterMap);
       toast.success(`Generated ${result.length} assignments`);
     } catch (e: any) {
       toast.error(`Failed to generate: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setGenerating(false);
     }
   };
@@ -121,7 +178,8 @@ function SchedulerPage() {
       toast.success(`Applied ${assignments.length} shift assignments`);
     } catch (e: any) {
       toast.error(`Failed to apply: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setApplying(false);
     }
   };
@@ -147,7 +205,7 @@ function SchedulerPage() {
       // Round-robin assignment
       const result: PitAssignment[] = teams.map((t, i) => {
         const scouter = selected[i % selected.length];
-        const teamNum = parseInt(t.team.replace("frc", ""), 10);
+        const teamNum = parseInt(t.team?.replace("frc", "") ?? "0", 10);
         return {
           teamKey: t.team,
           teamNumber: isNaN(teamNum) ? 0 : teamNum,
@@ -160,7 +218,8 @@ function SchedulerPage() {
       toast.success(`Scheduled ${result.length} teams across ${selected.length} scouters`);
     } catch (e: any) {
       toast.error(`Failed to schedule teams: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setSchedulingTeams(false);
     }
   };
@@ -176,7 +235,8 @@ function SchedulerPage() {
       toast.success(`Applied ${pitAssignments.length} team assignments`);
     } catch (e: any) {
       toast.error(`Failed to apply team assignments: ${e.message ?? String(e)}`);
-    } finally {
+    }
+    finally {
       setApplyingTeams(false);
     }
   };
@@ -194,209 +254,177 @@ function SchedulerPage() {
 
   return (
     <div className="h-full overflow-auto p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold">Scheduler</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Assign scouters to qual matches using the work/rest cycle algorithm.
-          </p>
-        </div>
+      <div className="h-full flex p-6 gap-6">
+        {/* Left Panel - 1/3 width */}
+        <div className="flex flex-col w-1/3 space-y-6">
+          {/* Top 2/3: Scouter List */}
+          <div className="flex-2 rounded-lg border border-border bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Scouters</span>
+                {/* Info button placeholder */}
+                <span className="text-xs text-muted-foreground">(i)</span>
+                <span className="text-xs text-muted-foreground">
+                  {selectedUids.size} / {allScouters.length} selected
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={selectAll} className="text-xs text-primary hover:underline">
+                  All
+                </button>
+                <span className="text-xs text-muted-foreground">·</span>
+                <button onClick={selectNone} className="text-xs text-primary hover:underline">
+                  None
+                </button>
+                {/* Dropdown for "just scouters" could go here if needed later */}
+              </div>
+            </div>
+            <div className="p-3 border-b border-border">
+              <Input
+                placeholder="Search scouters..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {loadingScouters ? (
+                <p className="text-sm text-muted-foreground p-4">Loading scouters...</p>
+              ) : filtered.length === 0 ? (
+                <p className="text-sm text-muted-foreground p-4">No scouters found.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {filtered.map((s) => (
+                    <label
+                      key={s.uid}
+                      className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-secondary/40 select-none"
+                    >
+                      <Checkbox
+                        checked={selectedUids.has(s.uid)}
+                        onCheckedChange={() => toggleUid(s.uid)}
+                      />
+                      <span className="text-sm flex-1">{s.name}</span>
+                      {s.role === "admin" && (
+                        <span className="text-xs text-muted-foreground">admin</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-        {/* Config row */}
-        <div className="flex items-end gap-4 p-4 rounded-lg bg-card border border-border">
-          <div className="space-y-1.5">
-            <Label>Work (w)</Label>
-            <Input
-              type="number"
-              min={1}
-              value={w}
-              onChange={(e) => setW(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-24"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Rest (r)</Label>
-            <Input
-              type="number"
-              min={0}
-              value={r}
-              onChange={(e) => setR(Math.max(0, parseInt(e.target.value) || 0))}
-              className="w-24"
-            />
-          </div>
-          <p className="text-xs text-muted-foreground pb-2">
-            Work {w} match{w !== 1 ? "es" : ""}, rest {r} match{r !== 1 ? "es" : ""}, repeat.
-          </p>
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleScheduleTeams}
-              disabled={schedulingTeams || !currentEvent || selectedUids.size === 0}
-            >
-              {schedulingTeams ? "Scheduling..." : "Schedule Teams"}
-            </Button>
+          {/* Bottom 1/3: Work/Rest Ratio and Generate Assignments Button */}
+          <div className="flex-1 p-4 rounded-lg bg-card border border-border flex flex-col justify-between">
+            <div className="flex items-end gap-4">
+              <div className="space-y-1.5">
+                <Label>Work (w)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={w}
+                  onChange={(e) => setW(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-24"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Rest (r)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={r}
+                  onChange={(e) => setR(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-24"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground pb-2">
+                Work {w} match{w !== 1 ? "es" : ""}, rest {r} match{r !== 1 ? "es" : ""}, repeat.
+              </p>
+            </div>
             <Button
               onClick={handleGenerate}
               disabled={generating || !currentEvent || selectedUids.size === 0}
+              className="mt-4"
             >
-              {generating ? "Generating..." : "Generate Shifts"}
+              {generating ? "Generating..." : "Generate Assignments"}
             </Button>
           </div>
         </div>
 
-        {/* Scouter selection */}
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Scouters</span>
-              <span className="text-xs text-muted-foreground">
-                {selectedUids.size} / {allScouters.length} selected
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={selectAll} className="text-xs text-primary hover:underline">
-                All
-              </button>
-              <span className="text-xs text-muted-foreground">·</span>
-              <button onClick={selectNone} className="text-xs text-primary hover:underline">
-                None
-              </button>
-            </div>
+        {/* Right Panel - 2/3 width */}
+        <div className="flex-2 flex flex-col">
+          <div className="flex items-center justify-between pb-4">
+            <h2 className="text-xl font-semibold">Match Schedule</h2>
+            <button className="p-1.5 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Jump to last completed match">
+              {/* <ArrowDown className="w-4 h-4" /> */}
+              Jump to Current Match
+            </button>
           </div>
-          <div className="p-3 border-b border-border">
-            <Input
-              placeholder="Search scouters..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {loadingScouters ? (
-              <p className="text-sm text-muted-foreground p-4">Loading scouters...</p>
-            ) : filtered.length === 0 ? (
-              <p className="text-sm text-muted-foreground p-4">No scouters found.</p>
-            ) : (
-              <div className="divide-y divide-border">
-                {filtered.map((s) => (
-                  <label
-                    key={s.uid}
-                    className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-secondary/40 select-none"
-                  >
-                    <Checkbox
-                      checked={selectedUids.has(s.uid)}
-                      onCheckedChange={() => toggleUid(s.uid)}
-                    />
-                    <span className="text-sm flex-1">{s.name}</span>
-                    {s.role === "admin" && (
-                      <span className="text-xs text-muted-foreground">admin</span>
-                    )}
-                  </label>
+          <div className="flex-1 overflow-hidden rounded-lg border border-border">
+            <div className="flex flex-col h-full overflow-hidden relative">
+              <div className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 px-3 py-3 bg-card/50 flex-shrink-0 relative z-10 border-b border-border/50">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Match</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">Red Alliance</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">Blue Alliance</span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Time</span>
+              </div>
+              <div className="h-full overflow-y-auto">
+                {schedule?.map((match: TeamSchedule) => (
+                  <div key={match.matchKey} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
+                    <span className="text-xs font-semibold text-foreground/80">{getMatchLabel(match.matchKey)}</span>
+                    {match.teams.slice(0, 3).map((team: { teamKey: string; teamNumber: number }) => {
+                      const assignmentKey = `${match.matchKey}|${team.teamKey}`;
+                      const isAssigned = assignedMatchTeams.has(assignmentKey);
+                      const scouterName = matchScouterMap[assignmentKey];
+
+                      return (
+                        <TooltipProvider key={team.teamKey}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"}`}>
+                                {team.teamNumber}
+                              </span>
+                            </TooltipTrigger>
+                            {isAssigned && scouterName && (
+                              <TooltipContent className="bg-black border border-gray-500 text-yellow-400">
+                                <p>{scouterName}</p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
+                    {match.teams.slice(3, 6).map((team: { teamKey: string; teamNumber: number }) => {
+                      const assignmentKey = `${match.matchKey}|${team.teamKey}`;
+                      const isAssigned = assignedMatchTeams.has(assignmentKey);
+                      const scouterName = matchScouterMap[assignmentKey];
+
+                      return (
+                        <TooltipProvider key={team.teamKey}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className={`text-xs text-center ${isAssigned ? "text-yellow-500 cursor-help" : "text-gray-500"}`}>
+                                {team.teamNumber}
+                              </span>
+                            </TooltipTrigger>
+                            {isAssigned && scouterName && (
+                              <TooltipContent className="bg-black border border-gray-500 text-yellow-400">
+                                <p>{scouterName}</p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
+                    <span className="text-xs text-muted-foreground text-center">
+                      {new Date(match.predictedTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
                 ))}
               </div>
-            )}
+            </div>
           </div>
         </div>
-
-        {/* No event selected */}
-        {!currentEvent && (
-          <p className="text-sm text-muted-foreground">Select an event to use the scheduler.</p>
-        )}
-
-        {/* Pit team assignments */}
-        {pitAssignments.length > 0 && (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {pitAssignments.length} teams across {Object.keys(pitByUid).length} scouters
-              </p>
-              <Button onClick={handleApplyTeams} disabled={applyingTeams}>
-                {applyingTeams ? "Applying..." : "Apply Team Assignments"}
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {Object.entries(pitByUid).map(([uid, rows]) => (
-                <div
-                  key={uid}
-                  className="rounded-lg border border-border bg-card overflow-hidden"
-                >
-                  <div className="px-4 py-2 bg-secondary/50 border-b border-border flex items-center gap-2">
-                    <span className="text-sm font-medium">{rows[0]?.name || uid}</span>
-                    <span className="text-xs text-muted-foreground">
-                      ({rows.length} team{rows.length !== 1 ? "s" : ""})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 p-3">
-                    {rows
-                      .sort((a, b) => a.teamNumber - b.teamNumber)
-                      .map((a) => (
-                        <div
-                          key={a.teamKey}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary text-xs"
-                          title={a.teamName ?? a.teamKey}
-                        >
-                          <span className="font-medium text-foreground">{a.teamNumber}</span>
-                          {a.teamName && (
-                            <span className="text-muted-foreground max-w-[120px] truncate">
-                              {a.teamName}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Shift assignment results */}
-        {assignments.length > 0 && (
-          <>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {assignments.length} assignments across {Object.keys(byUid).length} scouters
-              </p>
-              <Button onClick={handleApply} disabled={applying}>
-                {applying ? "Applying..." : "Apply Shift Assignments"}
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {Object.entries(byUid).map(([uid, rows]) => (
-                <div
-                  key={uid}
-                  className="rounded-lg border border-border bg-card overflow-hidden"
-                >
-                  <div className="px-4 py-2 bg-secondary/50 border-b border-border flex items-center gap-2">
-                    <span className="text-sm font-medium">{rows[0]?.name || uid}</span>
-                    <span className="text-xs text-muted-foreground">
-                      ({rows.length} match{rows.length !== 1 ? "es" : ""})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 p-3">
-                    {rows
-                      .sort((a, b) => a.matchKey.localeCompare(b.matchKey))
-                      .map((a) => (
-                        <div
-                          key={`${a.matchKey}|${a.teamKey}`}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary text-xs"
-                        >
-                          <span className="font-medium text-muted-foreground">
-                            {getMatchLabel(a.matchKey)}
-                          </span>
-                          <span className="text-foreground">
-                            {a.teamKey?.replace("frc", "")}
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
