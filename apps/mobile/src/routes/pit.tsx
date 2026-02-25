@@ -51,7 +51,7 @@ export function Pit() {
     return null;
   };
 
-  const filteredTeams = teams.filter((team: any) =>
+  const filteredTeams = teams.filter((team: { num: number; name: string; key: string }) =>
     `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -105,7 +105,7 @@ export function Pit() {
             className="h-10 w-10 rounded-full bg-primary p-0"
             size="icon"
             onClick={() => {
-              const team = teams.find((t: any) => t.key === selectedTeam);
+              const team = teams.find((t: { key: string; num: number; name: string }) => t.key === selectedTeam);
               if (!team) return;
 
               navigate({
@@ -134,7 +134,7 @@ export function Pit() {
 
         {showDropdown && filteredTeams.length > 0 && (
           <div className="absolute left-0 right-0 top-full mt-3 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background  shadow-lg">
-            {filteredTeams.map((team: any) => {
+            {filteredTeams.map((team: { key: string; num: number; name: string }) => {
               const badge = getTeamBadge(team.key);
               return (
                 <div
@@ -201,7 +201,7 @@ export function Pit() {
       ) : (() => {
         const assignedTeams = [...teamAssignments.entries()]
           .filter(([, uid]) => uid === currentUserUid)
-          .map(([teamKey]) => teams.find((t: any) => t.key === teamKey))
+          .map(([teamKey]) => teams.find((t: { key: string }) => t.key === teamKey))
           .filter(Boolean) as typeof teams;
 
         if (assignedTeams.length === 0) {
@@ -210,7 +210,7 @@ export function Pit() {
 
         return (
           <div className="flex flex-col">
-            {assignedTeams.map((team: any) => {
+            {assignedTeams.map((team: { key: string; num: number; name: string }) => {
               const badge = getTeamBadge(team.key);
               return (
                 <div

@@ -13,13 +13,10 @@ import { logout } from "@lib/supabase/auth";
 import {
   getLocalUserData,
   changeName,
-  useInviteCode,
+  applyInviteCode,
   fetchUserProfile,
 } from "@lib/supabase/user";
 import { useEvent } from "@lib/context/EventContext";
-import { useTeamData } from "@lib/context/TeamDataContext";
-import { useCompetition } from "@lib/context/CompetitionDataContext";
-import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import { useSync } from "@lib/context/SyncContext";
 import { DashboardPage } from "../pages/home/DashboardPage";
 import { ShiftsPage } from "../pages/home/ShiftsPage";
@@ -106,7 +103,7 @@ function HomePage() {
 
     setApplyingCode(true);
     try {
-      const success = await useInviteCode(inviteCode.trim());
+      const success = await applyInviteCode(inviteCode.trim());
       if (success) {
         toast.success("Role updated! Please sign in again.");
         setInviteCode("");

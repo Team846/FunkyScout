@@ -57,7 +57,7 @@ import supabase from "@lib/supabase/supabase";
 import {
   getLocalUserData,
   changeName,
-  useInviteCode,
+  applyInviteCode,
 } from "@lib/supabase/user";
 
 interface EventListEntry {
@@ -225,7 +225,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!inviteCode.trim()) return;
     setApplyingInvite(true);
     try {
-      await useInviteCode(inviteCode.trim());
+      await applyInviteCode(inviteCode.trim());
       setShowInviteDialog(false);
       setInviteCode("");
     } catch (e) {

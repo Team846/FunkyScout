@@ -217,7 +217,7 @@ export function Match() {
                           (e) => e.team === selectedTeam,
                         );
                         const team = teams.find(
-                          (t: any) => t.key === selectedTeam,
+                          (t: { key: string; num?: number; name?: string }) => t.key === selectedTeam,
                         );
                         return entry ? (
                           <span className="flex w-full min-w-0 items-center gap-1">
@@ -255,7 +255,7 @@ export function Match() {
                         </SelectLabel>
                         {redTeamsInMatch.map((entry) => {
                           const team = teams.find(
-                            (t: any) => t.key === entry.team,
+                            (t: { key: string; num?: number; name?: string }) => t.key === entry.team,
                           );
                           const badge = getAssignmentBadge(entry.team, entry.match);
                           return (
@@ -296,7 +296,7 @@ export function Match() {
                         </SelectLabel>
                         {blueTeamsInMatch.map((entry) => {
                           const team = teams.find(
-                            (t: any) => t.key === entry.team,
+                            (t: { key: string; num?: number; name?: string }) => t.key === entry.team,
                           );
                           const badge = getAssignmentBadge(entry.team, entry.match);
                           return (
@@ -397,7 +397,7 @@ export function Match() {
                 const nexusMatch = nexusMatches.find((nm) => nm.label === matchLabel);
                 const matchTime = nexusMatch?.times.estimatedStartTime
                   ?? (shift.est_time ? shift.est_time * 1000 : null);
-                const team = teams.find((t: any) => t.key === shift.team);
+                const team = teams.find((t: { key: string; num?: number }) => t.key === shift.team);
 
                 return (
                   <div

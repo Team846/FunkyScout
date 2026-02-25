@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
@@ -8,9 +8,6 @@ import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
 
 
-import { getEventTeamData } from "@lib/db";
-import { useEvent } from "@lib/context/EventContext";
-import { AutoPathDisplay } from "../components/AutoPathDisplay";
 
 
 

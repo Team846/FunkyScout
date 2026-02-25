@@ -9,7 +9,7 @@ export const Route = createFileRoute("/verify")({
 });
 
 function VerifyPage() {
-  const [timedOut, setTimedOut] = useState(false);
+  const [, setTimedOut] = useState(false);
   const navigate = useNavigate();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
 

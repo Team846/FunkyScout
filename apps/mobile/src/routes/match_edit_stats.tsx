@@ -222,18 +222,22 @@ function MatchEditStats() {
         setTeamAutos([]);
         return;
       }
-      const autos: TeamAuto[] = raw.map((a: any) => ({
-        name: a.name ?? undefined,
-        description: a.description ?? undefined,
-        climbDuringAuto: a.climbDuringAuto ?? a.climb ?? false,
-        drawing: a.drawing && typeof a.drawing === "object"
-          ? {
-              paths: Array.isArray(a.drawing.paths) ? a.drawing.paths : [],
-              canvasWidth: a.drawing.canvasWidth ?? 400,
-              canvasHeight: a.drawing.canvasHeight ?? 200,
-            }
-          : { paths: [], canvasWidth: 400, canvasHeight: 200 },
-      }));
+      const autos: TeamAuto[] = raw.map((a) => {
+        const item = a as Record<string, unknown>;
+        const drawing = item.drawing as { paths?: unknown[]; canvasWidth?: number; canvasHeight?: number } | null | undefined;
+        return {
+          name: (item.name as string | undefined) ?? undefined,
+          description: (item.description as string | undefined) ?? undefined,
+          climbDuringAuto: (item.climbDuringAuto ?? item.climb ?? false) as boolean,
+          drawing: drawing && typeof drawing === "object"
+            ? {
+                paths: Array.isArray(drawing.paths) ? drawing.paths : [],
+                canvasWidth: drawing.canvasWidth ?? 400,
+                canvasHeight: drawing.canvasHeight ?? 200,
+              }
+            : { paths: [], canvasWidth: 400, canvasHeight: 200 },
+        };
+      });
       setTeamAutos(autos);
       setAutoIndex(0);
     });
@@ -1487,6 +1491,9 @@ function MatchEditStats() {
                         {teamAutos.length > 1
                           ? ` (${(autoIndex ?? 0) + 1} of ${teamAutos.length})`
                           : ""}
+                      </p>
+                      <p className="text-center text-xs text-muted-foreground">
+                        Climb during auto: <span className={currentAuto?.climbDuringAuto ? "text-chart-2 font-medium" : "text-muted-foreground"}>{currentAuto?.climbDuringAuto ? "Yes" : "No"}</span>
                       </p>
                       <div className="flex gap-2">
                         <Button

@@ -1,20 +1,10 @@
 import { useEffect, useState } from "react";
-interface NextShiftData {
-  matchLabel: string;
-  matchKey: string;
-  teamNumber: string;
-  teamKey: string;
-  alliance: "red" | "blue";
-  timeLabel: string;
-  isPastShift: boolean;
-}
 import { useNavigate } from "@tanstack/react-router";
-import { useTeamData } from "@lib/context/TeamDataContext";
+import { useTeamData, type Team } from "@lib/context/TeamDataContext";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { useEvent } from "@lib/context/EventContext";
 import { getLocalUserData } from "@lib/supabase/user";
 import { getUserEventScheduleAssignments, getEventMatchData } from "@lib/db";
-import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { getSession } from "@lib/supabase/auth";
@@ -24,15 +14,9 @@ export function ScoutingPage() {
 
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
-  const [userData, setUserData] = useState(getLocalUserData());
-  const {
-    teams,
-    tbaTeams,
-    loading: teamsLoading,
-    scoutedTeams,
-  } = useTeamData();
-  const { nexusMatches, tbaSchedule } = useCompetition();
-  const { matchPreds } = useAnalytics();
+  const [userData] = useState(getLocalUserData());
+  const { teams } = useTeamData();
+  const { tbaSchedule } = useCompetition();
 
   interface NextShiftData {
     matchLabel: string;
@@ -43,10 +27,8 @@ export function ScoutingPage() {
     timeLabel: string;
     isPastShift: boolean;
   }
-  const [matchLoading, setMatchLoading] = useState(false);
-  const [initialMatchLoading, setInitialMatchLoading] = useState(true);
   const [nextShift, setNextShift] = useState<NextShiftData | null>(null);
-  const [shiftLoading, setShiftLoading] = useState(false);
+  const [, setShiftLoading] = useState(false);
   const [initialShiftLoading, setInitialShiftLoading] = useState(true);
   const [shiftStats, setShiftStats] = useState({
     done: 0,
@@ -141,9 +123,6 @@ export function ScoutingPage() {
             };
           });
   
-          const pastShiftsCount = shiftsWithTimes.filter(
-            (s) => s.matchTime && s.matchTime <= now
-          ).length;
           const futureShiftsCount = shiftsWithTimes.filter(
             (s) => s.matchTime && s.matchTime > now
           ).length;
@@ -367,7 +346,7 @@ export function ScoutingPage() {
                   return nextShift.matchLabel;
                 })();
                 const teamInfo = teams.find(
-                  (team: any) => team.key === nextShift.teamKey
+                  (t: Team) => t.key === nextShift.teamKey
                 );
                 const teamName =
                   teamInfo?.name ?? `Team ${nextShift.teamNumber}`;
@@ -414,7 +393,7 @@ export function ScoutingPage() {
                           Team {nextShift.teamNumber}
                         </p>
                       </div>
-                      <Button className="h-8 w-8 bg-muted p-0">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted" aria-hidden>
                         <svg
                           viewBox="0 0 30 30"
                           style={{ width: 30, height: 30 }}
@@ -435,7 +414,7 @@ export function ScoutingPage() {
                             </clipPath>
                           </defs>
                         </svg>
-                      </Button>
+                      </span>
                     </button>
 
                     <button
@@ -461,7 +440,7 @@ export function ScoutingPage() {
                           </span>
                         </div>
                       </div>
-                      <Button className="h-8 w-8 bg-muted p-0">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted" aria-hidden>
                         <svg
                           viewBox="0 0 30 30"
                           style={{ width: 30, height: 30 }}
@@ -482,7 +461,7 @@ export function ScoutingPage() {
                             </clipPath>
                           </defs>
                         </svg>
-                      </Button>
+                      </span>
                     </button>
                   </>
                 );

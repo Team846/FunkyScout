@@ -77,7 +77,7 @@ export function AutoPathDrawer({
 
         {/* Title - offset for close button */}
         <DialogHeader className="pl-8">
-          <DialogTitle>Auto {autoIndex} Path</DialogTitle>
+          <DialogTitle>Auto {autoIndex + 1} Path</DialogTitle>
         </DialogHeader>
 
         {/* Drawing canvas */}

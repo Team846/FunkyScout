@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
-import { Button } from "@shadcn/ui/components/button.tsx";
 import {
   Select,
   SelectContent,
@@ -11,29 +10,10 @@ import {
 import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
-import { useAnalytics } from "@lib/context/AnalyticsDataContext";
-import { PicklistSelector } from "../../components/PicklistSelector";
-import { canCreatePicklist } from "@lib/utils/permissions";
-import { getLocalUserData } from "@lib/supabase/user";
 import { getMatchData } from "@lib/data/match-data";
 import { getTeams } from "@lib/data/teams";
 import { calculateAllTeamStats } from "@lib/data/matchStats";
-import type { NexusMatch } from "@lib/nexus";
-
-interface NextMatchData {
-  matchLabel: string;
-  matchTime: string;
-  redTeams: number[];
-  blueTeams: number[];
-  ourAlliance: "red" | "blue";
-  winProbability: number | null;
-  isPastMatch: boolean;
-  redScore: number | null;
-  blueScore: number | null;
-  predictedRedScore: number | null;
-  predictedBlueScore: number | null;
-  teamRanks: Record<number, number>;
-}
+import type { EventMatchData, EventTeamData } from "@lib/db";
 
 interface TeamStats {
   teamKey: string;
@@ -55,11 +35,6 @@ const SORT_FIELD_LABELS: Record<SortField, string> = {
   avgClimbPts: "Climb Pts",
 };
 
-const formatMatchTime = (timestamp: number) => {
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-};
-
 const formatTimeAgo = (timestamp: number) => {
   const now = Date.now();
   const diff = now - timestamp;
@@ -73,30 +48,31 @@ const formatTimeAgo = (timestamp: number) => {
   return `${days}d ago`;
 };
 
-const nexusLabelToMatchKey = (label: string): string => {
-  const lower = label.toLowerCase();
-  const qualMatch = lower.match(/qualification\s*(\d+)/);
-  if (qualMatch) return `qm${qualMatch[1]}`;
-  const playoffMatch = lower.match(/playoff\s*(\d+)/);
-  if (playoffMatch) return `sf1m${playoffMatch[1]}`;
-  const finalMatch = lower.match(/final\s*(\d+)/);
-  if (finalMatch) return `f1m${finalMatch[1]}`;
-  return lower.replace(/\s+/g, "");
-};
+interface NextMatchData {
+  matchLabel: string;
+  matchTime: string;
+  redTeams: number[];
+  blueTeams: number[];
+  ourAlliance: "red" | "blue";
+  winProbability: number | null;
+  isPastMatch: boolean;
+  redScore: number | null;
+  blueScore: number | null;
+  predictedRedScore: number | null;
+  predictedBlueScore: number | null;
+  teamRanks: Record<number, number>;
+}
 
 export function DataPage() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
-  const userData = getLocalUserData();
   const { teams, tbaTeams } = useTeamData();
-  const { nexusMatches, tbaSchedule } = useCompetition();
-  const { matchPreds } = useAnalytics();
+  const { tbaSchedule } = useCompetition();
 
+  const [matchScoutingData, setMatchScoutingData] = useState<EventMatchData[]>([]);
+  const [teamData, setTeamData] = useState<EventTeamData[]>([]);
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
   const [initialMatchLoading, setInitialMatchLoading] = useState(true);
-  const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
-  const [matchScoutingData, setMatchScoutingData] = useState<any[]>([]);
-  const [teamData, setTeamData] = useState<any[]>([]);
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -212,74 +188,9 @@ export function DataPage() {
   useEffect(() => {
     if (!currentEvent) return;
 
-    const ourTeamStr = OUR_TEAM.toString();
     const ourTeamKey = `frc${OUR_TEAM}`;
 
     const fetchMatchData = async () => {
-      // Try Nexus first for upcoming matches
-      if (nexusMatches.length > 0) {
-        const ourMatches = nexusMatches.filter(
-          (match: NexusMatch) =>
-            match.redTeams.includes(ourTeamStr) ||
-            match.blueTeams.includes(ourTeamStr)
-        );
-
-        const now = Date.now();
-        const upcomingMatches = ourMatches.filter(
-          (match: NexusMatch) =>
-            !match.times.actualOnFieldTime &&
-            match.times.estimatedStartTime > now
-        );
-
-        if (upcomingMatches.length > 0) {
-          const ourMatch = upcomingMatches.sort(
-            (a: NexusMatch, b: NexusMatch) =>
-              a.times.estimatedStartTime - b.times.estimatedStartTime
-          )[0];
-
-          const isOnRed = ourMatch.redTeams.includes(ourTeamStr);
-          const redTeamNums = ourMatch.redTeams.map((t: string) =>
-            parseInt(t, 10)
-          );
-          const blueTeamNums = ourMatch.blueTeams.map((t: string) =>
-            parseInt(t, 10)
-          );
-
-          const matchKeySuffix = nexusLabelToMatchKey(ourMatch.label);
-          const matchKey = `${currentEvent}_${matchKeySuffix}`;
-
-          let winProb: number | null = null;
-          let predictedRedScore: number | null = null;
-          let predictedBlueScore: number | null = null;
-
-          const statboticsMatch = matchPreds[matchKey];
-          if (statboticsMatch && statboticsMatch.pred) {
-            winProb = isOnRed
-              ? statboticsMatch.pred.red_win_prob
-              : 1 - statboticsMatch.pred.red_win_prob;
-            predictedRedScore = Math.round(statboticsMatch.pred.red_score);
-            predictedBlueScore = Math.round(statboticsMatch.pred.blue_score);
-          }
-
-          setNextMatch({
-            matchLabel: ourMatch.label,
-            matchTime: formatMatchTime(ourMatch.times.estimatedStartTime),
-            redTeams: redTeamNums,
-            blueTeams: blueTeamNums,
-            ourAlliance: isOnRed ? "red" : "blue",
-            winProbability: winProb,
-            isPastMatch: false,
-            redScore: null,
-            blueScore: null,
-            predictedRedScore,
-            predictedBlueScore,
-            teamRanks: {},
-          });
-          return;
-        }
-      }
-
-      // No upcoming match from Nexus, use TBA data for past matches
       if (tbaTeams.length === 0 || Object.keys(tbaSchedule).length === 0) {
         setNextMatch(null);
         return;
@@ -343,10 +254,31 @@ export function DataPage() {
       .finally(() => {
         setInitialMatchLoading(false);
       });
-  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds]);
+  }, [currentEvent, tbaTeams, tbaSchedule]);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden">
+      {/* Next/Last Match (OUR_TEAM) */}
+      {initialMatchLoading ? (
+        <div className="rounded-xl bg-muted px-4 py-3">
+          <p className="text-sm text-muted-foreground">Loading match info...</p>
+        </div>
+      ) : nextMatch ? (
+        <div className="rounded-xl bg-muted px-4 py-3">
+          <p className="text-xs text-muted-foreground mb-1">
+            {nextMatch.isPastMatch ? "Last Match" : "Next Match"}
+          </p>
+          <p className="text-base font-semibold text-primary">
+            {nextMatch.matchLabel} · {nextMatch.matchTime}
+          </p>
+          {nextMatch.redScore !== null && nextMatch.blueScore !== null && (
+            <p className="text-sm text-foreground mt-1">
+              {nextMatch.redScore} – {nextMatch.blueScore}
+            </p>
+          )}
+        </div>
+      ) : null}
+
       {/* Team Statistics */}
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <div className="flex items-center justify-between">

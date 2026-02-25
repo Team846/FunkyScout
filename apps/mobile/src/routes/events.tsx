@@ -86,7 +86,6 @@ function EventsPage() {
             filteredEvents.map((event) => {
               const date = new Date(event.date);
               const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
-              const year = date.getFullYear();
 
               return (
                 <div

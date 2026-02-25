@@ -27,7 +27,10 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const [matchData, setMatchData] = useState<EventMatchData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<string>("");
-  const [teamStats, setTeamStats] = useState<{ opr?: number; epa?: any } | null>(null);
+  const [teamStats, setTeamStats] = useState<{
+    opr?: number;
+    epa?: { total_points?: { mean?: number; sd?: number } } | null;
+  } | null>(null);
   const [nextMatch, setNextMatch] = useState<{ match: string; time?: number } | null>(null);
   const [teamAutos, setTeamAutos] = useState<TeamAutoDisplay[]>([]);
 
@@ -61,19 +64,22 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         if (!Array.isArray(raw)) {
           setTeamAutos([]);
         } else {
-          const autos: TeamAutoDisplay[] = raw.map((a: any) => ({
-            name: a.name ?? undefined,
-            description: a.description ?? undefined,
-            climbDuringAuto: a.climbDuringAuto ?? a.climb ?? false,
-            drawing:
-              a.drawing && typeof a.drawing === "object"
+          const autos: TeamAutoDisplay[] = raw.map((a) => {
+            const item = a as Record<string, unknown>;
+            const drawing = item.drawing as { paths?: unknown[]; canvasWidth?: number; canvasHeight?: number } | null | undefined;
+            return {
+              name: (item.name as string | undefined) ?? undefined,
+              description: (item.description as string | undefined) ?? undefined,
+              climbDuringAuto: (item.climbDuringAuto ?? item.climb ?? false) as boolean,
+              drawing: drawing && typeof drawing === "object"
                 ? {
-                    paths: Array.isArray(a.drawing.paths) ? a.drawing.paths : [],
-                    canvasWidth: a.drawing.canvasWidth ?? 400,
-                    canvasHeight: a.drawing.canvasHeight ?? 200,
+                    paths: Array.isArray(drawing.paths) ? drawing.paths : [],
+                    canvasWidth: drawing.canvasWidth ?? 400,
+                    canvasHeight: drawing.canvasHeight ?? 200,
                   }
                 : undefined,
-          }));
+            };
+          });
           setTeamAutos(autos);
         }
       } else {
@@ -243,16 +249,16 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         <div className="grid grid-cols-2 gap-3">
           {teamStats.opr !== null && teamStats.opr !== undefined && (
             <div className="rounded-xl bg-muted p-4">
-              <p className="text-xs text-muted-foreground mb-1">OPR</p>
-              <p className="text-xl font-bold text-primary">
+              <p className="text-sm text-muted-foreground mb-1">OPR</p>
+              <p className="text-2xl font-bold text-primary">
                 {teamStats.opr.toFixed(1)}
               </p>
             </div>
           )}
           {teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined && (
             <div className="rounded-xl bg-muted p-4">
-              <p className="text-xs text-muted-foreground mb-1">EPA</p>
-              <p className="text-xl font-bold text-primary">
+              <p className="text-sm text-muted-foreground mb-1">EPA</p>
+              <p className="text-2xl font-bold text-primary">
                 {teamStats.epa.total_points.mean.toFixed(1)}
               </p>
             </div>
@@ -261,34 +267,39 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
       )}
       
       {aggregateStats && (<div className="rounded-2xl bg-muted px-5 py-4">
-        <p className="text-s font-semibold text-primary mb-3">CLIMB</p>
-        <div className="flex text-sm flex-col gap-3 rounded-lg ">
-          {<p >Auto Climb: <span className="font-bold text-primary">{(aggregateStats.climb.autoClimbPercentage).toFixed(0)}%</span></p>}
+        <p className="text-base font-semibold text-primary mb-3">CLIMB</p>
+        <div className="flex text-base flex-col gap-3 rounded-lg ">
+          <p>Auto Climb: <span className="font-bold text-primary">{(aggregateStats.climb.autoClimbPercentage).toFixed(0)}%</span></p>
           <div className="flex gap-3 justify-between items-center">
-            {<p>L1: <span className="font-bold text-primary">{(aggregateStats.climb.L1Percentage).toFixed(0)}%</span></p>}
-            {<p>L2: <span className="font-bold text-primary">{aggregateStats.climb.L2Percentage.toFixed(0)}%</span></p>}
-            {<p>L3: <span className="font-bold text-primary">{aggregateStats.climb.L3Percentage.toFixed(0)}%</span></p>}
+            <p>L1: <span className="font-bold text-primary">{(aggregateStats.climb.L1Percentage).toFixed(0)}%</span></p>
+            <p>L2: <span className="font-bold text-primary">{aggregateStats.climb.L2Percentage.toFixed(0)}%</span></p>
+            <p>L3: <span className="font-bold text-primary">{aggregateStats.climb.L3Percentage.toFixed(0)}%</span></p>
           </div>
         </div>
-        
-        
       </div>)}
       <div className="grid grid-cols-2 gap-3">
         {aggregateStats?.averages.auto && (<div className="rounded-2xl bg-muted px-5 py-4">
-          <p className="text-s font-semibold text-primary mb-3">AUTO</p>
+          <p className="text-base font-semibold text-primary mb-3">AUTO</p>
           <div className="flex flex-col gap-3">
-            
-            
-            <p className="text-xs">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.auto.shoots.toFixed(1)}</span></p>
-            <p className="text-xs">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.auto.groundIntakes + aggregateStats.averages.auto.stationIntakes).toFixed(1)}</span></p>
-              
-            </div>
+            <p className="text-sm">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.auto.shoots.toFixed(1)}</span></p>
+            <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.auto.groundIntakes + aggregateStats.averages.auto.stationIntakes).toFixed(1)}</span></p>
+            {aggregateStats?.autoRunCounts && Object.keys(aggregateStats.autoRunCounts).length > 0 && (
+              <div className="pt-1 border-t border-border/50">
+                <p className="text-sm text-muted-foreground mb-1">Auto usage</p>
+                {Object.entries(aggregateStats.autoRunCounts).map(([name, count]) => (
+                  <p key={name} className="text-sm">
+                    {name}: <span className="font-bold text-primary">{count}</span>
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
         </div>)}
           {aggregateStats?.averages.teleop && (<div className="rounded-2xl bg-muted px-5 py-4">
-          <p className="text-s font-semibold text-primary mb-3">TELEOP</p>
+          <p className="text-base font-semibold text-primary mb-3">TELEOP</p>
           <div className="flex flex-col gap-3">
-              <p className="text-xs">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.shoots.toFixed(1)}</span></p>
-              <p className="text-xs">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.teleop.groundIntakes + aggregateStats.averages.teleop.stationIntakes).toFixed(1)}</span></p>
+              <p className="text-sm">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.shoots.toFixed(1)}</span></p>
+              <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.teleop.groundIntakes + aggregateStats.averages.teleop.stationIntakes).toFixed(1)}</span></p>
             </div>
           </div>)}
       </div>
@@ -298,9 +309,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
 
       {/* Match Selector */}
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-foreground">Select Match</p>
+        <p className="text-base font-semibold text-primary">Select Match</p>
         <Select value={selectedMatch} onValueChange={setSelectedMatch}>
-          <SelectTrigger className="w-full h-12 bg-muted border-0">
+          <SelectTrigger className="w-full h-14 bg-muted-foreground/15 border border-border text-base">
             <SelectValue placeholder="Select a match" />
           </SelectTrigger>
           <SelectContent className="bg-muted text-foreground p-2.5">
@@ -414,8 +425,8 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
 
           
             
-            <p className="text-xs text-muted-foreground mb-1">Auto Shoots: <span className="text-primary">{matchStats.auto.shoots}</span></p>
-            <p className="text-xs text-muted-foreground mb-1">Auto Intakes: <span className="text-primary">{matchStats.auto.groundIntakes + matchStats.auto.stationIntakes}</span></p>
+            <p className="text-xs text-muted-foreground mb-1">Shoots: <span className="text-primary">{matchStats.auto.shoots}</span></p>
+            <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.auto.groundIntakes + matchStats.auto.stationIntakes}</span></p>
             
         </div>
           
@@ -428,9 +439,9 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
           <p className="text-sm text-muted-foreground mb-1">
             Teleop Actions: <span className="text-lg font-semibold text-primary">{teleopScore}</span>
           </p>
-          <p className="text-xs text-muted-foreground mb-1">Teleop Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
+          <p className="text-xs text-muted-foreground mb-1">Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
 
-          <p className="text-xs text-muted-foreground mb-1">Teleop Intakes: <span className="text-primary">{matchStats.teleop.groundIntakes + matchStats.teleop.stationIntakes}</span></p>
+          <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.teleop.groundIntakes + matchStats.teleop.stationIntakes}</span></p>
         </div>
         <div className="rounded-lg bg-background p-3">
           <p className="text-xs text-muted-foreground mb-1">Auto Climb</p>
@@ -521,7 +532,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
       )}
 
       {matchDataRaw.notes && (
-        <div className="space-y-1">
+        <div className="space-y-1 p-4 rounded-lg bg-muted/50 border border-border">
           <p className="text-sm font-semibold text-foreground">Notes</p>
           <p className="text-sm text-muted-foreground leading-relaxed">
             {matchDataRaw.notes}

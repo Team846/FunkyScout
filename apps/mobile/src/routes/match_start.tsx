@@ -4,7 +4,6 @@ import React from "react";
 import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { Button } from "@shadcn/ui/components/button.tsx";
-import { json } from "@tanstack/react-router/ssr/client";
 import { getMatchLabel } from "@lib/utils/match";
 import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
@@ -44,9 +43,6 @@ function MatchStart() {
       navigate({ to: "/home" });
     }
   };
-  const toggle = () => {
-    setIsActive(!isActive);
-  };
 
   // Blue alliance starts rotated so field orientation matches red's visual layout
   const [isRotated, setIsRotated] = useState(alliance === 'blue');
@@ -67,7 +63,7 @@ function MatchStart() {
       interval = setInterval(() => {
         setSeconds((prev) => prev + 0.01);
       }, 10);
-      const timerId = setTimeout(() => {
+      setTimeout(() => {
         reset();
       }, 20 * 1000);
     } else if (interval) {

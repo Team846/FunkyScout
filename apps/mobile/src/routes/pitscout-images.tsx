@@ -90,8 +90,14 @@ function PitScoutImagesPage() {
       const userId = session?.user?.id || "unknown";
 
       // Prepare full data with images metadata
+      // Normalize autos: pit scouting uses "climb", team-info expects "climbDuringAuto"
+      const normalizedAutos = (formData.autos || []).map((auto) => ({
+        ...auto,
+        climbDuringAuto: auto.climb ?? false,
+      }));
       const fullData = {
         ...formData,
+        autos: normalizedAutos,
         images: {
           rating,
           description,

@@ -36,7 +36,7 @@ export function PicklistSelector({
         const visiblePicklists = lists.filter((p) =>
           canViewPicklist(
             userData.role || "user",
-            p.type as any,
+            p.type as "public" | "private" | "default",
             p.uid,
             userData.uid
           )

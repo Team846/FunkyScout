@@ -110,7 +110,7 @@ export async function fetchUserProfile(): Promise<LocalUserData | false> {
   return fetchProfilePromise;
 }
 
-export async function useInviteCode(code: string): Promise<boolean> {
+export async function applyInviteCode(code: string): Promise<boolean> {
   try {
     const {
       data: { user },

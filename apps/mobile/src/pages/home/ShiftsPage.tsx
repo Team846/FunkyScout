@@ -14,7 +14,6 @@ import { getLocalUserData } from "@lib/supabase/user";
 import { getMatchLabel } from "@lib/utils/match";
 import {
   getUserEventScheduleAssignments,
-  type EventScheduleEntry,
 } from "@lib/db";
 
 interface ShiftDisplay {

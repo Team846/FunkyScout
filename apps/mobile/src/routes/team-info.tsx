@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Textarea } from "@shadcn/ui/components/textarea.tsx";
@@ -15,7 +15,7 @@ import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import { MatchScoutingTab } from "../components/MatchScoutingTab";
 import type { DrawingData } from "../components/auto-path-drawer/types";
 import { Dialog, DialogContent } from "@shadcn/ui/components/dialog.js";
-import { calculateSingleMatchStats } from "@lib/data/matchStats"
+import { calculateSingleMatchStats, calculateTeamStats } from "@lib/data/matchStats"
 
 
 type TeamInfoSearch = {
@@ -59,8 +59,10 @@ interface PitData {
   autos: Array<{
     name?: string;
     description?: string;
-    climbDuringAuto: boolean;
-    drawing: any;
+    /** @deprecated Use climbDuringAuto - pit scouting historically used "climb" */
+    climb?: boolean;
+    climbDuringAuto?: boolean;
+    drawing: { paths?: unknown[]; canvasWidth?: number; canvasHeight?: number } | null;
   }>;
   images?: {
     rating: number;
@@ -172,7 +174,7 @@ function TeamInfoPage() {
       getEventMatchData(currentEvent, undefined, teamKey),
       getEventTeamData(currentEvent),
       getEventSchedule(currentEvent),
-    ]).then(([matchDataResult, teamDataResult, scheduleResult]) => {
+    ]).then(([matchDataResult]) => {
       console.log("Raw match data count:", matchDataResult.length);
       console.log("Sample record:", matchDataResult[0]);
       console.log("teamKey filter:", teamKey);
@@ -187,6 +189,11 @@ function TeamInfoPage() {
       console.log(matchData)
     });
   }, [currentEvent, teamKey]);
+
+  const aggregateStats = useMemo(
+    () => (teamKey && matchData.length > 0 ? calculateTeamStats(teamKey, matchData) : null),
+    [teamKey, matchData]
+  );
 
   const computeVerifications = (
   pit: PitData,
@@ -504,7 +511,7 @@ function TeamInfoPage() {
       <div className="h-px w-full bg-border mb-3" />
 
       {activeTab === "match" ? (
-        <MatchScoutingTab eventKey={currentEvent} teamKey={teamKey || ""} />
+        <MatchScoutingTab eventKey={currentEvent ?? ""} teamKey={teamKey ?? ""} />
       ) : (
         <>
           {loading ? (
@@ -810,13 +817,10 @@ function TeamInfoPage() {
                   {pitData.autos.map((auto, idx) => (
                     <div key={idx} className="mb-4">
                       <div className="rounded-2xl bg-muted px-6 py-4">
-                        <p className="font-bold text-foreground mb-2">
-                          Auto #{idx + 1}
-                        </p>
                         {editingAutoIndex2 === idx ? (
                           <div className="flex flex-col gap-4 py-2">
                             <div>
-                              <p className="text-primary text-sm mb-2">Name</p>
+                              <p className="text-primary font-semibold mb-2">Name</p>
                               <Input
                                 value={autoNameValue}
                                 onChange={(e) =>
@@ -827,7 +831,7 @@ function TeamInfoPage() {
                               />
                             </div>
                             <div>
-                              <p className="text-primary text-sm mb-2">
+                              <p className="text-primary font-semibold mb-2">
                                 Description
                               </p>
                               <Textarea
@@ -840,7 +844,7 @@ function TeamInfoPage() {
                               />
                             </div>
                             <div>
-                              <p className="text-primary text-sm mb-2">Climb During Auto</p>
+                              <p className="text-primary font-semibold mb-2">Climb During Auto</p>
                               <Toggle
                                 pressed={autoClimbValue}
                                 onPressedChange={setAutoClimbValue}
@@ -870,35 +874,28 @@ function TeamInfoPage() {
                         ) : (
                           <div className="flex flex-col gap-3 py-2">
                             <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                <p className="text-primary text-sm mb-1">
-                                  Name
-                                </p>
-                                <p className=" text-foreground text-base">
-                                  {auto.name || `Auto ${idx + 1}`}
-                                </p>
-                              </div>
-
+                              <p className="text-primary font-semibold flex-1">
+                                Name: <span className="text-foreground font-normal">&quot;{auto.name || `Auto ${idx + 1}`}&quot;</span>
+                              </p>
                               <Button
-                                size="sm"
+                                size="default"
                                 variant="outline"
                                 onClick={() =>
                                   handleEditAuto2(
                                     idx,
                                     auto.name || "",
                                     auto.description || "",
-                                    auto.climbDuringAuto || false
+                                    (auto.climbDuringAuto ?? auto.climb ?? false)
                                   )
                                 }
-                                className="h-7 text-xs"
+                                className="font-medium"
                               >
-                                Edit Auto
+                                Edit Data
                               </Button>
-
                             </div>
                             {auto.description && (
                               <div>
-                                <p className="text-primary text-sm mb-1">
+                                <p className="text-primary font-semibold mb-1">
                                   Description
                                 </p>
                                 <p className="text-muted-foreground text-base leading-relaxed">
@@ -909,13 +906,23 @@ function TeamInfoPage() {
                           </div>
                         )}
                         <div className="h-px bg-border my-2" />
-                        <div className="flex items-center justify-between py-2">
-                          <p className="text-foreground">Climb during auto</p>
-                          <p
-                            className={`font-semibold ${auto.climbDuringAuto ? "text-chart-2" : "text-destructive"}`}
-                          >
-                            {auto.climbDuringAuto ? "Yes" : "No"}
-                          </p>
+                        <div className="flex items-center justify-between gap-4 py-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-primary font-medium">Climb during auto</span>
+                            {(auto.climbDuringAuto ?? auto.climb ?? false) ? (
+                              <svg className="size-5 text-chart-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                            ) : (
+                              <svg className="size-5 text-destructive shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                            )}
+                          </div >
+                          <div className="flex items-center gap-2">
+                          <span className="text-primary font-medium">
+                            Run count: 
+                          </span>
+                          <span className="text-foreground font-medium">
+                            {aggregateStats?.autoRunCounts?.[auto.name ?? `Auto ${idx + 1}`] ?? 0}
+                          </span>
+                          </div>
                         </div>
                         {auto.drawing && (
                           <div className="mt-4">
@@ -924,17 +931,25 @@ function TeamInfoPage() {
                                 Path Visualization
                               </p>
                               <Button
-                                size="sm"
+                                size="default"
                                 variant="outline"
                                 onClick={() => handleEditAuto(idx)}
-                                className="h-7 text-xs"
+                                className="font-medium"
                               >
                                 Edit Path
                               </Button>
                             </div>
                             <div className="w-full bg-background rounded-xl border border-border p-4 flex items-center justify-center">
                               <AutoPathDisplay
-                                drawing={auto.drawing}
+                                drawing={
+                                  auto.drawing && typeof auto.drawing === "object"
+                                    ? {
+                                        paths: Array.isArray(auto.drawing.paths) ? auto.drawing.paths : [],
+                                        canvasWidth: auto.drawing.canvasWidth ?? 400,
+                                        canvasHeight: auto.drawing.canvasHeight ?? 200,
+                                      } as DrawingData
+                                    : { paths: [], canvasWidth: 400, canvasHeight: 200 }
+                                }
                                 alliance="red"
                                 className="max-w-full"
                               />
@@ -944,10 +959,10 @@ function TeamInfoPage() {
                         {!auto.drawing && (
                           <div className="mt-4">
                             <Button
-                              size="sm"
+                              size="default"
                               variant="outline"
                               onClick={() => handleEditAuto(idx)}
-                              className="w-full"
+                              className="w-full font-medium"
                             >
                               Add Auto Path
                             </Button>
@@ -964,6 +979,11 @@ function TeamInfoPage() {
                   >
                     + Add New Auto
                   </Button>
+                  {aggregateStats?.autoRunCounts?.["Custom"] ? (
+                    <p className="text-sm text-muted-foreground mt-3">
+                      Custom auto: {aggregateStats.autoRunCounts["Custom"]} match{aggregateStats.autoRunCounts["Custom"] !== 1 ? "es" : ""}
+                    </p>
+                  ) : null}
                 </div>
               )}
 
@@ -1040,8 +1060,16 @@ function TeamInfoPage() {
         onOpenChange={setDrawerOpen}
         autoIndex={editingAutoIndex ?? 0}
         initialDrawing={
-          editingAutoIndex !== null && pitData?.autos?.[editingAutoIndex]
-            ? pitData.autos[editingAutoIndex].drawing
+          editingAutoIndex !== null && pitData?.autos?.[editingAutoIndex]?.drawing
+            ? (() => {
+                const d = pitData.autos[editingAutoIndex!].drawing;
+                if (!d || typeof d !== "object") return null;
+                return {
+                  paths: Array.isArray(d.paths) ? d.paths : [],
+                  canvasWidth: d.canvasWidth ?? 400,
+                  canvasHeight: d.canvasHeight ?? 200,
+                } as DrawingData;
+              })()
             : null
         }
         onSave={handleSaveAutoDrawing}

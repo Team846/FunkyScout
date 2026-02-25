@@ -147,6 +147,9 @@ export interface TeamStats {
     climbConsistency: number; // % matches with same climb level as mode
   };
 
+  /** How many times each auto was run (selectedAuto name -> count). "Custom" = custom description. */
+  autoRunCounts: Record<string, number>;
+
   // Success rates (requires success field in actions)
   successRates: {
     auto: {
@@ -256,10 +259,14 @@ export function calculateTeamStats(
 
   if (matchStats.length === 0) return null;
 
+  // Count how many times each auto was run
+  const autoRunCounts = calculateAutoRunCounts(teamMatches);
+
   // Aggregate across all matches
   return {
     teamKey,
     matchCount: matchStats.length,
+    autoRunCounts,
     averages: calculateAverageActions(matchStats),
     climb: calculateClimbStats(matchStats),
     ratings: calculateAverageRatings(matchStats),
@@ -295,6 +302,29 @@ export function calculateAllTeamStats(
 }
 
 // ============ HELPER FUNCTIONS ============
+
+/**
+ * Count how many times each auto was run across matches.
+ * selectedAuto -> count for preset autos, "Custom" -> count for custom descriptions.
+ */
+function calculateAutoRunCounts(
+  teamMatches: EventMatchData[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const m of teamMatches) {
+    const raw = m.data_raw as MatchDataRaw | null | undefined;
+    if (!raw) continue;
+    const key = raw.selectedAuto?.trim()
+      ? raw.selectedAuto.trim()
+      : raw.autoDescription?.trim()
+        ? "Custom"
+        : null;
+    if (key) {
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
 
 /**
  * Count actions by type

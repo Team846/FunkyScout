@@ -10,23 +10,15 @@ import {
   CommandEmpty,
 } from "@shadcn/ui/components/command.js";
 import { useEvent } from "@lib/context/EventContext";
-import {
-  getLocalUserData,
-  changeName,
-  useInviteCode,
-  fetchUserProfile,
-} from "@lib/supabase/user";
-import { useTeamData } from "@lib/context/TeamDataContext";
+import { getLocalUserData } from "@lib/supabase/user";
+import { useTeamData, type Team } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { useAnalytics } from "@lib/context/AnalyticsDataContext";
 import type { NexusMatch } from "@lib/nexus";
 import { PicklistSelector } from "../../components/PicklistSelector";
 import { canCreatePicklist } from "@lib/utils/permissions";
 import { getMatchLabel } from "@lib/utils/match";
-import {
-  getUserEventScheduleAssignments,
-  type EventScheduleEntry,
-} from "@lib/db";
+import { getUserEventScheduleAssignments } from "@lib/db";
 
 interface NextMatchData {
   matchLabel: string;
@@ -97,7 +89,7 @@ const nexusLabelToMatchKey = (label: string): string => {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
-  const [userData, setUserData] = useState(getLocalUserData());
+  const [userData] = useState(getLocalUserData());
   const {
     teams,
     tbaTeams,
@@ -108,10 +100,10 @@ export function DashboardPage() {
   const { matchPreds } = useAnalytics();
 
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
-  const [matchLoading, setMatchLoading] = useState(false);
+  const [, setMatchLoading] = useState(false);
   const [initialMatchLoading, setInitialMatchLoading] = useState(true);
   const [nextShift, setNextShift] = useState<NextShiftData | null>(null);
-  const [shiftLoading, setShiftLoading] = useState(false);
+  const [, setShiftLoading] = useState(false);
   const [initialShiftLoading, setInitialShiftLoading] = useState(true);
   const [shiftStats, setShiftStats] = useState({
     done: 0,
@@ -536,7 +528,7 @@ export function DashboardPage() {
                   return nextShift.matchLabel;
                 })();
                 const teamInfo = teams.find(
-                  (team: any) => team.key === nextShift.teamKey
+                  (t: Team) => t.key === nextShift.teamKey
                 );
                 const teamName =
                   teamInfo?.name ?? `Team ${nextShift.teamNumber}`;
@@ -583,7 +575,7 @@ export function DashboardPage() {
                           Team {nextShift.teamNumber}
                         </p>
                       </div>
-                      <Button className="h-8 w-8 bg-muted p-0">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted" aria-hidden>
                         <svg
                           viewBox="0 0 30 30"
                           style={{ width: 30, height: 30 }}
@@ -604,7 +596,7 @@ export function DashboardPage() {
                             </clipPath>
                           </defs>
                         </svg>
-                      </Button>
+                      </span>
                     </button>
 
                     <button
@@ -630,7 +622,7 @@ export function DashboardPage() {
                           </span>
                         </div>
                       </div>
-                      <Button className="h-8 w-8 bg-muted p-0">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted" aria-hidden>
                         <svg
                           viewBox="0 0 30 30"
                           style={{ width: 30, height: 30 }}
@@ -651,7 +643,7 @@ export function DashboardPage() {
                             </clipPath>
                           </defs>
                         </svg>
-                      </Button>
+                      </span>
                     </button>
                   </>
                 );
@@ -1138,14 +1130,14 @@ export function DashboardPage() {
               {teamsLoading ? "Loading teams..." : "No teams found."}
             </CommandEmpty>
             {teams
-              .sort((a: any, b: any) => {
+              .sort((a: Team, b: Team) => {
                 // Sort by rank (ascending), then by team number
                 if (a.rank === 0 && b.rank === 0) return a.num - b.num;
                 if (a.rank === 0) return 1; // unranked teams go last
                 if (b.rank === 0) return -1;
                 return a.rank - b.rank;
               })
-              .map((team: any) => (
+              .map((team: Team) => (
                 <CommandItem
                   key={team.key}
                   className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
