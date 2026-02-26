@@ -20,6 +20,7 @@ import {
   cacheEventSchedule,
   insertPicklistToCache,
   updatePicklistCache,
+  upsertEventTeamDataRows,
   softDeletePicklistCache,
   getEventSchedule,
   getEventMatchData,
@@ -118,8 +119,8 @@ export async function putTeamData(
       deleted_at: null,
     };
 
-    // 1. Cache locally (Tauri SQLite)
-    await invoke("cache_team_data", { data: [teamData] });
+    // 1. Cache locally (Tauri SQLite) — upsert one row, preserves other teams
+    await invoke("cache_pit_scouting_data", { data: [teamData] });
 
     // 2. Add to sync queue
     await invoke("add_to_sync_queue", {
@@ -157,8 +158,9 @@ export async function putTeamData(
     last_modified: now,
   };
 
-  // 1. Write to local SQLite immediately (optimistic)
-  await cacheEventTeamData(eventKey, [teamData]);
+  // 1. Write to local SQLite immediately (optimistic) — use upsert, NOT cacheEventTeamData,
+  //    which would DELETE all teams and insert one (wiping others from local cache)
+  await upsertEventTeamDataRows(eventKey, [teamData]);
 
   // 2. Queue for background sync
   await addToSyncQueue("PUT_TEAM_DATA", {
@@ -793,7 +795,7 @@ export async function putTeamDataWithImages(
     last_modified: now,
   };
 
-  await cacheEventTeamData(eventKey, [teamData]);
+  await upsertEventTeamDataRows(eventKey, [teamData]);
 
   // 4. Queue for background sync with image upload
   await addToSyncQueue("PUT_TEAM_DATA_WITH_IMAGES", {

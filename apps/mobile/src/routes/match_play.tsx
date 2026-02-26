@@ -31,6 +31,7 @@ type MatchType = {
   practice?: boolean | null;
   startX?: number | null;
   startY?: number | null;
+  fieldFlipped?: boolean | null;
 };
 
 export const Route = createFileRoute("/match_play")({
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/match_play")({
       practice: search.practice as boolean | undefined | null,
       startX: search.startX as number | undefined | null,
       startY: search.startY as number | undefined | null,
+      fieldFlipped: search.fieldFlipped as boolean | undefined | null,
     };
   },
 });
@@ -50,7 +52,7 @@ export const Route = createFileRoute("/match_play")({
 function MatchPlay() {
   const { isWrongOrientation } = useOrientation("landscape");
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance, practice, startX, startY } = Route.useSearch();
+  const { teamNum, matchNum, alliance, practice, startX, startY, fieldFlipped } = Route.useSearch();
 
   // Use match-specific sessionStorage key to prevent interference between matches
   const sessionKey = matchNum && teamNum
@@ -70,8 +72,8 @@ function MatchPlay() {
 
   const [isAuto, setIsAuto] = useState(true);
 
-  // Blue alliance starts rotated so cage bar is on same visual side as red
-  const [isRotated, setIsRotated] = useState(alliance === 'blue');
+  // Field flip: inherit from match_start if passed, else blue alliance starts rotated
+  const [isRotated, setIsRotated] = useState(fieldFlipped ?? alliance === 'blue');
 
   const [shake, setShake] = useState(false);
   const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
@@ -151,6 +153,14 @@ function MatchPlay() {
     () => getActiveToggles(matchData.toggleActions),
     [matchData.toggleActions]
   );
+
+  // When disabled is active, all other action buttons are disabled (grayed out, no clicks)
+  const actionsDisabled = activeToggles.disable;
+
+  // Clear pending location action when disable is turned on
+  useEffect(() => {
+    if (actionsDisabled) setPendingLocationAction(null);
+  }, [actionsDisabled]);
 
   // Handle auto→teleop transition: set up dismount timer if auto climb was active
   const prevIsAutoRef = useRef(isAuto);
@@ -299,21 +309,7 @@ function MatchPlay() {
 
   // Add preset action (fuel, station)
   const addPresetAction = (actionType: PresetActionType) => {
-    // Auto-cancel disabled if it's active
-    const updates: Partial<MatchScoutingData> = {};
-
-    if (activeToggles.disable) {
-      const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
-      updates.toggleActions = [
-        ...(matchDataRef.current.toggleActions || []),
-        {
-          type: "disable",
-          timestamp: Date.now(),
-          active: false,
-          phase,
-        },
-      ];
-    }
+    if (actionsDisabled) return;
 
     const newAction: PresetAction = {
       type: actionType,
@@ -323,7 +319,6 @@ function MatchPlay() {
 
     setMatchData((prev) => ({
       ...prev,
-      ...updates,
       presetActions: [...prev.presetActions, newAction],
     }));
 
@@ -335,20 +330,13 @@ function MatchPlay() {
 
   // Toggle action (disable, defend, climb)
   const toggleAction = (actionType: ToggleActionType) => {
+    // When disabled is active, only the disable button (to re-enable) works
+    if (actionsDisabled && actionType !== "disable") return;
+
     const currentlyActive = activeToggles[actionType];
     const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
 
     const newActions: ToggleAction[] = [];
-
-    // Auto-cancel disabled if it's active and we're toggling a different action
-    if (activeToggles.disable && actionType !== "disable") {
-      newActions.push({
-        type: "disable",
-        timestamp: Date.now(),
-        active: false,
-        phase,
-      });
-    }
 
     // Handle climb exclusivity - only one climb level can be active at a time
     if (actionType.startsWith("climb_") && !currentlyActive) {
@@ -392,38 +380,19 @@ function MatchPlay() {
   // Start placing a location action (toggle on/off)
   const startLocationAction = useCallback(
     (actionType: LocationActionType) => {
-      // Auto-cancel disabled if it's active (batched with state update)
-      if (activeToggles.disable) {
-        const phase = isAuto
-          ? "auto"
-          : seconds > 140 - 10
-            ? "endgame"
-            : "teleop";
-        setMatchData((prev) => ({
-          ...prev,
-          toggleActions: [
-            ...prev.toggleActions,
-            {
-              type: "disable",
-              timestamp: Date.now(),
-              active: false,
-              phase,
-            },
-          ],
-        }));
-      }
+      if (actionsDisabled) return;
 
       setPendingLocationAction((prev) =>
         prev === actionType ? null : actionType
       );
       vibrateTap();
     },
-    [activeToggles.disable, isAuto, seconds]
+    [actionsDisabled]
   );
 
   // Handle field click for location actions
   const handleFieldClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!pendingLocationAction || !fieldContainerRef.current) return;
+    if (!pendingLocationAction || !fieldContainerRef.current || actionsDisabled) return;
 
     const rect = fieldContainerRef.current.getBoundingClientRect();
     const pixelX = e.clientX - rect.left;
@@ -799,7 +768,7 @@ function MatchPlay() {
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               onClick={handleRedo}
-              className={`cursor-pointer ${undoStack.length === 0 ? "opacity-30" : ""}`}
+              className={`cursor-pointer ${undoStack.length === 0 ? "opacity-30" : ""} ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
             >
               <g clipPath="url(#clip0_681_274)">
                 <path
@@ -821,7 +790,7 @@ function MatchPlay() {
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               onClick={handleUndo}
-              className={`cursor-pointer ${totalActions === 0 ? "opacity-30" : ""}`}
+              className={`cursor-pointer ${totalActions === 0 ? "opacity-30" : ""} ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
             >
               <g clipPath="url(#clip0_681_272)">
                 <path
@@ -959,7 +928,7 @@ function MatchPlay() {
                 <>
                   {/* Auto climb orientation buttons */}
                   {isAuto && autoClimbActive && (
-                    <div className="absolute flex flex-col gap-3" style={edgeStyle}>
+                    <div className={`absolute flex flex-col gap-3 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`} style={edgeStyle}>
                       {btnOrder.map((o) => (
                         <div
                           key={o}
@@ -978,7 +947,7 @@ function MatchPlay() {
 
                   {/* Teleop climb orientation buttons */}
                   {!isAuto && (teleopClimbActive || teleopClimbOrientation !== null) && (
-                    <div className="absolute flex flex-col gap-3" style={edgeStyle}>
+                    <div className={`absolute flex flex-col gap-3 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`} style={edgeStyle}>
                       {btnOrder.map((o) => (
                         <div
                           key={o}
@@ -997,7 +966,7 @@ function MatchPlay() {
 
                   {/* Dismount button — centered on cage edge, first 10s of teleop */}
                   {!isAuto && autoClimbActiveRef.current && seconds <= 10 && !dismountRecorded && (
-                    <div className="absolute" style={edgeStyle}>
+                    <div className={`absolute ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`} style={edgeStyle}>
                       <div
                         onClick={(e) => { e.stopPropagation(); handleDismount(); }}
                         className="flex items-center justify-center w-20 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 border-[#CDA745] text-[#CDA745]"
@@ -1038,7 +1007,7 @@ function MatchPlay() {
                   activeToggles.defend
                     ? "border-2 border-[#CDA745]"
                     : "border-2 border-[#1E1E1E]"
-                }`}
+                } ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
               >
                 <p
                   className={`rotate-270 text-xs text-outfit ${activeToggles.defend ? "text-[#CDA745]" : "text-muted-foreground"}`}
@@ -1055,7 +1024,7 @@ function MatchPlay() {
 
           {/* Teleop only: Stocking + Pass same size, together = Intake row width */}
           {!isAuto && (
-            <div className="flex gap-2.5 w-full min-w-0 flex-1">
+            <div className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
               <div
                 onClick={() => addPresetAction("stocking")}
                 className="flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
@@ -1082,7 +1051,7 @@ function MatchPlay() {
           )}
 
           {/* Intake + Pass (auto) - same layout as Stocking+Pass */}
-          <div className="flex gap-2.5 w-full min-w-0 flex-1">
+          <div className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
             <div
               onClick={() => startLocationAction("ground_intake")}
               className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
@@ -1135,7 +1104,7 @@ function MatchPlay() {
             )}
           </div>
 
-          <div className="flex gap-2.5 w-full flex-1 min-h-0">
+          <div className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
             <div
               onClick={() => startLocationAction("shoot")}
               className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
@@ -1167,7 +1136,7 @@ function MatchPlay() {
           </div>
 
           {/* Climb row: auto shows Start Climb / Fail; teleop shows L1/L2/L3 or Fail Climb */}
-          <div className="flex gap-2.5 w-full flex-1 min-h-0">
+          <div className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
             {isAuto ? (
               autoClimbActive ? (
                 <div

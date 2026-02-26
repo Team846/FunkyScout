@@ -1,4 +1,4 @@
-import {fetchEventVideo} from "/Users/juliannaumann/Desktop/FunkyScout/lib/tba/index.ts"
+import { fetchEventVideo } from "../tba/index";
 
 
 const data = await fetchEventVideo("2025caav");

@@ -253,20 +253,19 @@ interface PitDataInput {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function extractScoutedClimbLevel(data_raw: unknown): "L1" | "L2" | "L3" | null {
-  const toggles: any[] = (data_raw as any)?.teleopActions ?? [];
-  for (const level of ["L3", "L2", "L1"] as const) {
-    const actionId = `climb_${level}`;
-    const relevant = toggles.filter((a: any) => a.actionId === actionId);
-    if (relevant.length === 0) continue;
-    const lastEnabled = [...relevant].reverse().find((a: any) => a.enabled === true);
-    if (!lastEnabled) continue;
-    const lastEnabledIdx = relevant.indexOf(lastEnabled);
-    const disabledAfter = relevant
-      .slice(lastEnabledIdx + 1)
-      .some((a: any) => a.enabled === false);
-    if (!disabledAfter) return level;
+  const toggles: any[] = ((data_raw as any)?.teleopActions ?? []).filter(
+    (a: any) => a?.actionId?.startsWith?.("climb_L")
+  );
+  if (toggles.length === 0) return null;
+  const sorted = [...toggles].sort((a, b) => a.timestamp - b.timestamp);
+  let level: "L1" | "L2" | "L3" | null = null;
+  for (const a of sorted) {
+    const lvl = a.actionId === "climb_L1" ? "L1" : a.actionId === "climb_L2" ? "L2" : a.actionId === "climb_L3" ? "L3" : null;
+    if (!lvl) continue;
+    if (a.enabled === true) level = lvl;
+    else if (a.enabled === false && level === lvl) level = null;
   }
-  return null;
+  return level;
 }
 
 export function formatMatchKey(matchKey: string): string {

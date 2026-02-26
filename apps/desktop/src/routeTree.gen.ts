@@ -17,6 +17,8 @@ import { Route as SchedulerRouteImport } from './routes/scheduler'
 import { Route as ResetRouteImport } from './routes/reset'
 import { Route as PicklistsRouteImport } from './routes/picklists'
 import { Route as PicklistOpenRouteImport } from './routes/picklist-open'
+import { Route as MatchesRouteImport } from './routes/matches'
+import { Route as MatchPlaybackRouteImport } from './routes/match-playback'
 import { Route as MatchEditTestRouteImport } from './routes/match-edit-test'
 import { Route as ComparisonRouteImport } from './routes/comparison'
 import { Route as IndexRouteImport } from './routes/index'
@@ -63,6 +65,16 @@ const PicklistOpenRoute = PicklistOpenRouteImport.update({
   path: '/picklist-open',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MatchesRoute = MatchesRouteImport.update({
+  id: '/matches',
+  path: '/matches',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MatchPlaybackRoute = MatchPlaybackRouteImport.update({
+  id: '/match-playback',
+  path: '/match-playback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MatchEditTestRoute = MatchEditTestRouteImport.update({
   id: '/match-edit-test',
   path: '/match-edit-test',
@@ -93,6 +105,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/comparison': typeof ComparisonRoute
   '/match-edit-test': typeof MatchEditTestRoute
+  '/match-playback': typeof MatchPlaybackRoute
+  '/matches': typeof MatchesRoute
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
@@ -108,6 +122,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/comparison': typeof ComparisonRoute
   '/match-edit-test': typeof MatchEditTestRoute
+  '/match-playback': typeof MatchPlaybackRoute
+  '/matches': typeof MatchesRoute
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
@@ -124,6 +140,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/comparison': typeof ComparisonRoute
   '/match-edit-test': typeof MatchEditTestRoute
+  '/match-playback': typeof MatchPlaybackRoute
+  '/matches': typeof MatchesRoute
   '/picklist-open': typeof PicklistOpenRoute
   '/picklists': typeof PicklistsRoute
   '/reset': typeof ResetRoute
@@ -141,6 +159,8 @@ export interface FileRouteTypes {
     | '/'
     | '/comparison'
     | '/match-edit-test'
+    | '/match-playback'
+    | '/matches'
     | '/picklist-open'
     | '/picklists'
     | '/reset'
@@ -156,6 +176,8 @@ export interface FileRouteTypes {
     | '/'
     | '/comparison'
     | '/match-edit-test'
+    | '/match-playback'
+    | '/matches'
     | '/picklist-open'
     | '/picklists'
     | '/reset'
@@ -171,6 +193,8 @@ export interface FileRouteTypes {
     | '/'
     | '/comparison'
     | '/match-edit-test'
+    | '/match-playback'
+    | '/matches'
     | '/picklist-open'
     | '/picklists'
     | '/reset'
@@ -187,6 +211,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ComparisonRoute: typeof ComparisonRoute
   MatchEditTestRoute: typeof MatchEditTestRoute
+  MatchPlaybackRoute: typeof MatchPlaybackRoute
+  MatchesRoute: typeof MatchesRoute
   PicklistOpenRoute: typeof PicklistOpenRoute
   PicklistsRoute: typeof PicklistsRoute
   ResetRoute: typeof ResetRoute
@@ -257,6 +283,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PicklistOpenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/matches': {
+      id: '/matches'
+      path: '/matches'
+      fullPath: '/matches'
+      preLoaderRoute: typeof MatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/match-playback': {
+      id: '/match-playback'
+      path: '/match-playback'
+      fullPath: '/match-playback'
+      preLoaderRoute: typeof MatchPlaybackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/match-edit-test': {
       id: '/match-edit-test'
       path: '/match-edit-test'
@@ -299,6 +339,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ComparisonRoute: ComparisonRoute,
   MatchEditTestRoute: MatchEditTestRoute,
+  MatchPlaybackRoute: MatchPlaybackRoute,
+  MatchesRoute: MatchesRoute,
   PicklistOpenRoute: PicklistOpenRoute,
   PicklistsRoute: PicklistsRoute,
   ResetRoute: ResetRoute,

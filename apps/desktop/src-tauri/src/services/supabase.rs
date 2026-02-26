@@ -375,11 +375,18 @@ impl SupabaseService {
                 .await
                 .context("Failed to fetch existing team data for merge")?;
 
-            if response.status().is_success() {
+            let status = response.status();
+            if status.is_success() {
                 let body = response.text().await?;
                 serde_json::from_str(&body).unwrap_or_default()
             } else {
-                vec![]
+                let body = response.text().await.unwrap_or_default();
+                anyhow::bail!(
+                    "[Supabase] Cannot push team data: fetch returned {} (auth/RLS/server error). \
+                     Skipping to avoid overwriting pit scouting. Body: {}",
+                    status,
+                    if body.len() > 200 { format!("{}...", &body[..200]) } else { body }
+                );
             }
         };
 
@@ -483,8 +490,12 @@ impl SupabaseService {
             } else {
                 let status = fetch_response.status();
                 let body = fetch_response.text().await.unwrap_or_default();
-                eprintln!("[Supabase] Schedule SELECT failed (HTTP {}): {} — treating as no existing rows", status, body);
-                vec![]
+                anyhow::bail!(
+                    "[Supabase] Cannot push schedule: fetch returned {} (auth/RLS/server error). \
+                     Skipping to avoid overwriting shift assignments. Body: {}",
+                    status,
+                    if body.len() > 150 { format!("{}...", &body[..150]) } else { body }
+                );
             }
         };
 
@@ -674,7 +685,17 @@ impl SupabaseService {
                     new_data
                 }
             }
-            _ => new_data, // fetch failed — fall back to full write
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                anyhow::bail!(
+                    "[Supabase] Cannot put team data: fetch returned {} (auth/RLS/server error). \
+                     Skipping to avoid overwriting TBA stats. Body: {}",
+                    status,
+                    if body.len() > 150 { format!("{}...", &body[..150]) } else { body }
+                );
+            }
+            Err(e) => return Err(e.into()),
         };
 
         self.upsert_team_data(event, team, merged_data, name, uid).await

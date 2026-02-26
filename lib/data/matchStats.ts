@@ -379,23 +379,28 @@ function analyzeClimbActions(
   }
 
   // --- Teleop climb (L1/L2/L3) ---
-  const teleopClimbActions = teleopActions.filter((a) => a?.actionId?.startsWith("climb_L"));
+  // Walk chronologically: each enabled=true sets level, each enabled=false for that level clears it.
+  // This handles toggles correctly (e.g. L3 on then off, L2 on → final level is L2).
+  const teleopClimbActions = teleopActions
+    .filter((a) => a?.actionId?.startsWith("climb_L"))
+    .sort((a, b) => a.timestamp - b.timestamp);
   let level: "L1" | "L2" | "L3" | null = null;
   let teleopClimbTime: number | null = null;
+  let lastSuccessfulStart: (typeof teleopClimbActions)[0] | null = null;
 
-  if (teleopClimbActions.length > 0) {
-    const lastStart = [...teleopClimbActions].reverse().find((a) => a.enabled === true);
-    if (lastStart) {
-      const lastStartIdx = teleopClimbActions.indexOf(lastStart);
-      const failAfter = teleopClimbActions.slice(lastStartIdx + 1).some((a) => a.enabled === false);
-      if (!failAfter) {
-        if (lastStart.actionId === "climb_L1") level = "L1";
-        else if (lastStart.actionId === "climb_L2") level = "L2";
-        else if (lastStart.actionId === "climb_L3") level = "L3";
-        // timestamp is ms from teleop start (0-140000ms)
-        teleopClimbTime = Math.max(0, 140 - lastStart.timestamp / 1000);
-      }
+  for (const a of teleopClimbActions) {
+    const lvl = a.actionId === "climb_L1" ? "L1" : a.actionId === "climb_L2" ? "L2" : a.actionId === "climb_L3" ? "L3" : null;
+    if (!lvl) continue;
+    if (a.enabled === true) {
+      level = lvl;
+      lastSuccessfulStart = a;
+    } else if (a.enabled === false && level === lvl) {
+      level = null;
+      lastSuccessfulStart = null;
     }
+  }
+  if (lastSuccessfulStart) {
+    teleopClimbTime = Math.max(0, 140 - lastSuccessfulStart.timestamp / 1000);
   }
 
   // Count failed teleop climb attempts (enabled=true with a subsequent enabled=false)

@@ -286,7 +286,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, dbInitialized, fetchTeams, isOnline]);
 
-  // Fetch scouted teams and assignments when event changes
+  // Fetch scouted teams and assignments when event changes AND after initial load completes
+  // (On new mount, getEventTeamData can run before fetchTeams populates SQLite — re-run when initialLoading becomes false)
   useEffect(() => {
     if (!currentEvent || !dbInitialized) {
       setScoutedTeams(new Set());
@@ -298,14 +299,12 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       const scouted = new Set(
         data
           .filter((t: EventTeamData) => {
-            // Only count as scouted if name is registered (someone submitted pit data)
             return !!t.name;
           })
           .map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
 
-      // Build assignment map
       const assignments = new Map<string, string>();
       data.forEach((t: EventTeamData) => {
         if (t.assigned) {
@@ -314,7 +313,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       });
       setTeamAssignments(assignments);
     });
-  }, [currentEvent, dbInitialized]);
+  }, [currentEvent, dbInitialized, initialLoading]);
 
   // No realtime subscription for event_team_data on mobile — pit scouting data
   // submitted by this device is already in local SQLite immediately, and TBA/EPA

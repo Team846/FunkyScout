@@ -57,12 +57,27 @@ export async function bootstrapEvent(eventKey: string) {
     );
   }
 
-  // Store team key and team_name from TBA
+  // Fetch existing event_team_data to preserve pit scouting — never overwrite with {}
+  const { data: existingRows } = await supabase
+    .from("event_team_data")
+    .select("team, data")
+    .eq("event", eventKey);
+
+  const existingByTeam = new Map<string, Record<string, unknown>>();
+  for (const row of existingRows ?? []) {
+    const team = row?.team as string;
+    const data = row?.data;
+    if (team && data && typeof data === "object" && !Array.isArray(data)) {
+      existingByTeam.set(team, data as Record<string, unknown>);
+    }
+  }
+
+  // Upsert: preserve existing pit scouting for existing teams, use {} only for new teams
   const rows = teams.map((t) => ({
     event: eventKey,
     team: t.key,
     team_name: t.name, // Team nickname from TBA
-    data: {}, // Empty object for pit scouting data (filled later)
+    data: existingByTeam.get(t.key) ?? {}, // Preserve pit scouting; empty only for new teams
   }));
   const { error: teamsError } = await supabase
     .from("event_team_data")

@@ -97,6 +97,7 @@ export function TabProvider({ children, router }: TabProviderProps) {
       "/dashboard": "Event Dashboard",
       "/shifts": "Shifts",
       "/picklists": "Picklists",
+      "/matches": "Matches",
       "/comparison": "Comparison",
       "/match-edit-test": "Match Edit",
       "/scouter-ratings": "Scouter Ratings",
@@ -106,7 +107,9 @@ export function TabProvider({ children, router }: TabProviderProps) {
 
     const unsubscribe = router.subscribe("onBeforeLoad", (event: any) => {
       const pathname = event.toLocation?.pathname as string | undefined;
+      const search = event.toLocation?.search as Record<string, string> | undefined;
       if (!pathname) return;
+      if (pathname === "/matches" && search?.match) return;
       const title = pathToTitle[pathname];
       if (title) {
         addTab(pathname, title);

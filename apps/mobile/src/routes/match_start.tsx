@@ -261,6 +261,7 @@ function MatchStart() {
                 practice: practice,
                 startX: coordinates![0],
                 startY: coordinates![1],
+                fieldFlipped: isRotated,
               },
             });
           }}

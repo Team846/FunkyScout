@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Textarea } from "@shadcn/ui/components/textarea.tsx";
@@ -119,6 +119,93 @@ function VerificationBadge({ item }: { item: VerificationItem }) {
 
   return null;
 }
+
+/**
+ * Fetches image via fetch() and displays via blob URL.
+ * Works around COEP (require-corp) which blocks cross-origin img src from Supabase Storage.
+ * Uses Intersection Observer for lazy loading to limit Supabase egress.
+ */
+function PitImageWithRetry({
+  path,
+  teamNum,
+  idx,
+  onZoom,
+}: {
+  path: string;
+  teamNum: string | number;
+  idx: number;
+  onZoom: (url: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting || blobUrl || errored) return;
+        const url = getImageUrl(path);
+        fetch(url, { mode: "cors" })
+          .then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.blob();
+          })
+          .then((blob) => {
+            setBlobUrl(URL.createObjectURL(blob));
+          })
+          .catch(() => setErrored(true));
+      },
+      { rootMargin: "100px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [path, blobUrl, errored]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
+
+  if (errored) {
+    return (
+      <div
+        className="aspect-square rounded-xl overflow-hidden bg-muted flex items-center justify-center"
+        role="img"
+        aria-label={`Team ${teamNum} image ${idx + 1} unavailable`}
+      >
+        <span className="text-xs text-muted-foreground text-center px-2">Image unavailable</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="aspect-square rounded-xl overflow-hidden bg-muted flex items-center justify-center"
+      onClick={blobUrl ? () => onZoom(blobUrl) : undefined}
+      role={blobUrl ? "button" : undefined}
+      tabIndex={blobUrl ? 0 : undefined}
+      onKeyDown={blobUrl ? (e) => e.key === "Enter" && onZoom(blobUrl) : undefined}
+      style={{ cursor: blobUrl ? "pointer" : "default" }}
+    >
+      {blobUrl ? (
+        <img
+          src={blobUrl}
+          alt={`Team ${teamNum} - ${idx + 1}`}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <span className="text-xs text-muted-foreground">Loading…</span>
+      )}
+    </div>
+  );
+}
+
 function TeamInfoPage() {
   const navigate = useNavigate();
   const { teamKey } = Route.useSearch();
@@ -591,8 +678,8 @@ function TeamInfoPage() {
                   {zoomImagePath &&
                     <img
                     src={zoomImagePath}
+                    alt="Zoomed pit image"
                     className="w-full h-full object-cover transition-transform duration-300 ease-out hover:scale-150"
-                    crossOrigin="anonymous"
                     style={{ transformOrigin: `${mouseX ?? 50}% ${mouseY ?? 50}%`, transform: `scale(${isZoomed ? 1.5 : 1})` }}
                     onPointerMove={
                       (event) => {
@@ -622,18 +709,13 @@ function TeamInfoPage() {
                       {pitData.images.files
                         .filter((img) => img.uploaded)
                         .map((img, idx) => (
-                          <div
-                            key={idx}
-                            className="aspect-square rounded-xl overflow-hidden bg-muted"
-                          >
-                            <img
-                              src={getImageUrl(img.path)}
-                              onClick={() => {setZoomImagePath(getImageUrl(img.path))}}
-                              alt={`Team ${teamNum} - ${idx + 1}`}
-                              className="w-full h-full object-cover"
-                              crossOrigin="anonymous"
-                            />
-                          </div>
+                          <PitImageWithRetry
+                            key={img.path}
+                            path={img.path}
+                            teamNum={teamNum}
+                            idx={idx}
+                            onZoom={(url) => setZoomImagePath(url)}
+                          />
                         ))}
                     </div>
                   </div>

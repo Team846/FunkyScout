@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Calendar,
   ListOrdered,
+  Play,
   GitCompare,
   CalendarClock,
   Cloud,
@@ -70,6 +71,7 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", activePaths: ["/dashboard"] },
   { icon: Calendar, label: "Shifts", path: "/shifts", activePaths: ["/shifts"] },
   { icon: ListOrdered, label: "Picklists", path: "/picklists", activePaths: ["/picklists", "/picklist-open"] },
+  { icon: Play, label: "Matches", path: "/matches", activePaths: ["/matches"] },
   { icon: CalendarClock, label: "Scheduler", path: "/scheduler", activePaths: ["/scheduler"] },
   { icon: GitCompare, label: "Comparisons", path: "/comparison", activePaths: ["/comparison"] },
 ];

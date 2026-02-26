@@ -4,7 +4,7 @@
 use crate::AppState;
 use sea_orm::sqlx::{self, Row};
 use serde_json::Value as JsonValue;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tauri::State;
 
 /// Team data from SQLite cache
