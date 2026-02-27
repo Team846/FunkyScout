@@ -83,7 +83,7 @@ function MatchStart() {
       {/* {teamNum && <span className="text-foreground"> | {teamNum}</span>} */}
       {/* {matchNum && <span className="text-foreground"> | {matchNum}</span>} */}
       <div className="flex flex-row w-screen h-screen gap-5 p-5">
-      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-card gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
@@ -232,7 +232,7 @@ function MatchStart() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-card border-2 border-[#1E1E1E]">
         <p className="p-2 text-muted-foreground text-sm w-">
           Please select robot starting position on field!
         </p>
@@ -275,7 +275,7 @@ function MatchStart() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-card border-2 border-[#1E1E1E]">
         <p className="text-xs text-[#CDA745]">
           {Math.round(seconds) + "/" + "20"}
         </p>

@@ -9,22 +9,22 @@
 
 :root {
   --radius: 0.65rem;
-  --background: oklch(99% 0 0);
+  --background: oklch(93% 0.01 86);
   --foreground: oklch(20% 0 0);
-  --card: oklch(100% 0 0);
+  --card: oklch(99.5% 0.005 86);
   --card-foreground: oklch(20% 0 0);
   --popover: oklch(100% 0 0);
   --popover-foreground: oklch(14.5% 0 0);
   --primary-foreground: oklch(14.5% 0 0);
   --primary: oklch(79.5% 0.184 86.047);
-  --secondary: oklch(97% 0 0);
+  --secondary: oklch(92% 0.015 86);
   --secondary-foreground: oklch(20.5% 0 0);
   --muted: oklch(97% 0 0);
   --muted-foreground: oklch(55% 0 0);
   --accent: oklch(97% 0 0);
   --accent-foreground: oklch(20.5% 0 0);
   --destructive: oklch(57.7% 0.245 27.325);
-  --border: oklch(92.2% 0 0);
+  --border: oklch(87% 0.008 86);
   --input: oklch(100% 0 0);
   --ring: oklch(0.795 0.184 86.047);
   --chart-1: oklch(0.488 0.243 264.376);

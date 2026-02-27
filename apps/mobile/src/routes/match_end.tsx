@@ -68,7 +68,7 @@ function MatchEnd() {
       {/* {teamNum && <span className="text-foreground"> | {teamNum}</span>} */}
       {/* {matchNum && <span className="text-foreground"> | {matchNum}</span>} */}
       <div className="flex flex-row w-screen h-screen gap-5 p-5">
-      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-card gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}
@@ -188,17 +188,17 @@ function MatchEnd() {
         </div>
       </div>
 
-      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-black-950">
+      <div className="flex flex-col justify-center items-center w-[35vw] h-full gap-[10px] p-[10px] rounded-[15px] bg-card">
         <Button
           variant="secondary"
-          className="w-full h-full border-[#CDA745] bg-black-950 border-2 hover:bg-[#CDA745]/10 px-8"
+          className="w-full h-full border-[#CDA745] bg-card border-2 hover:bg-[#CDA745]/10 px-8"
           onClick={handleGoToSummary}
         >
           <p className="text-[18px] text-[#CDA745] leading-tight">Go to Match Summary</p>
         </Button>
       </div>
 
-      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-card border-2 border-[#1E1E1E]">
         <p className="text-xs text-[#CDA745]">
           Done
         </p>
