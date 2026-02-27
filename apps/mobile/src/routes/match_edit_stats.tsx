@@ -87,8 +87,8 @@ function MatchEditStats() {
   }, [fromMatchEnd]);
 
   useEffect(() => {
-    if (teamAutos.length > 0) setAutoSelectOpen(true);
-  }, [teamAutos.length]);
+    setAutoSelectOpen(true); // Always show auto section (selection or description)
+  }, []);
 
   // Load match data - check both sessionStorage (from match_play) and Supabase (for editing)
   useEffect(() => {
@@ -1403,9 +1403,8 @@ function MatchEditStats() {
               </div>
             </div>
 
-            {/* Auto Selection - show when team has pit autos, below ratings above notes */}
-            {teamAutos.length > 0 && (
-              <Collapsible open={autoSelectOpen} onOpenChange={setAutoSelectOpen}>
+            {/* Auto - selection when pit autos exist, otherwise description only */}
+            <Collapsible open={autoSelectOpen} onOpenChange={setAutoSelectOpen}>
                 <div className="rounded-2xl bg-muted p-6 space-y-4">
                   <CollapsibleTrigger asChild>
                     <button
@@ -1413,7 +1412,7 @@ function MatchEditStats() {
                       className="flex w-full items-center justify-between text-left"
                     >
                       <h2 className="text-lg font-semibold text-primary">
-                        Auto selection
+                        Auto
                       </h2>
                       {autoSelectOpen ? (
                         <ChevronUp className="size-5 text-muted-foreground" />
@@ -1424,6 +1423,8 @@ function MatchEditStats() {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="pt-2 space-y-4">
+                      {teamAutos.length > 0 ? (
+                      <>
                       <div className="flex items-center justify-center gap-2">
                         <button
                           type="button"
@@ -1523,11 +1524,27 @@ function MatchEditStats() {
                           />
                         </div>
                       )}
+                      </>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">Describe what the team did in auto</p>
+                          <Input
+                            value={matchData?.autoDescription ?? ""}
+                            onChange={(e) =>
+                              setMatchData({
+                                ...matchData!,
+                                autoDescription: e.target.value || null,
+                              })
+                            }
+                            placeholder="e.g. Drove to wing, scored 2"
+                            className="bg-background border-border"
+                          />
+                        </div>
+                      )}
                     </div>
                   </CollapsibleContent>
                 </div>
               </Collapsible>
-            )}
 
             {/* Notes */}
             <div className="rounded-2xl bg-muted p-6 space-y-4">

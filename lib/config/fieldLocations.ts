@@ -19,14 +19,14 @@ export type FieldCoords = [number, number];
  * All coordinates are the same for red/blue - inversion happens on field rotation
  *
  * STATION_INTAKE & STOCKING: [0.05, 0.9] - Bottom-left area
- * CLIMB: [0.05, 0.6] - Left side, mid-height
+ * CLIMB: [0.05, 0.5] - Left side, vertical center
  * DEPOT: [0.05, 0.3] - Left side, upper area
  * SHOOT: [0.5, 0.5] - Center field
  */
 export const PRESET_ACTION_LOCATIONS = {
   station_intake: [0.05, 0.9] as FieldCoords,
   stocking: [0.05, 0.9] as FieldCoords,
-  climb: [0.05, 0.6] as FieldCoords,
+  climb: [0.05, 0.5] as FieldCoords,
   bump: [0.05, 0.3] as FieldCoords,
   shoot: [0.5, 0.5] as FieldCoords,
 };

@@ -110,7 +110,7 @@ export function transformMatchData(
     driverRating: scoutingData.postMatch?.ratings?.driver, // Extract driver rating to top level
     notes: scoutingData.notes,
     selectedAuto: scoutingData.selectedAuto ?? undefined,
-    autoDescription: scoutingData.autoDescription ?? undefined
+    autoDescription: scoutingData.autoDescription ?? undefined,
   };
 }
 

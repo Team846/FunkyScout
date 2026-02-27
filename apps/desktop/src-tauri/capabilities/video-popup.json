@@ -1,0 +1,9 @@
+{
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "video-popup",
+    "description": "Capability for video popup windows",
+    "windows": ["match-video-*"],
+    "permissions": ["core:default", "core:window:default",
+        "core:window:allow-set-fullscreen", "core:window:allow-close",
+        "core:window:allow-toggle-maximize", "core:window:allow-minimize"]
+}

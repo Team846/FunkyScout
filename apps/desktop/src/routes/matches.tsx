@@ -9,7 +9,9 @@ import type { TBATeam } from "../contexts/DesktopTeamDataContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
-import { Search, ChevronLeft, ChevronRight, CornerDownLeft } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, CornerDownLeft, Maximize2, ExternalLink } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
 import { fetchEventVideo } from "@lib/tba/video";
@@ -289,7 +291,8 @@ function getFailedClimbCount(
 
 function getMatchedAutoForTeam(
   md: { data_raw?: Record<string, unknown> | null } | undefined,
-  teamAutos: TeamAutoDisplay[]
+  teamAutos: TeamAutoDisplay[],
+  playbackMode?: boolean
 ): { label: string; drawing: DrawingData | null; name?: string; description?: string } {
   const raw = md?.data_raw as MatchDataRaw | undefined;
   if (raw?.selectedAuto && teamAutos.length > 0) {
@@ -312,6 +315,10 @@ function getMatchedAutoForTeam(
   }
   if (raw?.autoDescription?.trim()) {
     return { label: raw.autoDescription, drawing: null };
+  }
+  // Playback: only use match data; never fall back to pit autos
+  if (playbackMode && md) {
+    return { label: "No auto data", drawing: null };
   }
   const firstAuto = teamAutos[0];
   if (firstAuto?.description?.trim()) {
@@ -412,11 +419,11 @@ function MatchPlaybackView({
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [phase, setPhase] = useState<"auto" | "teleop" | "full">("full");
 
-  // Reset progress to 0 when switching phase or entering match
+  // Reset progress to 0 when switching phase, entering match, or selecting a different team
   useEffect(() => {
     setProgress(0);
     setPlaying(false);
-  }, [phase, matchKey]);
+  }, [phase, matchKey, selectedTeam]);
   const [viewMode, setViewMode] = useState<"field" | "video">("field");
 
   const tbaMatchKey = matchKey.includes("_") ? matchKey : currentEvent ? `${currentEvent}_${matchKey}` : matchKey;
@@ -428,6 +435,7 @@ function MatchPlaybackView({
   const rafRef = useRef<number | undefined>(undefined);
   const startTimeRef = useRef<number>(0);
   const lastProgressRef = useRef(0);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
 
   const selectedRaw = selectedTeam ? (teamDataByTeam.get(selectedTeam)?.data_raw as MatchDataRaw | undefined) : null;
   const waypoints = useMemo(
@@ -509,49 +517,63 @@ function MatchPlaybackView({
               .filter((s) => s.alliance === "blue")
               .map((s) => {
                 const md = teamDataByTeam.get(s.team);
+                const hasScoutedData = !!md?.data_raw;
                 const teamAutos = getTeamAutos(pitScoutingByTeam.get(s.team));
-                const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(md, teamAutos);
+                const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
                 const tbaClimb = climbForMatch[s.team]?.auto_climb ?? null;
                 const climbLabel = tbaClimb ?? "None";
                 const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
                 const autoShoots = matchStats?.auto?.shoots ?? null;
+                const isSelected = selectedTeam === s.team;
                 return (
                   <div
                     key={s.team}
-                    className="rounded-xl border-4 border-blue-500 bg-blue-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedTeam(s.team)}
+                    onKeyDown={(e) => e.key === "Enter" && setSelectedTeam(s.team)}
+                    className={`rounded-xl border-4 bg-blue-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-blue-500"}`}
+                    style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
                   >
                     <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
-                    <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
-                      {drawing ? (
-                        <AutoPathPreview drawing={drawing} alliance="blue" className="w-full h-full max-w-full max-h-full" />
-                      ) : (
-                        <p className="text-sm text-center px-1 line-clamp-3">
-                          {name != null ? (
-                            <>
-                              <span className="text-primary">{name}</span>
-                              {description != null && <span className="text-muted-foreground">: {description}</span>}
-                            </>
+                    {hasScoutedData ? (
+                      <>
+                        <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
+                          {drawing ? (
+                            <AutoPathPreview drawing={drawing} alliance="blue" className="w-full h-full max-w-full max-h-full" />
+                          ) : (description || (autoLabel && autoLabel !== "No auto data")) ? (
+                            <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground line-clamp-4 w-full">
+                              <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                            </div>
                           ) : (
-                            <span className="text-muted-foreground">{autoLabel}</span>
+                            <p className="text-sm text-center px-1 line-clamp-3">
+                              {name != null ? (
+                                <span className="text-primary">{name}</span>
+                              ) : (
+                                <span className="text-muted-foreground">{autoLabel}</span>
+                              )}
+                            </p>
                           )}
-                        </p>
-                      )}
-                    </div>
-                    {drawing && (
-                      <p className="text-xs truncate shrink-0 mt-1 text-center">
-                        {name != null ? (
-                          <>
-                            <span className="text-primary">{name}</span>
-                            {description != null && <span className="text-muted-foreground">: {description}</span>}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">{autoLabel}</span>
+                        </div>
+                        {drawing && (
+                          <p className="text-xs truncate shrink-0 mt-1 text-center">
+                            {name != null ? (
+                              <>
+                                <span className="text-primary">{name}</span>
+                                {description != null && <span className="text-muted-foreground">: {description}</span>}
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">{autoLabel}</span>
+                            )}
+                          </p>
                         )}
-                      </p>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No match data</div>
                     )}
                     <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
-                      <span className="text-primary">Climb:</span> {climbLabel}
-                      {autoShoots != null && (
+                      <span className="text-primary">Auto Climb:</span> {climbLabel}
+                      {hasScoutedData && autoShoots != null && (
                         <>
                           <span className="text-muted-foreground mx-1">|</span>
                           <><span className="text-foreground">{autoShoots}</span> <span className="text-primary">shoots</span></>
@@ -565,7 +587,8 @@ function MatchPlaybackView({
 
         {/* Center column — playback + field/video only, at top */}
         <div className="flex flex-col shrink-0 self-start gap-3" style={{ width: fieldContainerWidth }}>
-          {/* Phase filter + playback */}
+          {/* Phase filter + playback — hidden when viewing video */}
+          {viewMode === "field" && (
           <div className="flex flex-col gap-2">
             <div className="flex gap-2 justify-center">
               {(["auto", "teleop", "full"] as const).map((p) => (
@@ -621,12 +644,13 @@ function MatchPlaybackView({
                 onChange={(e) => setSpeed(Number(e.target.value))}
                 className="bg-background border border-border rounded px-2 py-1 text-sm shrink-0"
               >
-                {[1, 2, 4, 8].map((s) => (
+                {[0.5, 1, 2, 4].map((s) => (
                   <option key={s} value={s}>{s}x</option>
                 ))}
               </select>
             </div>
           </div>
+          )}
           {/* Field / Video */}
           <div className="flex items-center justify-center gap-2 min-w-0">
           <button
@@ -740,14 +764,54 @@ function MatchPlaybackView({
             </svg>
               </div>
             ) : youtubeId ? (
-              <div className="relative inline-block bg-black rounded-lg overflow-hidden" style={{ width: fieldContainerWidth, maxWidth: "100%", aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
-                <iframe
-                  title={`Match video ${matchKey}`}
-                  src={`https://www.youtube.com/embed/${youtubeId}`}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  className="absolute inset-0 w-full h-full"
-                />
+              <div className="flex flex-col gap-1.5" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
+                <div ref={videoContainerRef} className="relative bg-black rounded-lg overflow-hidden w-full" style={{ aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
+                  <iframe
+                    title={`Match video ${matchKey}`}
+                    src={`https://www.youtube.com/embed/${youtubeId}`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="absolute inset-0 w-full h-full"
+                  />
+                </div>
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    title="Open in browser"
+                    onClick={() => openUrl(`https://www.youtube.com/watch?v=${youtubeId}`)}
+                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    title="Pop out video"
+                    onClick={() => {
+                      const label = `match-video-${Date.now()}`;
+                      const url = `https://www.youtube.com/watch?v=${youtubeId}`;
+                      console.log("[Video] Creating popup window", { label, url });
+                      try {
+                        const win = new WebviewWindow(label, {
+                          url,
+                          title: "Match Video",
+                          width: 1280,
+                          height: 720,
+                          resizable: true,
+                          center: true,
+                        });
+                        win.once("tauri://created", () => console.log("[Video] Popup created successfully"));
+                        win.once("tauri://error", (e) => console.error("[Video] Popup creation error", e));
+                      } catch (err) {
+                        console.error("[Video] WebviewWindow constructor threw", err);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors"
+                  >
+                    <Maximize2 className="size-3.5" />
+                    Pop Out
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center rounded-lg border border-border bg-muted/30 text-muted-foreground text-sm" style={{ width: fieldContainerWidth, maxWidth: "100%", aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
@@ -772,49 +836,63 @@ function MatchPlaybackView({
               .filter((s) => s.alliance === "red")
               .map((s) => {
                 const md = teamDataByTeam.get(s.team);
+                const hasScoutedData = !!md?.data_raw;
                 const teamAutos = getTeamAutos(pitScoutingByTeam.get(s.team));
-                const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(md, teamAutos);
+                const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
                 const tbaClimb = climbForMatch[s.team]?.auto_climb ?? null;
                 const climbLabel = tbaClimb ?? "None";
                 const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
                 const autoShoots = matchStats?.auto?.shoots ?? null;
+                const isSelected = selectedTeam === s.team;
                 return (
                   <div
                     key={s.team}
-                    className="rounded-xl border-4 border-red-500 bg-red-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedTeam(s.team)}
+                    onKeyDown={(e) => e.key === "Enter" && setSelectedTeam(s.team)}
+                    className={`rounded-xl border-4 bg-red-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-red-500"}`}
+                    style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
                   >
                     <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
-                    <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
-                      {drawing ? (
-                        <AutoPathPreview drawing={drawing} alliance="red" className="w-full h-full max-w-full max-h-full" />
-                      ) : (
-                        <p className="text-sm text-center px-1 line-clamp-3">
-                          {name != null ? (
-                            <>
-                              <span className="text-primary">{name}</span>
-                              {description != null && <span className="text-muted-foreground">: {description}</span>}
-                            </>
+                    {hasScoutedData ? (
+                      <>
+                        <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
+                          {drawing ? (
+                            <AutoPathPreview drawing={drawing} alliance="red" className="w-full h-full max-w-full max-h-full" />
+                          ) : (description || (autoLabel && autoLabel !== "No auto data")) ? (
+                            <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground line-clamp-4 w-full">
+                              <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                            </div>
                           ) : (
-                            <span className="text-muted-foreground">{autoLabel}</span>
+                            <p className="text-sm text-center px-1 line-clamp-3">
+                              {name != null ? (
+                                <span className="text-primary">{name}</span>
+                              ) : (
+                                <span className="text-muted-foreground">{autoLabel}</span>
+                              )}
+                            </p>
                           )}
-                        </p>
-                      )}
-                    </div>
-                    {drawing && (
-                      <p className="text-xs truncate shrink-0 mt-1 text-center">
-                        {name != null ? (
-                          <>
-                            <span className="text-primary">{name}</span>
-                            {description != null && <span className="text-muted-foreground">: {description}</span>}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">{autoLabel}</span>
+                        </div>
+                        {drawing && (
+                          <p className="text-xs truncate shrink-0 mt-1 text-center">
+                            {name != null ? (
+                              <>
+                                <span className="text-primary">{name}</span>
+                                {description != null && <span className="text-muted-foreground">: {description}</span>}
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">{autoLabel}</span>
+                            )}
+                          </p>
                         )}
-                      </p>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No match data</div>
                     )}
                     <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
-                      <span className="text-primary">Climb:</span> {climbLabel}
-                      {autoShoots != null && (
+                      <span className="text-primary">Auto Climb:</span> {climbLabel}
+                      {hasScoutedData && autoShoots != null && (
                         <>
                           <span className="text-muted-foreground mx-1">|</span>
                           <><span className="text-foreground">{autoShoots}</span> <span className="text-primary">shoots</span></>
@@ -914,8 +992,16 @@ function MatchPredictionView({
 
   const toggleAutoSelection = useCallback((team: string, autoIndex: number) => {
     setSelectedAutosForDisplay((prev) => {
-      const idx = prev.findIndex((s) => s.team === team && s.autoIndex === autoIndex);
-      if (idx >= 0) return prev.filter((_, i) => i !== idx);
+      const existingIdx = prev.findIndex((s) => s.team === team);
+      if (existingIdx >= 0 && prev[existingIdx]!.autoIndex === autoIndex) {
+        // Same auto clicked — deselect
+        return prev.filter((_, i) => i !== existingIdx);
+      }
+      if (existingIdx >= 0) {
+        // Different auto for same team — replace (only one auto per team at a time)
+        return prev.map((s, i) => (i === existingIdx ? { team, autoIndex } : s));
+      }
+      // New team — add
       return [...prev, { team, autoIndex }];
     });
   }, []);
@@ -953,7 +1039,10 @@ function MatchPredictionView({
           <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
             {teamsInMatch
               .filter((s) => s.alliance === "blue")
-              .map((s) => (
+              .map((s) => {
+                const selIdx = selectedAutosForDisplay.findIndex((sel) => sel.team === s.team && sel.autoIndex === (autoIndexByTeam[s.team] ?? getMostSelectedAutoIndex(s.team, getTeamAutos(pitScoutingByTeam.get(s.team)), matchData)));
+                const selectedColor = selIdx >= 0 ? TEAM_AUTO_COLORS[selIdx % TEAM_AUTO_COLORS.length] : undefined;
+                return (
                 <PredictionTeamBox
                   key={s.team}
                   team={s.team}
@@ -966,8 +1055,9 @@ function MatchPredictionView({
                   setAutoIndexByTeam={setAutoIndexByTeam}
                   selectedAutosForDisplay={selectedAutosForDisplay}
                   onSelectAuto={toggleAutoSelection}
+                  selectedBorderColor={selectedColor}
                 />
-              ))}
+              );})}
           </div>
 
           {/* Center: static fullfield with overlay */}
@@ -994,7 +1084,7 @@ function MatchPredictionView({
                         const [nx, ny] = PRESET_ACTION_LOCATIONS.climb;
                         const x = (alliance === "red" ? nx : 1 - nx) * FIELD_WIDTH;
                         const y = ny * FIELD_HEIGHT;
-                        return <circle key="climb" cx={x} cy={y} r={8} fill={color} opacity={0.9} />;
+                        return <circle key={`${sel.team}-${sel.autoIndex}-climb`} cx={x} cy={y} r={8} fill={color} opacity={0.9} />;
                       })()}
                     </g>
                   );
@@ -1007,7 +1097,10 @@ function MatchPredictionView({
           <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
             {teamsInMatch
               .filter((s) => s.alliance === "red")
-              .map((s) => (
+              .map((s) => {
+                const selIdx = selectedAutosForDisplay.findIndex((sel) => sel.team === s.team && sel.autoIndex === (autoIndexByTeam[s.team] ?? getMostSelectedAutoIndex(s.team, getTeamAutos(pitScoutingByTeam.get(s.team)), matchData)));
+                const selectedColor = selIdx >= 0 ? TEAM_AUTO_COLORS[selIdx % TEAM_AUTO_COLORS.length] : undefined;
+                return (
                 <PredictionTeamBox
                   key={s.team}
                   team={s.team}
@@ -1020,8 +1113,9 @@ function MatchPredictionView({
                   setAutoIndexByTeam={setAutoIndexByTeam}
                   selectedAutosForDisplay={selectedAutosForDisplay}
                   onSelectAuto={toggleAutoSelection}
+                  selectedBorderColor={selectedColor}
                 />
-              ))}
+              );})}
           </div>
         </div>
       </div>
@@ -1040,6 +1134,7 @@ function PredictionTeamBox({
   setAutoIndexByTeam,
   selectedAutosForDisplay,
   onSelectAuto,
+  selectedBorderColor,
 }: {
   team: string;
   alliance: "red" | "blue";
@@ -1051,6 +1146,7 @@ function PredictionTeamBox({
   setAutoIndexByTeam: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   selectedAutosForDisplay: Array<{ team: string; autoIndex: number }>;
   onSelectAuto: (team: string, autoIndex: number) => void;
+  selectedBorderColor?: string;
 }) {
   const teamAutos = getTeamAutos(pitScoutingByTeam.get(team));
   const defaultIdx = getMostSelectedAutoIndex(team, teamAutos, matchData);
@@ -1059,16 +1155,21 @@ function PredictionTeamBox({
   const currentAuto = teamAutos[idx];
   const climbPct = getTeleopClimbPct(team, tbaClimbData);
   const failedCount = getFailedClimbCount(team, matchData);
+  const teamStats = calculateTeamStats(team, matchData);
+  const autoLabelForLookup = currentAuto?.name || `Auto ${idx + 1}`;
+  const autoRunCount = teamStats?.autoRunCounts
+    ? Object.entries(teamStats.autoRunCounts).find(
+        ([k]) => (k || "").toLowerCase() === (autoLabelForLookup || "").toLowerCase()
+      )?.[1] ?? 0
+    : 0;
   const isSelected = selectedAutosForDisplay.some((s) => s.team === team && s.autoIndex === idx);
-  const selIndex = selectedAutosForDisplay.findIndex((s) => s.team === team && s.autoIndex === idx);
-  const displayColor = selIndex >= 0 ? TEAM_AUTO_COLORS[selIndex % TEAM_AUTO_COLORS.length] : null;
   const borderColor = alliance === "red" ? "border-red-500" : "border-blue-500";
   const bgColor = alliance === "red" ? "bg-red-500/10" : "bg-blue-500/10";
 
   return (
     <div
-      className={`rounded-xl border-4 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden transition-all ${teamAutos.length > 0 ? "cursor-pointer" : ""} ${borderColor} ${bgColor} ${isSelected ? "ring-2 ring-offset-2" : ""}`}
-      style={isSelected && displayColor ? { boxShadow: `0 0 0 2px ${displayColor}` } : undefined}
+      className={`rounded-xl border-4 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden transition-all ${teamAutos.length > 0 ? "cursor-pointer" : ""} ${!isSelected ? borderColor : ""} ${bgColor}`}
+      style={isSelected ? { borderColor: selectedBorderColor ?? "hsl(var(--primary))" } : undefined}
       onClick={() => teamAutos.length > 0 && onSelectAuto(team, idx)}
     >
       <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">
@@ -1081,12 +1182,12 @@ function PredictionTeamBox({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setIdx(idx <= 0 ? teamAutos.length - 1 : idx - 1); }}
-              className="p-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+              className={`p-1.5 shrink-0 transition-colors ${teamAutos.length > 1 ? "text-white hover:text-yellow-400" : "text-muted-foreground hover:text-foreground"}`}
               aria-label="Previous auto"
             >
               <ChevronLeft className="size-5" />
             </button>
-            <div className="flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
+            <div className="flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20 p-1">
               {currentAuto?.drawing ? (
                 <AutoPathPreview drawing={currentAuto.drawing} alliance={alliance} className="w-full h-full max-w-full max-h-full" />
               ) : (
@@ -1105,15 +1206,15 @@ function PredictionTeamBox({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setIdx(idx >= teamAutos.length - 1 ? 0 : idx + 1); }}
-              className="p-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+              className={`p-1.5 shrink-0 transition-colors ${teamAutos.length > 1 ? "text-white hover:text-yellow-400" : "text-muted-foreground hover:text-foreground"}`}
               aria-label="Next auto"
             >
               <ChevronRight className="size-5" />
             </button>
           </div>
           <p className="text-xs truncate shrink-0 mt-1 text-center">
-            {currentAuto?.name || `Auto ${idx + 1}`}
-            {teamAutos.length > 1 && ` (${idx + 1}/${teamAutos.length})`}
+            <span className="text-foreground">{currentAuto?.name || `Auto ${idx + 1}`}</span>
+            <span className="text-primary"> · {autoRunCount}×</span>
             {currentAuto?.climbDuringAuto && (
               <span className="inline-flex items-center ml-1.5" title="Climbs during auto">
                 <span className="inline-block size-2.5 rounded-full bg-[#22c55e]" aria-hidden />
@@ -1121,7 +1222,7 @@ function PredictionTeamBox({
             )}
           </p>
           <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
-            <span className="text-primary">Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
+            <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
             <span className="text-foreground">Failed: {failedCount}</span>
           </p>
@@ -1130,7 +1231,7 @@ function PredictionTeamBox({
         <div className="flex-1 flex flex-col items-center justify-center gap-2">
           <p className="text-sm text-muted-foreground text-center">No pit autos</p>
           <p className="text-sm font-medium text-foreground text-center">
-            <span className="text-primary">Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
+            <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
             <span className="text-foreground">Failed: {failedCount}</span>
           </p>
@@ -1145,7 +1246,7 @@ function MatchesPage() {
   const { addTab } = useTabContext();
   const { match: matchKey, mode: searchMode } = Route.useSearch();
   const { currentEvent } = useDesktopEvent();
-  const { schedule, tbaClimbData, tbaSchedule } = useDesktopCompetitionData();
+  const { schedule, tbaClimbData, tbaSchedule, lastDataRefreshAt } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
   const [search, setSearch] = useState("");
   const [matchData, setMatchData] = useState<Awaited<ReturnType<typeof getMatchScoutingData>>>([]);
@@ -1208,13 +1309,13 @@ function MatchesPage() {
 
   useEffect(() => {
     if (!currentEvent) return;
-    getMatchScoutingData(currentEvent).then(setMatchData);
-  }, [currentEvent]);
+    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
+  }, [currentEvent, lastDataRefreshAt]);
 
   useEffect(() => {
     if (!currentEvent) return;
-    getPitScoutingData(currentEvent).then(setPitScoutingData);
-  }, [currentEvent]);
+    getPitScoutingData(currentEvent).then(setPitScoutingData).catch(console.error);
+  }, [currentEvent, lastDataRefreshAt]);
 
   useEffect(() => {
     if (!currentEvent) return;
@@ -1258,6 +1359,7 @@ function MatchesPage() {
     if (showPrediction) {
       return (
         <MatchPredictionView
+          key={matchKey}
           matchKey={matchKey}
           schedule={schedule}
           matchData={matchData as unknown as EventMatchData[]}

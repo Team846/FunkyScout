@@ -271,7 +271,7 @@ function AutosSection({
                 pressed={entry.climb}
                 onPressedChange={(p) => toggleClimb(entry.id, p)}
                 className="w-full"
-                info="My name is jeff"
+                info="Climbs during this specific auto"
               >
                 Climb
               </ScoutToggle>
@@ -514,7 +514,7 @@ function ScoutPage() {
                 pressed={intakeStocking}
                 onPressedChange={setIntakeStocking}
                 className="w-full"
-                info="Can the robot intake while stocking?"
+                info="Can the robot feed the outpost with balls?"
               >
                 Stocking
               </ScoutToggle>
@@ -581,6 +581,7 @@ function ScoutPage() {
                   pressed={autoClimbOrientation === "Left"}
                   onPressedChange={(p) => setAutoClimbOrientation(p ? "Left" : null)}
                   className="w-full"
+                  info="Climbs on the left of the tower"
                 >
                   Left
                 </ScoutToggle>
@@ -588,6 +589,8 @@ function ScoutPage() {
                   pressed={autoClimbOrientation === "Center"}
                   onPressedChange={(p) => setAutoClimbOrientation(p ? "Center" : null)}
                   className="w-full"
+                  info="Climbs on the center of the tower"
+
                 >
                   Center
                 </ScoutToggle>
@@ -595,6 +598,8 @@ function ScoutPage() {
                   pressed={autoClimbOrientation === "Right"}
                   onPressedChange={(p) => setAutoClimbOrientation(p ? "Right" : null)}
                   className="w-full"
+                  info="Climbs on the right of the tower"
+
                 >
                   Right
                 </ScoutToggle>
@@ -650,6 +655,8 @@ function ScoutPage() {
                   pressed={teleopClimbOrientation === "Left"}
                   onPressedChange={(p) => setTeleopClimbOrientation(p ? "Left" : null)}
                   className="w-full"
+                  info="Climbs on the left of the tower"
+
                 >
                   Left
                 </ScoutToggle>
@@ -657,6 +664,8 @@ function ScoutPage() {
                   pressed={teleopClimbOrientation === "Center"}
                   onPressedChange={(p) => setTeleopClimbOrientation(p ? "Center" : null)}
                   className="w-full"
+                  info="Climbs on the center of the tower"
+
                 >
                   Center
                 </ScoutToggle>
@@ -664,6 +673,8 @@ function ScoutPage() {
                   pressed={teleopClimbOrientation === "Right"}
                   onPressedChange={(p) => setTeleopClimbOrientation(p ? "Right" : null)}
                   className="w-full"
+                  info="Climbs on the right of the tower"
+
                 >
                   Right
                 </ScoutToggle>
