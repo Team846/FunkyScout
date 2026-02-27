@@ -165,6 +165,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [refreshTeams, refreshCompetitionData]);
 
+  // Cmd+Shift+W (Mac) / Ctrl+Shift+W (Windows) to close current tab
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "w") {
+        e.preventDefault();
+        if (tabs.length > 1) closeTab(activeTabId);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [tabs.length, activeTabId, closeTab]);
+
   const fetchEvents = async () => {
     try {
       const { data, error } = await supabase

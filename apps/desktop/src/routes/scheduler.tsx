@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Label } from "@shadcn/ui/components/label.tsx";
@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadc
 import { Pencil, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getEventSchedule } from "@lib/db";
+import { useTabContext } from "../contexts/TabContext";
 
 export const Route = createFileRoute("/scheduler")({
   component: SchedulerPage,
@@ -46,8 +47,18 @@ interface PitAssignment {
 }
 
 function SchedulerPage() {
+  const navigate = useNavigate();
+  const { addTab } = useTabContext();
   const { currentEvent } = useDesktopEvent();
   const { lastDataRefreshAt } = useDesktopCompetitionData();
+
+  const handleMatchClick = useCallback(
+    (matchKey: string) => {
+      addTab("/matches", getMatchLabel(matchKey), { match: matchKey, mode: undefined }, `match-${matchKey}`);
+      navigate({ to: "/matches", search: { match: matchKey, mode: undefined } });
+    },
+    [addTab, navigate]
+  );
   const [schedule, setSchedule] = useState<TeamSchedule[] | null>(null);
 
   const [w, setW] = useState(3);
@@ -614,7 +625,16 @@ function SchedulerPage() {
             <div className="h-full overflow-y-auto">
               {schedule?.map((match: TeamSchedule) => (
                 <div key={match.matchKey} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
-                  <span className="text-xs font-semibold text-foreground/80">{getMatchLabel(match.matchKey)}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleMatchClick(match.matchKey)}
+                    onKeyDown={(e) => e.key === "Enter" && handleMatchClick(match.matchKey)}
+                    className="text-xs font-semibold text-foreground/80 cursor-pointer hover:bg-secondary/40 hover:text-primary rounded px-1 py-0.5 -mx-1 -my-0.5 transition-colors"
+                    title={`View ${getMatchLabel(match.matchKey)}`}
+                  >
+                    {getMatchLabel(match.matchKey)}
+                  </span>
                   {[...match.redTeams, ...match.blueTeams].slice(0, 3).map((team) => {
                     const assignmentKey = `${match.matchKey}|${team.teamKey}`;
                     const isAssigned = assignedMatchTeams.has(assignmentKey);

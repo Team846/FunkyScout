@@ -17,6 +17,7 @@ interface ScheduleTableProps {
   tbaTeams: TBATeam[];
   searchQuery: string;
   homeTeamKey: string; // e.g. "frc846"
+  onMatchClick?: (matchKey: string) => void;
 }
 
 function formatMatchKey(matchKey: string): string {
@@ -125,7 +126,7 @@ function formatTime(estTime: number | undefined): string {
 
 export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>(
   function ScheduleTable(
-    { schedule, tbaSchedule, tbaTeams, searchQuery, homeTeamKey },
+    { schedule, tbaSchedule, tbaTeams, searchQuery, homeTeamKey, onMatchClick },
     ref
   ) {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -229,7 +230,14 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                 ].join(" ")}
               >
                 {/* Match label + time */}
-                <div className="flex flex-col px-3 py-1 rounded-md bg-primary/5 border-l-2 border-muted-foreground/40">
+                <div
+                  className={`flex flex-col px-3 py-1 rounded-md bg-primary/5 border-l-2 border-muted-foreground/40 ${onMatchClick ? "cursor-pointer hover:bg-primary/15 hover:border-primary/60 transition-colors" : ""}`}
+                  onClick={onMatchClick ? () => onMatchClick(row.matchKey) : undefined}
+                  onKeyDown={onMatchClick ? (e) => e.key === "Enter" && onMatchClick(row.matchKey) : undefined}
+                  role={onMatchClick ? "button" : undefined}
+                  tabIndex={onMatchClick ? 0 : undefined}
+                  title={onMatchClick ? `View ${row.fullLabel}` : undefined}
+                >
                   <span className="text-xs font-semibold text-foreground/80">{row.label}</span>
                   {row.estTime ? (
                     <span className="text-[10px] text-muted-foreground">{formatTime(row.estTime)}</span>

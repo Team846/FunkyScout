@@ -5,6 +5,7 @@ import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { getMatchScoutingData, getPitScoutingData, type PitScoutingData } from "../lib/db";
 import type { EventMatchData } from "@lib/db";
+import type { TBATeam } from "../contexts/DesktopTeamDataContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
@@ -12,13 +13,16 @@ import { Search, ChevronLeft, ChevronRight, CornerDownLeft } from "lucide-react"
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
 import { fetchEventVideo } from "@lib/tba/video";
-import { calculateSingleMatchStats } from "@lib/data/matchStats";
+import { calculateSingleMatchStats, calculateTeamStats } from "@lib/data/matchStats";
 import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
+import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
+import { PRESET_ACTION_LOCATIONS } from "@lib/config/fieldLocations";
 
 export const Route = createFileRoute("/matches")({
   component: MatchesPage,
   validateSearch: (search: Record<string, unknown>) => ({
     match: (search.match as string) || "",
+    mode: (search.mode as string) || undefined, // "prediction" to force prediction view
   }),
 });
 
@@ -219,6 +223,7 @@ type TeamAutoDisplay = {
   name?: string;
   description?: string;
   drawing?: DrawingData | null;
+  climbDuringAuto?: boolean;
 };
 
 function getTeamAutos(pitData: PitScoutingData | undefined): TeamAutoDisplay[] {
@@ -231,8 +236,55 @@ function getTeamAutos(pitData: PitScoutingData | undefined): TeamAutoDisplay[] {
       name: (item.name as string | undefined) ?? undefined,
       description: (item.description as string | undefined) ?? undefined,
       drawing: drawing && Array.isArray(drawing.paths) ? drawing : undefined,
+      climbDuringAuto: (item.climbDuringAuto ?? item.climb ?? false) as boolean,
     };
   });
+}
+
+/** Get index of most-selected auto from match scouting, matched to pit autos by name. Fallback: 0 */
+function getMostSelectedAutoIndex(
+  teamKey: string,
+  teamAutos: TeamAutoDisplay[],
+  matchData: EventMatchData[]
+): number {
+  if (teamAutos.length === 0) return 0;
+  const teamStats = calculateTeamStats(teamKey, matchData);
+  if (!teamStats?.autoRunCounts || Object.keys(teamStats.autoRunCounts).length === 0) return 0;
+  const counts = teamStats.autoRunCounts;
+  const topKey = Object.entries(counts).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+  const idx = teamAutos.findIndex((a) => (a.name || "").toLowerCase() === (topKey || "").toLowerCase());
+  return idx >= 0 ? idx : 0;
+}
+
+/** Teleop climb % from TBA: (matches with L1/L2/L3) / matches_played */
+function getTeleopClimbPct(
+  teamKey: string,
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>
+): number | null {
+  let total = 0;
+  let climbed = 0;
+  for (const matchEntries of Object.values(tbaClimbData)) {
+    const entry = matchEntries[teamKey];
+    if (!entry) continue;
+    total++;
+    if (entry.teleop_climb === "L1" || entry.teleop_climb === "L2" || entry.teleop_climb === "L3") climbed++;
+  }
+  if (total === 0) return null;
+  return Math.round((climbed / total) * 100);
+}
+
+/** Sum of failedClimbCount across team's matches from match scouting */
+function getFailedClimbCount(
+  teamKey: string,
+  matchData: EventMatchData[]
+): number {
+  const teamMatches = matchData.filter((m) => m.team === teamKey && m.data_raw);
+  let sum = 0;
+  for (const m of teamMatches) {
+    const stats = calculateSingleMatchStats(m as unknown as EventMatchData);
+    if (stats?.climb?.failedClimbCount != null) sum += stats.climb.failedClimbCount;
+  }
+  return sum;
 }
 
 function getMatchedAutoForTeam(
@@ -427,7 +479,7 @@ function MatchPlaybackView({
 
   const canPlay = selectedTeam && waypoints.length >= 2;
 
-  const fieldContainerWidth = Math.min(FIELD_WIDTH, 480);
+  const fieldContainerWidth = Math.min(FIELD_WIDTH, 560);
   const tbaMatchKeyForClimb = matchKey.includes("_") ? matchKey : currentEvent ? `${currentEvent}_${matchKey}` : matchKey;
   const climbForMatch = tbaClimbData[tbaMatchKeyForClimb] ?? {};
 
@@ -448,80 +500,11 @@ function MatchPlaybackView({
           </button>
         )}
       </div>
-      <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 flex flex-col gap-3">
-        {/* Compressed middle section — same width as field */}
-        <div
-          className="flex flex-col gap-2 mx-auto"
-          style={{ width: fieldContainerWidth, maxWidth: "100%" }}
-        >
-          {/* Phase filter */}
-          <div className="flex gap-2 justify-center">
-            {(["auto", "teleop", "full"] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPhase(p)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  phase === p ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {p === "full" ? "Full Match" : p === "auto" ? "Auto" : "Teleop"}
-              </button>
-            ))}
-          </div>
-
-          {/* Playback controls — primary fill + draggable circle */}
-          <div className="flex items-center gap-3 rounded-lg p-3 bg-muted/50">
-            <button
-              type="button"
-              onClick={() => setPlaying((p) => !p)}
-              disabled={!canPlay}
-              className="flex items-center justify-center size-9 rounded-full bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-            >
-              {playing ? (
-                <svg className="size-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-              ) : (
-                <svg className="size-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-              )}
-            </button>
-            <div className="flex-1 relative h-2 rounded-full bg-muted overflow-visible flex items-center">
-              <div
-                className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-75"
-                style={{ width: `${Math.min(progress * 100, 98)}%` }}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 size-3 rounded-full bg-primary border-2 border-background shadow-sm z-20 pointer-events-none"
-                style={{ left: `calc(${Math.min(progress * 100, 98)}% - 6px)` }}
-              />
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.001}
-                value={progress}
-                onChange={(e) => {
-                  setProgress(parseFloat(e.target.value));
-                  setPlaying(false);
-                }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-            </div>
-            <select
-              value={speed}
-              onChange={(e) => setSpeed(Number(e.target.value))}
-              className="bg-background border border-border rounded px-2 py-1 text-sm shrink-0"
-            >
-              {[1, 2, 4, 8].map((s) => (
-                <option key={s} value={s}>{s}x</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Three-column: much more horizontal gap from center, compact boxes so all 6 fit */}
-        <div className="flex items-start justify-center gap-12 px-4 w-full max-w-[min(100%,1400px)] mx-auto">
-          {/* Blue teams — compact height, fixed layout so padding isn't disrupted by auto */}
-          <div className="flex flex-col gap-5 w-[175px] min-w-0 shrink-0">
+      <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 min-h-0 flex">
+        {/* Three-column: left/right = full height; center = playback + field; all centered horizontally */}
+        <div className="flex flex-1 items-stretch justify-center gap-16 w-full max-w-[min(100%,1600px)] mx-auto min-h-0">
+          {/* Left column — full page height, team boxes centered */}
+          <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
             {teamsInMatch
               .filter((s) => s.alliance === "blue")
               .map((s) => {
@@ -535,14 +518,14 @@ function MatchPlaybackView({
                 return (
                   <div
                     key={s.team}
-                    className="rounded-xl border-4 border-blue-500 bg-blue-500/10 p-2.5 w-[175px] h-[175px] flex flex-col flex-shrink-0 overflow-hidden"
+                    className="rounded-xl border-4 border-blue-500 bg-blue-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden"
                   >
-                    <p className="text-sm font-semibold text-foreground shrink-0 mb-0.5 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
+                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
                     <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
                       {drawing ? (
                         <AutoPathPreview drawing={drawing} alliance="blue" className="w-full h-full max-w-full max-h-full" />
                       ) : (
-                        <p className="text-xs text-center px-1 line-clamp-3">
+                        <p className="text-sm text-center px-1 line-clamp-3">
                           {name != null ? (
                             <>
                               <span className="text-primary">{name}</span>
@@ -555,7 +538,7 @@ function MatchPlaybackView({
                       )}
                     </div>
                     {drawing && (
-                      <p className="text-[11px] truncate shrink-0 mt-0.5 text-center">
+                      <p className="text-xs truncate shrink-0 mt-1 text-center">
                         {name != null ? (
                           <>
                             <span className="text-primary">{name}</span>
@@ -566,7 +549,7 @@ function MatchPlaybackView({
                         )}
                       </p>
                     )}
-                    <p className="text-xs font-medium text-foreground truncate shrink-0 mt-auto text-center">
+                    <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
                       <span className="text-primary">Climb:</span> {climbLabel}
                       {autoShoots != null && (
                         <>
@@ -580,8 +563,72 @@ function MatchPlaybackView({
               })}
           </div>
 
-        {/* Field / Video — center column with gap from side boxes */}
-        <div className="flex items-center justify-center gap-2 shrink-0 min-w-0" style={{ width: fieldContainerWidth }}>
+        {/* Center column — playback + field/video only, at top */}
+        <div className="flex flex-col shrink-0 self-start gap-3" style={{ width: fieldContainerWidth }}>
+          {/* Phase filter + playback */}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2 justify-center">
+              {(["auto", "teleop", "full"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPhase(p)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                    phase === p ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {p === "full" ? "Full Match" : p === "auto" ? "Auto" : "Teleop"}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 rounded-lg p-3 bg-muted/50">
+              <button
+                type="button"
+                onClick={() => setPlaying((p) => !p)}
+                disabled={!canPlay}
+                className="flex items-center justify-center size-9 rounded-full bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              >
+                {playing ? (
+                  <svg className="size-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                ) : (
+                  <svg className="size-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                )}
+              </button>
+              <div className="flex-1 relative h-2 rounded-full bg-muted overflow-visible flex items-center">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-75"
+                  style={{ width: `${Math.min(progress * 100, 98)}%` }}
+                />
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 size-3 rounded-full bg-primary border-2 border-background shadow-sm z-20 pointer-events-none"
+                  style={{ left: `calc(${Math.min(progress * 100, 98)}% - 6px)` }}
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.001}
+                  value={progress}
+                  onChange={(e) => {
+                    setProgress(parseFloat(e.target.value));
+                    setPlaying(false);
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+              </div>
+              <select
+                value={speed}
+                onChange={(e) => setSpeed(Number(e.target.value))}
+                className="bg-background border border-border rounded px-2 py-1 text-sm shrink-0"
+              >
+                {[1, 2, 4, 8].map((s) => (
+                  <option key={s} value={s}>{s}x</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {/* Field / Video */}
+          <div className="flex items-center justify-center gap-2 min-w-0">
           <button
             type="button"
             onClick={() => setViewMode("field")}
@@ -716,10 +763,11 @@ function MatchPlaybackView({
           >
             <ChevronRight className="size-6" />
           </button>
+          </div>
         </div>
 
-          {/* Red teams — same compact layout */}
-          <div className="flex flex-col gap-5 w-[175px] min-w-0 shrink-0">
+          {/* Right column — full page height, team boxes centered */}
+          <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
             {teamsInMatch
               .filter((s) => s.alliance === "red")
               .map((s) => {
@@ -733,14 +781,14 @@ function MatchPlaybackView({
                 return (
                   <div
                     key={s.team}
-                    className="rounded-xl border-4 border-red-500 bg-red-500/10 p-2.5 w-[175px] h-[175px] flex flex-col flex-shrink-0 overflow-hidden"
+                    className="rounded-xl border-4 border-red-500 bg-red-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden"
                   >
-                    <p className="text-sm font-semibold text-foreground shrink-0 mb-0.5 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
+                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
                     <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
                       {drawing ? (
                         <AutoPathPreview drawing={drawing} alliance="red" className="w-full h-full max-w-full max-h-full" />
                       ) : (
-                        <p className="text-xs text-center px-1 line-clamp-3">
+                        <p className="text-sm text-center px-1 line-clamp-3">
                           {name != null ? (
                             <>
                               <span className="text-primary">{name}</span>
@@ -753,7 +801,7 @@ function MatchPlaybackView({
                       )}
                     </div>
                     {drawing && (
-                      <p className="text-[11px] truncate shrink-0 mt-0.5 text-center">
+                      <p className="text-xs truncate shrink-0 mt-1 text-center">
                         {name != null ? (
                           <>
                             <span className="text-primary">{name}</span>
@@ -764,7 +812,7 @@ function MatchPlaybackView({
                         )}
                       </p>
                     )}
-                    <p className="text-xs font-medium text-foreground truncate shrink-0 mt-auto text-center">
+                    <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
                       <span className="text-primary">Climb:</span> {climbLabel}
                       {autoShoots != null && (
                         <>
@@ -778,14 +826,316 @@ function MatchPlaybackView({
               })}
           </div>
         </div>
-
-        {teamsWithData.length === 0 && (
-          <p className="text-center text-muted-foreground text-sm">No team data for this match yet.</p>
-        )}
-        {teamsWithData.length > 0 && !selectedTeam && (
-          <p className="text-center text-muted-foreground text-sm">Click a team on the field to play their route.</p>
-        )}
       </div>
+    </div>
+  );
+}
+
+const fieldContainerWidth = 560;
+
+/** Colors for multi-team auto path display (darker, muted — no red/blue/yellow to avoid overlap) */
+const TEAM_AUTO_COLORS = ["#0d9488", "#7c3aed", "#059669", "#6366f1", "#64748b", "#0891b2"];
+
+/** Fullfield path overlay: path in 326x318 space, positioned for alliance. Red=left half, blue=right half */
+function FullfieldPathOverlay({
+  drawing,
+  alliance,
+  strokeColor: strokeColorOverride,
+}: {
+  drawing: DrawingData;
+  alliance: "red" | "blue";
+  strokeColor?: string;
+}) {
+  const { paths, canvasWidth, canvasHeight } = drawing;
+  const cropH = FIELD_IMG_WIDTH * (2 / 3);
+  const cropY = (FIELD_IMG_HEIGHT - cropH) / 2;
+  const scaleX = FIELD_IMG_WIDTH / canvasWidth;
+  const scaleY = cropH / canvasHeight;
+  const xOffset = alliance === "red" ? 0 : FIELD_IMG_WIDTH;
+  const strokeColor = strokeColorOverride ?? (alliance === "red" ? "#ef4444" : "#3b82f6");
+  return (
+    <g transform={`translate(${xOffset}, ${cropY}) scale(${scaleX}, ${scaleY})`}>
+      {paths.map((path, pathIndex) => {
+        if (!path.points || path.points.length < 2) return null;
+        const actualPoints = path.points.map((p) => ({
+          x: p.x * canvasWidth,
+          y: p.y * canvasHeight,
+        }));
+        const pathData = actualPoints
+          .map((point, i) => (i === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`))
+          .join(" ");
+        return (
+          <path
+            key={pathIndex}
+            d={pathData}
+            stroke={strokeColorOverride != null ? strokeColor : (path.color || strokeColor)}
+            strokeWidth={path.lineWidth ?? 3}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function MatchPredictionView({
+  matchKey,
+  schedule,
+  matchData,
+  tbaClimbData,
+  pitScoutingByTeam,
+  tbaTeams,
+  onBack,
+  matchHasHappened,
+  onSwitchToPlayback,
+}: {
+  matchKey: string;
+  schedule: { match: string; team: string; alliance: "red" | "blue" }[];
+  matchData: EventMatchData[];
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
+  pitScoutingByTeam: Map<string, PitScoutingData>;
+  tbaTeams: TBATeam[];
+  onBack?: () => void;
+  matchHasHappened?: boolean;
+  onSwitchToPlayback?: () => void;
+}) {
+  const teamsInMatch = useMemo(() => schedule.filter((s) => s.match === matchKey), [schedule, matchKey]);
+  const [selectedAutosForDisplay, setSelectedAutosForDisplay] = useState<Array<{ team: string; autoIndex: number }>>([]);
+
+  // Per-team auto index (for cycling with arrows)
+  const [autoIndexByTeam, setAutoIndexByTeam] = useState<Record<string, number>>({});
+
+  const getEpa = useCallback((teamKey: string) => {
+    const t = tbaTeams.find((x) => x.key === teamKey);
+    return t?.epa?.total_points?.mean ?? null;
+  }, [tbaTeams]);
+
+  const toggleAutoSelection = useCallback((team: string, autoIndex: number) => {
+    setSelectedAutosForDisplay((prev) => {
+      const idx = prev.findIndex((s) => s.team === team && s.autoIndex === autoIndex);
+      if (idx >= 0) return prev.filter((_, i) => i !== idx);
+      return [...prev, { team, autoIndex }];
+    });
+  }, []);
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 w-full overflow-x-hidden">
+      <div className="pt-2 pb-1 px-4 flex flex-col items-center gap-1 relative">
+        <h1 className="text-xl font-semibold text-primary">{getMatchLabel(matchKey)}</h1>
+        <div className="flex items-center gap-4">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-xs"
+              aria-label="Back to all matches"
+            >
+              <CornerDownLeft className="size-3.5" />
+              <span>All matches</span>
+            </button>
+          )}
+          {matchHasHappened && onSwitchToPlayback && (
+            <button
+              type="button"
+              onClick={onSwitchToPlayback}
+              className="px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground hover:opacity-90"
+            >
+              Playback
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 min-h-0 flex">
+        <div className="flex flex-1 items-stretch justify-center gap-16 w-full max-w-[min(100%,1600px)] mx-auto min-h-0">
+          {/* Blue teams */}
+          <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
+            {teamsInMatch
+              .filter((s) => s.alliance === "blue")
+              .map((s) => (
+                <PredictionTeamBox
+                  key={s.team}
+                  team={s.team}
+                  alliance="blue"
+                  pitScoutingByTeam={pitScoutingByTeam}
+                  matchData={matchData}
+                  tbaClimbData={tbaClimbData}
+                  epa={getEpa(s.team)}
+                  autoIndexByTeam={autoIndexByTeam}
+                  setAutoIndexByTeam={setAutoIndexByTeam}
+                  selectedAutosForDisplay={selectedAutosForDisplay}
+                  onSelectAuto={toggleAutoSelection}
+                />
+              ))}
+          </div>
+
+          {/* Center: static fullfield with overlay */}
+          <div className="flex flex-col shrink-0 self-start gap-3" style={{ width: fieldContainerWidth }}>
+            <div className="relative inline-block w-full" style={{ maxWidth: "100%" }}>
+              <img src="/fullfield.svg" alt="Field" className="w-full h-auto block" />
+              <svg
+                className="absolute inset-0 w-full h-full"
+                viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{ pointerEvents: "none" }}
+              >
+                {selectedAutosForDisplay.map((sel, i) => {
+                  const pit = pitScoutingByTeam.get(sel.team);
+                  const autos = getTeamAutos(pit);
+                  const auto = autos[sel.autoIndex];
+                  const alliance = teamsInMatch.find((t) => t.team === sel.team)?.alliance ?? "red";
+                  if (!auto?.drawing) return null;
+                  const color = TEAM_AUTO_COLORS[i % TEAM_AUTO_COLORS.length];
+                  return (
+                    <g key={`${sel.team}-${sel.autoIndex}`}>
+                      <FullfieldPathOverlay drawing={auto.drawing} alliance={alliance} strokeColor={color} />
+                      {auto.climbDuringAuto && (() => {
+                        const [nx, ny] = PRESET_ACTION_LOCATIONS.climb;
+                        const x = (alliance === "red" ? nx : 1 - nx) * FIELD_WIDTH;
+                        const y = ny * FIELD_HEIGHT;
+                        return <circle key="climb" cx={x} cy={y} r={8} fill={color} opacity={0.9} />;
+                      })()}
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          </div>
+
+          {/* Red teams */}
+          <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
+            {teamsInMatch
+              .filter((s) => s.alliance === "red")
+              .map((s) => (
+                <PredictionTeamBox
+                  key={s.team}
+                  team={s.team}
+                  alliance="red"
+                  pitScoutingByTeam={pitScoutingByTeam}
+                  matchData={matchData}
+                  tbaClimbData={tbaClimbData}
+                  epa={getEpa(s.team)}
+                  autoIndexByTeam={autoIndexByTeam}
+                  setAutoIndexByTeam={setAutoIndexByTeam}
+                  selectedAutosForDisplay={selectedAutosForDisplay}
+                  onSelectAuto={toggleAutoSelection}
+                />
+              ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PredictionTeamBox({
+  team,
+  alliance,
+  pitScoutingByTeam,
+  matchData,
+  tbaClimbData,
+  epa,
+  autoIndexByTeam,
+  setAutoIndexByTeam,
+  selectedAutosForDisplay,
+  onSelectAuto,
+}: {
+  team: string;
+  alliance: "red" | "blue";
+  pitScoutingByTeam: Map<string, PitScoutingData>;
+  matchData: EventMatchData[];
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
+  epa: number | null;
+  autoIndexByTeam: Record<string, number>;
+  setAutoIndexByTeam: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  selectedAutosForDisplay: Array<{ team: string; autoIndex: number }>;
+  onSelectAuto: (team: string, autoIndex: number) => void;
+}) {
+  const teamAutos = getTeamAutos(pitScoutingByTeam.get(team));
+  const defaultIdx = getMostSelectedAutoIndex(team, teamAutos, matchData);
+  const idx = autoIndexByTeam[team] ?? defaultIdx;
+  const setIdx = (i: number) => setAutoIndexByTeam((prev) => ({ ...prev, [team]: i }));
+  const currentAuto = teamAutos[idx];
+  const climbPct = getTeleopClimbPct(team, tbaClimbData);
+  const failedCount = getFailedClimbCount(team, matchData);
+  const isSelected = selectedAutosForDisplay.some((s) => s.team === team && s.autoIndex === idx);
+  const selIndex = selectedAutosForDisplay.findIndex((s) => s.team === team && s.autoIndex === idx);
+  const displayColor = selIndex >= 0 ? TEAM_AUTO_COLORS[selIndex % TEAM_AUTO_COLORS.length] : null;
+  const borderColor = alliance === "red" ? "border-red-500" : "border-blue-500";
+  const bgColor = alliance === "red" ? "bg-red-500/10" : "bg-blue-500/10";
+
+  return (
+    <div
+      className={`rounded-xl border-4 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden transition-all ${teamAutos.length > 0 ? "cursor-pointer" : ""} ${borderColor} ${bgColor} ${isSelected ? "ring-2 ring-offset-2" : ""}`}
+      style={isSelected && displayColor ? { boxShadow: `0 0 0 2px ${displayColor}` } : undefined}
+      onClick={() => teamAutos.length > 0 && onSelectAuto(team, idx)}
+    >
+      <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">
+        Team {team.replace(/frc/i, "")}
+        {epa != null && <span className="text-muted-foreground font-normal"> · {epa.toFixed(1)} EPA</span>}
+      </p>
+      {teamAutos.length > 0 ? (
+        <>
+          <div className="flex items-center justify-center gap-1 flex-1 min-h-0">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setIdx(idx <= 0 ? teamAutos.length - 1 : idx - 1); }}
+              className="p-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="Previous auto"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+            <div className="flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
+              {currentAuto?.drawing ? (
+                <AutoPathPreview drawing={currentAuto.drawing} alliance={alliance} className="w-full h-full max-w-full max-h-full" />
+              ) : (
+                <p className="text-sm text-center px-1 line-clamp-3">
+                  {currentAuto?.name ? (
+                    <>
+                      <span className="text-primary">{currentAuto.name}</span>
+                      {currentAuto.description && <span className="text-muted-foreground">: {currentAuto.description}</span>}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">No auto data</span>
+                  )}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setIdx(idx >= teamAutos.length - 1 ? 0 : idx + 1); }}
+              className="p-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="Next auto"
+            >
+              <ChevronRight className="size-5" />
+            </button>
+          </div>
+          <p className="text-xs truncate shrink-0 mt-1 text-center">
+            {currentAuto?.name || `Auto ${idx + 1}`}
+            {teamAutos.length > 1 && ` (${idx + 1}/${teamAutos.length})`}
+            {currentAuto?.climbDuringAuto && (
+              <span className="inline-flex items-center ml-1.5" title="Climbs during auto">
+                <span className="inline-block size-2.5 rounded-full bg-[#22c55e]" aria-hidden />
+              </span>
+            )}
+          </p>
+          <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
+            <span className="text-primary">Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
+            <span className="text-muted-foreground mx-1">|</span>
+            <span className="text-foreground">Failed: {failedCount}</span>
+          </p>
+        </>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2">
+          <p className="text-sm text-muted-foreground text-center">No pit autos</p>
+          <p className="text-sm font-medium text-foreground text-center">
+            <span className="text-primary">Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
+            <span className="text-muted-foreground mx-1">|</span>
+            <span className="text-foreground">Failed: {failedCount}</span>
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -793,9 +1143,10 @@ function MatchPlaybackView({
 function MatchesPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
-  const { match: matchKey } = Route.useSearch();
+  const { match: matchKey, mode: searchMode } = Route.useSearch();
   const { currentEvent } = useDesktopEvent();
-  const { schedule, tbaClimbData } = useDesktopCompetitionData();
+  const { schedule, tbaClimbData, tbaSchedule } = useDesktopCompetitionData();
+  const { tbaTeams } = useDesktopTeamData();
   const [search, setSearch] = useState("");
   const [matchData, setMatchData] = useState<Awaited<ReturnType<typeof getMatchScoutingData>>>([]);
   const [pitScoutingData, setPitScoutingData] = useState<PitScoutingData[]>([]);
@@ -875,23 +1226,84 @@ function MatchesPage() {
   const handleSelectMatch = (key: string) => {
     const label = getMatchLabel(key);
     addTab("/matches", label, { match: key }, `match-${key}`);
-    navigate({ to: "/matches", search: { match: key } });
+    navigate({
+      to: "/matches",
+      search: { match: key, mode: searchMode ?? undefined },
+    });
   };
 
+  const matchHasHappened = useMemo(() => {
+    if (!matchKey) return false;
+    const tba = tbaSchedule[matchKey];
+    if (!tba?.est_time) return false;
+    return tba.est_time < Math.floor(Date.now() / 1000);
+  }, [matchKey, tbaSchedule]);
+
+  const predictionMode = useMemo(() => {
+    if (searchMode === "prediction") return true;
+    if (searchMode === "playback") return false;
+    return !matchHasHappened; // default: prediction for upcoming, playback for past
+  }, [searchMode, matchHasHappened]);
+
+  const setPredictionMode = useCallback(
+    (pred: boolean) => {
+      navigate({ to: "/matches", search: { match: matchKey, mode: pred ? "prediction" : "playback" } });
+    },
+    [navigate, matchKey]
+  );
+
   if (matchKey) {
+    const showPrediction = predictionMode || !matchHasHappened;
+
+    if (showPrediction) {
+      return (
+        <MatchPredictionView
+          matchKey={matchKey}
+          schedule={schedule}
+          matchData={matchData as unknown as EventMatchData[]}
+          tbaClimbData={tbaClimbData}
+          pitScoutingByTeam={pitScoutingByTeam}
+          tbaTeams={tbaTeams}
+          onBack={() => navigate({ to: "/matches", search: { match: "", mode: undefined } })}
+          matchHasHappened={matchHasHappened}
+          onSwitchToPlayback={matchHasHappened ? () => setPredictionMode(false) : undefined}
+        />
+      );
+    }
+
     return (
-      <MatchPlaybackView
-        matchKey={matchKey}
-        currentEvent={currentEvent}
-        schedule={schedule}
-        matchData={matchData}
-        teamDataByTeam={teamDataByTeam}
-        schema={schema}
-        onBack={() => navigate({ to: "/matches", search: { match: "" } })}
-        videoCache={videoCache}
-        tbaClimbData={tbaClimbData}
-        pitScoutingByTeam={pitScoutingByTeam}
-      />
+      <div className="relative">
+        {matchHasHappened && (
+          <div className="absolute top-2 right-4 z-10 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPredictionMode(true)}
+              className="px-3 py-1.5 rounded-lg text-sm bg-muted text-muted-foreground hover:text-foreground"
+            >
+              Prediction
+            </button>
+            <button
+              type="button"
+              onClick={() => setPredictionMode(false)}
+              className="px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground"
+            >
+              Playback
+            </button>
+          </div>
+        )}
+        <MatchPlaybackView
+          matchKey={matchKey}
+          currentEvent={currentEvent}
+          schedule={schedule}
+          matchData={matchData}
+          teamDataByTeam={teamDataByTeam}
+          schema={schema}
+          onBack={() => navigate({ to: "/matches", search: { match: "", mode: undefined } })}
+          videoCache={videoCache}
+          tbaClimbData={tbaClimbData}
+          pitScoutingByTeam={pitScoutingByTeam}
+        />
+      </div>
     );
   }
 
@@ -919,9 +1331,9 @@ function MatchesPage() {
               className="text-left p-4 rounded-lg border-2 border-border bg-background hover:bg-muted/50 hover:border-primary/50 transition-colors"
             >
               <div className="font-semibold text-primary">{getMatchLabel(m.match)}</div>
-              <div className="text-sm text-muted-foreground mt-1 flex gap-4">
-                <span>Red: {m.red.map((t) => t.replace("frc", "")).join(", ")}</span>
-                <span>Blue: {m.blue.map((t) => t.replace("frc", "")).join(", ")}</span>
+              <div className="text-sm mt-1 flex gap-4">
+                <span><span className="text-red-500 font-bold">Red</span>: <span className="text-muted-foreground">{m.red.map((t) => t.replace("frc", "")).join(", ")}</span></span>
+                <span><span className="text-blue-500 font-bold">Blue</span>: <span className="text-muted-foreground">{m.blue.map((t) => t.replace("frc", "")).join(", ")}</span></span>
               </div>
             </button>
           ))}

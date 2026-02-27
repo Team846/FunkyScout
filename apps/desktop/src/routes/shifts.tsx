@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   useState,
   useEffect,
@@ -50,6 +50,8 @@ import {
 import { setTeamPriority } from "@lib/data/writes";
 import { permanentlyExcludeScouter } from "@lib/data/scouterExclusions";
 import { toast } from "sonner";
+import { useTabContext } from "../contexts/TabContext";
+import { getMatchLabel } from "@lib/utils/match";
 
 export const Route = createFileRoute("/shifts")({
   component: ShiftViewerPage,
@@ -122,9 +124,11 @@ function formatMatchTime(estTime: number | null): string | null {
 function MatchCardSmall({
   card,
   type,
+  onMatchClick,
 }: {
   card: MatchCard;
   type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
+  onMatchClick?: (matchKey: string) => void;
 }) {
   const allianceBorder =
     card.alliance === "red"
@@ -135,7 +139,12 @@ function MatchCardSmall({
 
   return (
     <div
-      className={`w-[180px] flex-shrink-0 border rounded-lg px-3 py-3 flex items-stretch gap-0 ${allianceBorder}`}
+      role={onMatchClick ? "button" : undefined}
+      tabIndex={onMatchClick ? 0 : undefined}
+      onClick={onMatchClick ? () => onMatchClick(card.matchKey) : undefined}
+      onKeyDown={onMatchClick ? (e) => e.key === "Enter" && onMatchClick(card.matchKey) : undefined}
+      className={`w-[180px] flex-shrink-0 border rounded-lg px-3 py-3 flex items-stretch gap-0 ${allianceBorder} ${onMatchClick ? "cursor-pointer hover:opacity-90 hover:ring-2 hover:ring-primary/50 transition-all" : ""}`}
+      title={onMatchClick ? `View ${card.matchDisplay}` : undefined}
     >
       {/* Left side: centered vertically */}
       <div className="flex flex-1 flex-col items-center justify-center gap-1 pr-2 min-w-0">
@@ -224,10 +233,12 @@ function MatchCardScroll({
   cards,
   type,
   alignRight,
+  onMatchClick,
 }: {
   cards: MatchCard[];
   type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
   alignRight?: boolean;
+  onMatchClick?: (matchKey: string) => void;
 }) {
   return (
     <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
@@ -243,6 +254,7 @@ function MatchCardScroll({
               key={`${m.matchKey}-${m.team}`}
               card={m}
               type={type}
+              onMatchClick={onMatchClick}
             />
           ))
         )}
@@ -358,22 +370,24 @@ function ScouterRow({
   rating,
   onRatingChange,
   onExclude,
+  onMatchClick,
 }: {
   row: ScouterViewRow;
   rating: number | null;
   onRatingChange: (uid: string, n: number) => void;
   onExclude: (uid: string) => void;
+  onMatchClick?: (matchKey: string) => void;
 }) {
   return (
     <div className="flex items-center gap-6">
-      <MatchCardScroll cards={row.pastMatches} type="scouter-past" alignRight />
+      <MatchCardScroll cards={row.pastMatches} type="scouter-past" alignRight onMatchClick={onMatchClick} />
       <ScouterCard
         row={row}
         rating={rating}
         onRatingChange={(n) => onRatingChange(row.uid, n)}
         onExclude={() => onExclude(row.uid)}
       />
-      <MatchCardScroll cards={row.nextMatches} type="scouter-next" />
+      <MatchCardScroll cards={row.nextMatches} type="scouter-next" onMatchClick={onMatchClick} />
     </div>
   );
 }
@@ -382,20 +396,22 @@ function TeamRow({
   row,
   priority,
   onPriorityChange,
+  onMatchClick,
 }: {
   row: TeamViewRow;
   priority: number | null;
   onPriorityChange: (teamKey: string, n: number) => void;
+  onMatchClick?: (matchKey: string) => void;
 }) {
   return (
     <div className="flex items-center gap-6">
-      <MatchCardScroll cards={row.pastMatches} type="team-past" alignRight />
+      <MatchCardScroll cards={row.pastMatches} type="team-past" alignRight onMatchClick={onMatchClick} />
       <TeamCard
         row={row}
         priority={priority}
         onPriorityChange={(n) => onPriorityChange(row.teamKey, n)}
       />
-      <MatchCardScroll cards={row.nextMatches} type="team-next" />
+      <MatchCardScroll cards={row.nextMatches} type="team-next" onMatchClick={onMatchClick} />
     </div>
   );
 }
@@ -411,10 +427,20 @@ function EmptyState({ children }: { children: ReactNode }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ShiftViewerPage() {
+  const navigate = useNavigate();
+  const { addTab } = useTabContext();
   const { currentEvent } = useDesktopEvent();
   const { schedule, tbaClimbData, lastDataRefreshAt } =
     useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
+
+  const handleMatchClick = useCallback(
+    (matchKey: string) => {
+      addTab("/matches", getMatchLabel(matchKey), { match: matchKey, mode: undefined }, `match-${matchKey}`);
+      navigate({ to: "/matches", search: { match: matchKey, mode: undefined } });
+    },
+    [addTab, navigate]
+  );
 
   const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -661,6 +687,7 @@ function ShiftViewerPage() {
                   rating={dirtyRatings[s.uid] ?? s.rating}
                   onRatingChange={handleRatingChange}
                   onExclude={handleExcludeScouter}
+                  onMatchClick={handleMatchClick}
                 />
               ))}
             </div>
@@ -716,6 +743,7 @@ function ShiftViewerPage() {
                   row={t}
                   priority={dirtyPriorities[t.teamKey] ?? t.priority}
                   onPriorityChange={handlePriorityChange}
+                  onMatchClick={handleMatchClick}
                 />
               ))}
             </div>

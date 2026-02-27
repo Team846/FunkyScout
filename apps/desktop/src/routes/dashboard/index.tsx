@@ -1,6 +1,6 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import supabase from "@lib/supabase/supabase";
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { Search, ArrowDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shadcn/ui/components/tabs.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
@@ -10,6 +10,8 @@ import { useDesktopEvent } from "../../contexts/DesktopEventContext";
 import { getUserProfiles } from "@lib/data/scouterRatings";
 import { getMatchScoutingData } from "../../lib/db";
 import type { MatchScoutingData } from "../../lib/db";
+import { useTabContext } from "../../contexts/TabContext";
+import { getMatchLabel } from "@lib/utils/match";
 import { LeftPanel } from "./-components/LeftPanel";
 import { ScheduleTable, type ScheduleTableHandle } from "./-components/ScheduleTable";
 import { RankingsTable, type RankingsTableHandle } from "./-components/RankingsTable";
@@ -34,9 +36,19 @@ interface UserProfile {
 }
 
 function DashboardPage() {
+  const navigate = useNavigate();
+  const { addTab } = useTabContext();
   const { tbaTeams } = useDesktopTeamData();
   const { schedule, tbaSchedule, tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
   const { currentEvent, homeTeam, useTbaClimb } = useDesktopEvent();
+
+  const handleMatchClick = useCallback(
+    (matchKey: string) => {
+      addTab("/matches", getMatchLabel(matchKey), { match: matchKey, mode: undefined }, `match-${matchKey}`);
+      navigate({ to: "/matches", search: { match: matchKey, mode: undefined } });
+    },
+    [addTab, navigate]
+  );
 
   const scheduleTableRef = useRef<ScheduleTableHandle>(null);
   const rankingsTableRef = useRef<RankingsTableHandle>(null);
@@ -144,6 +156,7 @@ function DashboardPage() {
                 tbaTeams={tbaTeams}
                 searchQuery={searchQuery}
                 homeTeamKey={homeTeamKey}
+                onMatchClick={handleMatchClick}
               />
             </div>
           </TabsContent>

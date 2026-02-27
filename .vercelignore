@@ -1,0 +1,27 @@
+# Only mobile app goes to Vercel — exclude desktop entirely
+apps/desktop
+
+# Dependencies — Vercel installs these
+node_modules
+*/node_modules
+
+# Rust/Tauri build output
+**/target
+
+# Build outputs
+dist
+.output
+.turbo
+**/dist
+**/.turbo
+
+# Local/dev files
+.env
+.env*.local
+*.db
+.DS_Store
+.vercel
+.idea
+.vscode
+.supabase
+scripts
