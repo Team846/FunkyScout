@@ -540,7 +540,7 @@ function TeamInfoPage() {
   const teamNum = teamKey?.replace("frc", "");
 
   return (
-    <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
+    <div className="flex min-h-dvh w-full flex-col bg-background px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
       {/* Back Button */}
       {/* Header: Back + Tabs */}
       <div className="mb-4 flex items-center gap-3">

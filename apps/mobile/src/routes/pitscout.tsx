@@ -404,7 +404,7 @@ function ScoutPage() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full flex-col bg-background px-6 py-4">
+    <div className="flex min-h-dvh w-full flex-col bg-background px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
       {/* Header with Back Button, Team Info, and Cheat Sheet */}
       <div className="flex items-center justify-between gap-4 mb-4">
         <div className="flex items-center gap-4">

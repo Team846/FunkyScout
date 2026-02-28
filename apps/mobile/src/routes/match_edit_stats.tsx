@@ -683,7 +683,7 @@ function MatchEditStats() {
       {isWrongOrientation && (
         <RotateDevicePrompt message="Please rotate to portrait mode to edit match data" />
       )}
-      <div className="flex flex-col w-screen h-screen gap-5 p-5">
+      <div className="flex flex-col w-screen h-screen gap-5 px-5 pb-5 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

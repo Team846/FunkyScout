@@ -68,7 +68,7 @@ function MatchEnd() {
       {/* {teamNum && <span className="text-foreground"> | {teamNum}</span>} */}
       {/* {matchNum && <span className="text-foreground"> | {matchNum}</span>} */}
       <div className="flex flex-row w-screen h-screen gap-5 p-5">
-      <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-between items-center min-w-[calc(env(safe-area-inset-left,0px)+10vw)] h-full bg-black-950 gap-2.5 py-3 pl-[env(safe-area-inset-left,0px)] rounded-[15px] border-2 border-[#1E1E1E]">
         <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
           <p className="text-[#CDA745]">
             {matchNum ? getMatchLabel(matchNum) : ""}

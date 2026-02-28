@@ -154,7 +154,7 @@ function HomePage() {
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background p-1">
       {/* Header */}
-      <header className="shrink-0 px-6 py-4">
+      <header className="shrink-0 px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
         <div className="flex items-center gap-3">
           <p className="text-primary text-md font-light">
             {PAGE_TITLES[currentPage]}

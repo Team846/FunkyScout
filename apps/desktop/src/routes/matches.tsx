@@ -274,18 +274,21 @@ function getTeleopClimbPct(
   return Math.round((climbed / total) * 100);
 }
 
-/** Sum of failedClimbCount across team's matches from match scouting */
-function getFailedClimbCount(
+/** Auto climb % from TBA: (matches with auto L1/L2/L3) / matches_played */
+function getAutoClimbPct(
   teamKey: string,
-  matchData: EventMatchData[]
-): number {
-  const teamMatches = matchData.filter((m) => m.team === teamKey && m.data_raw);
-  let sum = 0;
-  for (const m of teamMatches) {
-    const stats = calculateSingleMatchStats(m as unknown as EventMatchData);
-    if (stats?.climb?.failedClimbCount != null) sum += stats.climb.failedClimbCount;
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>
+): number | null {
+  let total = 0;
+  let climbed = 0;
+  for (const matchEntries of Object.values(tbaClimbData)) {
+    const entry = matchEntries[teamKey];
+    if (!entry) continue;
+    total++;
+    if (entry.auto_climb === "L1" || entry.auto_climb === "L2" || entry.auto_climb === "L3") climbed++;
   }
-  return sum;
+  if (total === 0) return null;
+  return Math.round((climbed / total) * 100);
 }
 
 function getMatchedAutoForTeam(
@@ -1178,7 +1181,7 @@ function PredictionTeamBox({
   const setIdx = (i: number) => setAutoIndexByTeam((prev) => ({ ...prev, [team]: i }));
   const currentAuto = teamAutos[idx];
   const climbPct = getTeleopClimbPct(team, tbaClimbData);
-  const failedCount = getFailedClimbCount(team, matchData);
+  const autoClimbPct = getAutoClimbPct(team, tbaClimbData);
   const teamStats = calculateTeamStats(team, matchData);
   const autoLabelForLookup = currentAuto?.name || `Auto ${idx + 1}`;
   const autoRunCount = teamStats?.autoRunCounts
@@ -1260,7 +1263,7 @@ function PredictionTeamBox({
           <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
             <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
-            <span className="text-foreground">Failed: {failedCount}</span>
+            <span className="text-foreground">Auto: {autoClimbPct != null ? `${autoClimbPct}%` : "—"}</span>
           </p>
         </>
       ) : (
@@ -1269,7 +1272,7 @@ function PredictionTeamBox({
           <p className="text-sm font-medium text-foreground text-center">
             <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
-            <span className="text-foreground">Failed: {failedCount}</span>
+            <span className="text-foreground">Auto: {autoClimbPct != null ? `${autoClimbPct}%` : "—"}</span>
           </p>
         </div>
       )}

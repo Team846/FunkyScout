@@ -451,8 +451,8 @@ function ShiftViewerPage() {
 
   const handleMatchClick = useCallback(
     (matchKey: string) => {
-      addTab("/matches", getMatchLabel(matchKey), { match: matchKey, mode: undefined }, `match-${matchKey}`);
-      navigate({ to: "/matches", search: { match: matchKey, mode: undefined } });
+      addTab("/matches", getMatchLabel(matchKey), { match: matchKey }, `match-${matchKey}`);
+      navigate({ to: "/matches", search: { match: matchKey } });
     },
     [addTab, navigate]
   );
