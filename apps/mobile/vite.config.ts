@@ -28,6 +28,12 @@ const plugins: PluginOption[] = [
   VitePWA({
     registerType: "autoUpdate",
     injectRegister: "auto",
+    // Use a custom service worker so we can inject COOP/COEP headers onto
+    // cached HTML responses — enabling SharedArrayBuffer (SQLite WASM/OPFS)
+    // when the app launches from the home screen while offline.
+    strategies: "injectManifest",
+    srcDir: "src",
+    filename: "sw.ts",
     manifest: {
       name: "FunkyScout",
       short_name: "FunkyScout",
@@ -47,19 +53,12 @@ const plugins: PluginOption[] = [
         },
       ],
     },
-    workbox: {
-      // Pre-cache JS/CSS/font bundles AND static SVG assets.
-      // SVGs (red_field.svg, blue_field.svg) must be pre-cached so the field
-      // images are available offline immediately, without requiring a prior
-      // online visit to each page. HTML is intentionally excluded — it must
-      // come from the network for COOP/COEP headers (SharedArrayBuffer/WASM).
+    injectManifest: {
+      // Pre-cache JS/CSS/font bundles AND static SVG assets (field images etc.)
       globPatterns: ["**/*.{js,css,woff2,ttf,svg}"],
-      // Exclude WASM and SQLite worker files — they rely on special
-      // response headers and must not be served from SW cache
+      // Exclude WASM and SQLite worker files — they rely on special response
+      // headers and must not be served from the SW cache
       globIgnores: ["**/*.wasm", "**/sqlite*.js", "**/sqlite3*.js"],
-      // Never intercept navigation — HTML must come from Vercel
-      // so SharedArrayBuffer headers are present
-      navigateFallback: null,
     },
   }),
 ];

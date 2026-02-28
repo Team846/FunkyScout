@@ -12,6 +12,7 @@ import {
   getSyncQueue,
   removeSyncQueueItem,
   incrementSyncQueueRetry,
+  upsertEventTeamDataRows,
   type SyncQueueItem,
 } from "@lib/db";
 import {
@@ -354,6 +355,24 @@ export class SyncManager {
       uid,
       timestamp,
     });
+
+    // 4. Write real paths back to local SQLite so the UI refreshes immediately.
+    //    Without this, pending-* placeholders stay in the cache until the next
+    //    5-minute polling cycle replaces them — images never appear until restart.
+    await upsertEventTeamDataRows(event, [
+      {
+        event,
+        team,
+        data: updatedData,
+        team_name: teamName,
+        name,
+        uid,
+        assigned: undefined,
+        timestamp,
+        last_modified: Date.now(),
+        deleted_at: undefined,
+      },
+    ]);
   }
 
   /**

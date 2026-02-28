@@ -191,10 +191,10 @@ function MatchEnd() {
       <div className="flex flex-col justify-center items-center w-[30vw] shrink-0 h-full gap-2.5 p-2.5 rounded-[15px]">
         <Button
           variant="secondary"
-          className="w-full h-full border-[#CDA745] bg-background border-2 hover:bg-[#CDA745]/10 px-8"
+          className="w-full h-full border-[#CDA745] bg-background border-2 hover:bg-[#CDA745]/10 px-3 whitespace-normal"
           onClick={handleGoToSummary}
         >
-          <p className="text-[18px] text-[#CDA745] leading-tight">Go to Match Summary</p>
+          <p className="text-[18px] text-[#CDA745] leading-tight text-center">Go to Match Summary</p>
         </Button>
       </div>
 

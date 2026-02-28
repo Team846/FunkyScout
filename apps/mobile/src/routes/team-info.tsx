@@ -141,9 +141,19 @@ function PitImageWithRetry({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [errored, setErrored] = useState(false);
 
+  // When path changes (e.g. pending-* → real path after upload sync), reset so
+  // the observer can trigger a fresh fetch with the new URL
+  useEffect(() => {
+    setErrored(false);
+    setBlobUrl(null);
+  }, [path]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    // Don't attempt to fetch pending paths — image is still uploading
+    if (path.startsWith("pending-")) return;
 
     let cancelled = false;
     let activeController: AbortController | null = null;
@@ -222,7 +232,7 @@ function PitImageWithRetry({
           className="w-full h-full object-cover"
         />
       ) : (
-        <span className="text-xs text-muted-foreground">Loading…</span>
+        <span className="text-xs text-muted-foreground">{path.startsWith("pending-") ? "Uploading…" : "Loading…"}</span>
       )}
     </div>
   );

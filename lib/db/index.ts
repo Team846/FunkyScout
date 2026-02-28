@@ -711,8 +711,15 @@ export async function upsertEventTeamDataRows(
            (event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(event, team) DO UPDATE SET
-           data=excluded.data, team_name=excluded.team_name, name=excluded.name,
-           uid=excluded.uid, assigned=excluded.assigned, timestamp=excluded.timestamp,
+           data=CASE
+             WHEN excluded.data IS NULL THEN event_team_data.data
+             ELSE json_patch(COALESCE(event_team_data.data, '{}'), excluded.data)
+           END,
+           team_name=COALESCE(excluded.team_name, event_team_data.team_name),
+           name=COALESCE(excluded.name, event_team_data.name),
+           uid=COALESCE(excluded.uid, event_team_data.uid),
+           assigned=COALESCE(excluded.assigned, event_team_data.assigned),
+           timestamp=excluded.timestamp,
            last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [
             item.event,
