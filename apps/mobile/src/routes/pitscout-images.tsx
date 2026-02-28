@@ -142,7 +142,7 @@ function PitScoutImagesPage() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full flex-col bg-background px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+    <div className="flex min-h-dvh w-full flex-col bg-background px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
       {/* Header with Back Button + Team Info (same style as first page) */}
       <div className="flex items-center gap-4 mb-4">
         <button onClick={handleBack} className="text-primary">

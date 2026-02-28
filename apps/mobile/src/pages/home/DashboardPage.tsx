@@ -925,9 +925,9 @@ export function DashboardPage() {
           </Button>
         </div>
 
-        <div className="flex gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div
-            className="flex-1 aspect-square rounded-2xl bg-muted p-6"
+            className="aspect-square rounded-2xl bg-muted p-6"
             onClick={() => navigate({ to: "/match" })}
           >
             <div className="flex h-full flex-col justify-between">
@@ -962,7 +962,7 @@ export function DashboardPage() {
           </div>
 
           <div
-            className="flex-1 rounded-2xl bg-muted p-6"
+            className="rounded-2xl bg-muted p-6"
             onClick={() => navigate({ to: "/pit" })}
           >
             <div className="flex h-full flex-col justify-between">
@@ -1021,9 +1021,9 @@ export function DashboardPage() {
           </Button>
         </div>
 
-        <div className="flex gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div
-            className="flex-1 rounded-2xl bg-muted p-6 aspect-square cursor-pointer"
+            className="aspect-square rounded-2xl bg-muted p-6 cursor-pointer"
             onClick={() => setPicklistSelectorOpen(true)}
           >
             <div className="flex h-full flex-col justify-between">
@@ -1058,7 +1058,7 @@ export function DashboardPage() {
           </div>
 
           <div
-            className={`flex-1 rounded-2xl bg-muted p-6 ${canCreatePicklist(userData.role || "user") ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+            className={`rounded-2xl bg-muted p-6 ${canCreatePicklist(userData.role || "user") ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
             onClick={() => {
               if (canCreatePicklist(userData.role || "user")) {
                 navigate({ to: "/picklist-creator" });

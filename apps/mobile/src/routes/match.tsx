@@ -97,7 +97,7 @@ export function Match() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full flex-col bg-background px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+    <div className="flex min-h-dvh w-full flex-col bg-background px-6 pb-4 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
       {/* Back Button */}
       <button onClick={handleBackClick} className="text-primary mb-4">
         <svg

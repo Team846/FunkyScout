@@ -288,6 +288,7 @@ function MatchPlay() {
       }));
       setUndoStack([]);
     }
+    setTeleopClimbOrientation(null);
     vibrateTap();
   }, []);
 
@@ -685,9 +686,9 @@ function MatchPlay() {
     <>
       {isWrongOrientation && <RotateDevicePrompt />}
       <div
-        className={`flex flex-row w-screen h-screen gap-5 p-5 ${shake ? "animate-shake" : ""}`}
+        className={`flex flex-row w-screen h-screen gap-5 py-5 pr-5 pl-[max(1.25rem,env(safe-area-inset-left,0px))] ${shake ? "animate-shake" : ""}`}
       >
-        <div className="flex flex-col justify-between items-center min-w-[calc(env(safe-area-inset-left,0px)+10vw)] h-full bg-black-950 gap-2.5 py-3 pl-[env(safe-area-inset-left,0px)] rounded-[15px] border-2 border-[#1E1E1E]">
+        <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
           <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
             <p className="text-[#CDA745]">
               {matchNum ? getMatchLabel(matchNum) : ""}

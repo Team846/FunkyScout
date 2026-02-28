@@ -520,7 +520,7 @@ function PicklistViewPage() {
   return (
     <div className="flex min-h-dvh w-full flex-col bg-background p-1">
       {/* Header */}
-      <header className="shrink-0 px-7 pb-6 pt-[calc(env(safe-area-inset-top,0px)+1.5rem)]">
+      <header className="shrink-0 px-7 pb-6 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
         <div className="grid grid-cols-3 items-center">
           <div className="flex items-center">
             <Button
