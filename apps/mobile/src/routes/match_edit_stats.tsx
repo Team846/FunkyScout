@@ -412,6 +412,33 @@ function MatchEditStats() {
     [matchData?.toggleActions]
   );
 
+  // Returns a timestamp suitable for a new action at the END of its phase.
+  // Matches the existing timestamp format (epoch ms if live-scouted, match-relative if not)
+  // and sorts after all existing actions so playback isn't disrupted.
+  // locationOverride / presetOverride: pass filtered arrays when rebuilding a category
+  // (so removed actions don't inflate the max).
+  const endOfPhase = (
+    ph: "auto" | "teleop" | "endgame",
+    locationOverride?: LocationAction[],
+    presetOverride?: PresetAction[]
+  ): number => {
+    if (!matchData) return 150000;
+    const isAuto = ph === "auto";
+    const toggleTs = matchData.toggleActions
+      .filter(a => isAuto ? a.phase === "auto" : (a.phase === "teleop" || a.phase === "endgame"))
+      .map(a => a.timestamp);
+    const locationTs = (locationOverride ?? matchData.locationActions)
+      .filter(a => a.phase === (isAuto ? "auto" : "teleop"))
+      .map(a => a.timestamp);
+    const presetTs = (presetOverride ?? matchData.presetActions)
+      .filter(a => a.phase === (isAuto ? "auto" : "teleop"))
+      .map(a => a.timestamp);
+    const all = [...toggleTs, ...locationTs, ...presetTs];
+    // If no actions exist yet, use a sensible match-relative fallback
+    if (all.length === 0) return isAuto ? 15000 : 150000;
+    return Math.max(...all) + 1000;
+  };
+
   const toggleAction = (
     uiAction: string, // Shorthand: "climb_L1", "climb_L2", "climb_L3", "disable", "defend"
     phase: "auto" | "teleop" | "endgame" = "teleop"
@@ -443,6 +470,10 @@ function MatchEditStats() {
       : uiAction === "block"   ? activeToggles.block
       : false;
 
+    // Compute a timestamp at the end of this phase so edited actions don't disrupt playback.
+    // All actions in a batch share the same timestamp — user said "fine if they blink together."
+    const phaseTs = endOfPhase(phase);
+
     // Climb exclusivity: activating a climb level deactivates all others in the same phase
     const newActions: ToggleAction[] = [];
     if (isClimb && !currentlyActive) {
@@ -455,18 +486,15 @@ function MatchEditStats() {
           const isActiveInSamePhase =
             matchData.toggleActions.filter((a) => a.type === climbType).at(-1)?.active ?? false;
           if (isActiveInSamePhase) {
-            newActions.push({ type: climbType, timestamp: Date.now(), active: false, phase });
+            newActions.push({ type: climbType, timestamp: phaseTs, active: false, phase });
           }
         }
       });
     }
 
-    // Climb actions added in edit mode get a phase-end timestamp so climbTime = 0
-    const climbTimestamp = phase === "auto" ? 20000 : 140000;
-
     const newAction: ToggleAction = {
       type: resolvedType,
-      timestamp: isClimb ? climbTimestamp : Date.now(),
+      timestamp: phaseTs,
       active: !currentlyActive,
       phase,
     };
@@ -534,18 +562,12 @@ function MatchEditStats() {
     const filtered = matchData.presetActions.filter(
       (a) => !(a.type === "stationStocked" && a.phase === "teleop")
     );
+    const baseTs = endOfPhase("teleop", undefined, filtered);
     const newActions: PresetAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "stationStocked",
-        timestamp: Date.now(),
-        phase: "teleop",
-      });
+      newActions.push({ type: "stationStocked", timestamp: baseTs + i * 100, phase: "teleop" });
     }
-    setMatchData({
-      ...matchData,
-      presetActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, presetActions: [...filtered, ...newActions] });
   };
 
   const setAutoIntakes = (value: number) => {
@@ -553,19 +575,12 @@ function MatchEditStats() {
     const filtered = matchData.locationActions.filter(
       (a) => !(a.type === "groundIntake" && a.phase === "auto")
     );
+    const baseTs = endOfPhase("auto", filtered);
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "groundIntake",
-        timestamp: Date.now(),
-        coords: [0.5, 0.5],
-        phase: "auto",
-      });
+      newActions.push({ type: "groundIntake", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "auto" });
     }
-    setMatchData({
-      ...matchData,
-      locationActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
   const setTeleopIntakes = (value: number) => {
@@ -573,19 +588,12 @@ function MatchEditStats() {
     const filtered = matchData.locationActions.filter(
       (a) => !(a.type === "groundIntake" && a.phase === "teleop")
     );
+    const baseTs = endOfPhase("teleop", filtered);
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "groundIntake",
-        timestamp: Date.now(),
-        coords: [0.5, 0.5],
-        phase: "teleop",
-      });
+      newActions.push({ type: "groundIntake", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "teleop" });
     }
-    setMatchData({
-      ...matchData,
-      locationActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
   const setAutoPasses = (value: number) => {
@@ -593,19 +601,12 @@ function MatchEditStats() {
     const filtered = matchData.locationActions.filter(
       (a) => !(a.type === "passing" && a.phase === "auto")
     );
+    const baseTs = endOfPhase("auto", filtered);
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "passing",
-        timestamp: Date.now(),
-        coords: [0.5, 0.5],
-        phase: "auto",
-      });
+      newActions.push({ type: "passing", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "auto" });
     }
-    setMatchData({
-      ...matchData,
-      locationActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
   const setTeleopPasses = (value: number) => {
@@ -613,19 +614,12 @@ function MatchEditStats() {
     const filtered = matchData.locationActions.filter(
       (a) => !(a.type === "passing" && a.phase === "teleop")
     );
+    const baseTs = endOfPhase("teleop", filtered);
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "passing",
-        timestamp: Date.now(),
-        coords: [0.5, 0.5],
-        phase: "teleop",
-      });
+      newActions.push({ type: "passing", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "teleop" });
     }
-    setMatchData({
-      ...matchData,
-      locationActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
   const setAutoShoots = (value: number) => {
@@ -633,19 +627,12 @@ function MatchEditStats() {
     const filtered = matchData.locationActions.filter(
       (a) => !(a.type === "shoot" && a.phase === "auto")
     );
+    const baseTs = endOfPhase("auto", filtered);
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "shoot",
-        timestamp: Date.now(),
-        coords: [0.5, 0.5],
-        phase: "auto",
-      });
+      newActions.push({ type: "shoot", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "auto" });
     }
-    setMatchData({
-      ...matchData,
-      locationActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
   const setTeleopShoots = (value: number) => {
@@ -653,19 +640,12 @@ function MatchEditStats() {
     const filtered = matchData.locationActions.filter(
       (a) => !(a.type === "shoot" && a.phase === "teleop")
     );
+    const baseTs = endOfPhase("teleop", filtered);
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({
-        type: "shoot",
-        timestamp: Date.now(),
-        coords: [0.5, 0.5],
-        phase: "teleop",
-      });
+      newActions.push({ type: "shoot", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "teleop" });
     }
-    setMatchData({
-      ...matchData,
-      locationActions: [...filtered, ...newActions],
-    });
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
   const selectCurrentAuto = () => {

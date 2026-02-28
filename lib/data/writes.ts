@@ -755,10 +755,12 @@ export async function putTeamDataWithImages(
     `[Writes] Preparing team data with ${imageFiles.length} images for ${teamNumber}`,
   );
 
-  // 1. Compress images
-  const compressedBlobs = await Promise.all(
-    imageFiles.map((file) => compressImage(file)),
-  );
+  // 1. Compress images sequentially to avoid simultaneous Canvas renders
+  // crashing low-RAM devices (old iPads, budget Androids)
+  const compressedBlobs: Blob[] = [];
+  for (const file of imageFiles) {
+    compressedBlobs.push(await compressImage(file));
+  }
 
   // 2. Store compressed images in IndexedDB queue
   const localImageIds = await Promise.all(

@@ -48,10 +48,12 @@ const plugins: PluginOption[] = [
       ],
     },
     workbox: {
-      // Only pre-cache hashed JS/CSS/font bundles — NOT HTML
-      // HTML must always come from the network to get COOP/COEP headers
-      // required for SharedArrayBuffer (WASM SQLite)
-      globPatterns: ["**/*.{js,css,woff2,ttf}"],
+      // Pre-cache JS/CSS/font bundles AND static SVG assets.
+      // SVGs (red_field.svg, blue_field.svg) must be pre-cached so the field
+      // images are available offline immediately, without requiring a prior
+      // online visit to each page. HTML is intentionally excluded — it must
+      // come from the network for COOP/COEP headers (SharedArrayBuffer/WASM).
+      globPatterns: ["**/*.{js,css,woff2,ttf,svg}"],
       // Exclude WASM and SQLite worker files — they rely on special
       // response headers and must not be served from SW cache
       globIgnores: ["**/*.wasm", "**/sqlite*.js", "**/sqlite3*.js"],

@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Textarea } from "@shadcn/ui/components/textarea.tsx";
 import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { toast } from "sonner";
 import { useEvent } from "@lib/context/EventContext";
+import { useSync } from "@lib/context/SyncContext";
 import { getEventMatchData, getEventTeamData, getEventSchedule, cacheEventTeamData, type EventMatchData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
 import { putTeamData } from "@lib/data/writes";
@@ -144,25 +145,46 @@ function PitImageWithRetry({
     const el = containerRef.current;
     if (!el) return;
 
+    let cancelled = false;
+    let activeController: AbortController | null = null;
+
+    const doFetch = async (attempt = 0) => {
+      const url = getImageUrl(path);
+      activeController = new AbortController();
+      // 15s timeout — covers slow event-day WiFi without hanging forever
+      const timeout = setTimeout(() => activeController!.abort(), 15000);
+      try {
+        const r = await fetch(url, { mode: "cors", signal: activeController.signal });
+        clearTimeout(timeout);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        if (!cancelled) setBlobUrl(URL.createObjectURL(blob));
+      } catch {
+        clearTimeout(timeout);
+        if (!cancelled && attempt === 0) {
+          // Wait 2s then retry once before giving up
+          await new Promise((res) => setTimeout(res, 2000));
+          if (!cancelled) doFetch(1);
+        } else if (!cancelled) {
+          setErrored(true);
+        }
+      }
+    };
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting || blobUrl || errored) return;
-        const url = getImageUrl(path);
-        fetch(url, { mode: "cors" })
-          .then((r) => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.blob();
-          })
-          .then((blob) => {
-            setBlobUrl(URL.createObjectURL(blob));
-          })
-          .catch(() => setErrored(true));
+        doFetch();
       },
       { rootMargin: "100px" }
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelled = true;
+      activeController?.abort();
+      observer.disconnect();
+    };
   }, [path, blobUrl, errored]);
 
   useEffect(() => {
@@ -210,6 +232,7 @@ function TeamInfoPage() {
   const navigate = useNavigate();
   const { teamKey } = Route.useSearch();
   const { currentEvent } = useEvent();
+  const { registerRefreshCallback } = useSync();
   const [pitData, setPitData] = useState<PitData | null>(null);
   const [teamName, setTeamName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -230,28 +253,47 @@ function TeamInfoPage() {
 
   const [matchData, setMatchData] = useState<EventMatchData[]>([]);
   
+  // Stable callback so the sync refresh registration doesn't churn on every render
+  const refreshPitData = useCallback(() => {
+    if (!currentEvent || !teamKey) return;
+    getEventTeamData(currentEvent).then((data) => {
+      const teamData = data.find((t) => t.team === teamKey);
+      if (teamData) {
+        setTeamName(teamData.team_name || `Team ${teamKey?.replace("frc", "")}`);
+        if (teamData.data && teamData.name != null && teamData.name !== "") {
+          setPitData(teamData.data as PitData);
+        } else {
+          setPitData(null);
+        }
+      }
+    });
+  }, [currentEvent, teamKey]);
+
+  // Initial load (sets loading state too)
   useEffect(() => {
     if (!currentEvent || !teamKey) {
       setLoading(false);
       return;
     }
-
     getEventTeamData(currentEvent).then((data) => {
       const teamData = data.find((t) => t.team === teamKey);
       if (teamData) {
-        // Always store team name (exists even without pit data)
         setTeamName(teamData.team_name || `Team ${teamKey?.replace("frc", "")}`);
-
-        // Team is scouted if it has a scouter name (not just TBA/Statbotics data)
         if (teamData.data && teamData.name != null && teamData.name !== "") {
           setPitData(teamData.data as PitData);
         } else {
-          setPitData(null); // Treat as not scouted
+          setPitData(null);
         }
       }
       setLoading(false);
     });
   }, [currentEvent, teamKey]);
+
+  // Re-read pit data from SQLite whenever a sync completes, app returns to foreground,
+  // or connection is restored — keeps images fresh without manual refresh
+  useEffect(() => {
+    return registerRefreshCallback(refreshPitData);
+  }, [registerRefreshCallback, refreshPitData]);
 
 
   useEffect(() => {
