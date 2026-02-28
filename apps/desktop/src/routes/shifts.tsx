@@ -7,6 +7,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import { Maximize2 } from "lucide-react";
 import { Card } from "@shadcn/ui/components/card.tsx";
 import {
   Tabs,
@@ -325,17 +326,28 @@ function TeamCard({
   row,
   priority,
   onPriorityChange,
+  onExpand,
 }: {
   row: TeamViewRow;
   priority: number | null;
   onPriorityChange: (n: number) => void;
+  onExpand?: () => void;
 }) {
   return (
     <Card className="w-[220px] flex-shrink-0 px-4 py-3 flex flex-col gap-1.5">
-      {/* Row 1: team number + name */}
+      {/* Row 1: team number + name + expand */}
       <div className="flex items-baseline gap-2 min-w-0">
         <span className="font-bold text-base flex-shrink-0">{row.teamNumber}</span>
-        <span className="text-xs text-muted-foreground truncate">{row.teamName}</span>
+        <span className="text-xs text-muted-foreground truncate flex-1">{row.teamName}</span>
+        {onExpand && (
+          <button
+            onClick={onExpand}
+            className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground transition-colors flex-shrink-0"
+            title="Open team page"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
       {/* Row 2: EPA + scouted */}
       <div className="text-xs text-muted-foreground leading-snug">
@@ -397,11 +409,13 @@ function TeamRow({
   priority,
   onPriorityChange,
   onMatchClick,
+  onTeamClick,
 }: {
   row: TeamViewRow;
   priority: number | null;
   onPriorityChange: (teamKey: string, n: number) => void;
   onMatchClick?: (matchKey: string) => void;
+  onTeamClick?: (teamKey: string) => void;
 }) {
   return (
     <div className="flex items-center gap-6">
@@ -410,6 +424,7 @@ function TeamRow({
         row={row}
         priority={priority}
         onPriorityChange={(n) => onPriorityChange(row.teamKey, n)}
+        onExpand={onTeamClick ? () => onTeamClick(row.teamKey) : undefined}
       />
       <MatchCardScroll cards={row.nextMatches} type="team-next" onMatchClick={onMatchClick} />
     </div>
@@ -438,6 +453,15 @@ function ShiftViewerPage() {
     (matchKey: string) => {
       addTab("/matches", getMatchLabel(matchKey), { match: matchKey, mode: undefined }, `match-${matchKey}`);
       navigate({ to: "/matches", search: { match: matchKey, mode: undefined } });
+    },
+    [addTab, navigate]
+  );
+
+  const handleTeamClick = useCallback(
+    (teamKey: string) => {
+      const teamNum = teamKey.replace("frc", "");
+      addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+      navigate({ to: "/team", search: { team: teamKey } });
     },
     [addTab, navigate]
   );
@@ -744,6 +768,7 @@ function ShiftViewerPage() {
                   priority={dirtyPriorities[t.teamKey] ?? t.priority}
                   onPriorityChange={handlePriorityChange}
                   onMatchClick={handleMatchClick}
+                  onTeamClick={handleTeamClick}
                 />
               ))}
             </div>

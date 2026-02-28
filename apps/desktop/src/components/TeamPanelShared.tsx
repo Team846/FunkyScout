@@ -114,6 +114,8 @@ export interface FullTeamPanelProps {
   isGraphed?: boolean;
   /** For comparison: toggle graph */
   onGraphToggle?: (e: React.MouseEvent) => void;
+  /** Navigate to team page */
+  onTeamExpand?: () => void;
 }
 
 export function FullTeamPanel({
@@ -133,6 +135,7 @@ export function FullTeamPanel({
   metricsBetterStatus,
   isGraphed = false,
   onGraphToggle,
+  onTeamExpand,
 }: FullTeamPanelProps) {
   const teamNum = getTeamNum(teamKey);
   const teamName = tbaTeam?.name ?? teamKey;
@@ -206,8 +209,9 @@ export function FullTeamPanel({
             </>
           )}
           <button
+            onClick={(e) => { e.stopPropagation(); onTeamExpand?.(); }}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-            title="Expand team details"
+            title="Open team page"
           >
             <Maximize2 className="w-5 h-5" />
           </button>

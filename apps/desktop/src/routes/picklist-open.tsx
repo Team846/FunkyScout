@@ -54,6 +54,7 @@ import {
   PopoverTrigger,
 } from "@shadcn/ui/components/popover.tsx";
 import { toast } from "sonner";
+import { useTabContext } from "../contexts/TabContext";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
@@ -669,6 +670,7 @@ function PicklistEditorPage() {
 
 function PicklistEditor({ picklistId }: { picklistId: string }) {
   const navigate = useNavigate();
+  const { addTab } = useTabContext();
   const { currentEvent, useTbaClimb } = useDesktopEvent();
   const { picklists, tbaClimbData, lastDataRefreshAt, refresh } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
@@ -1218,6 +1220,11 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                             prev.filter((t) => t !== teamKey)
                           )
                         }
+                        onTeamExpand={() => {
+                          const teamNum = teamKey.replace("frc", "");
+                          addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+                          navigate({ to: "/team", search: { team: teamKey } });
+                        }}
                       />
                     ))}
                     {/* Bars (slots 2 & 3) - same gap as full panels */}

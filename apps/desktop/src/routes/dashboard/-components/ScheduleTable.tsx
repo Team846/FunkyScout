@@ -18,6 +18,7 @@ interface ScheduleTableProps {
   searchQuery: string;
   homeTeamKey: string; // e.g. "frc846"
   onMatchClick?: (matchKey: string) => void;
+  onTeamClick?: (teamKey: string) => void;
 }
 
 function formatMatchKey(matchKey: string): string {
@@ -73,6 +74,7 @@ function TeamChip({
   q75,
   isHome,
   scouterName,
+  onClick,
 }: {
   teamKey: string;
   tbaTeams: TBATeam[];
@@ -80,6 +82,7 @@ function TeamChip({
   q75: number;
   isHome: boolean;
   scouterName?: string;
+  onClick?: () => void;
 }) {
   const team = tbaTeams.find((t) => t.key === teamKey);
   const epa = team?.epa?.total_points?.mean;
@@ -97,9 +100,11 @@ function TeamChip({
     <Tooltip>
       <TooltipTrigger asChild>
         <span
+          onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
           className={[
             "inline-flex items-center justify-center min-w-[56px] px-2.5 py-2 rounded text-xs font-bold transition-colors tabular-nums",
             chipClass,
+            onClick ? "cursor-pointer hover:ring-1 hover:ring-primary/60 hover:brightness-110" : "",
           ].join(" ")}
         >
           {teamNum}
@@ -126,7 +131,7 @@ function formatTime(estTime: number | undefined): string {
 
 export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>(
   function ScheduleTable(
-    { schedule, tbaSchedule, tbaTeams, searchQuery, homeTeamKey, onMatchClick },
+    { schedule, tbaSchedule, tbaTeams, searchQuery, homeTeamKey, onMatchClick, onTeamClick },
     ref
   ) {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -257,6 +262,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                         q75={q75}
                         isHome={team === homeTeamKey}
                         scouterName={entry?.name}
+                        onClick={onTeamClick ? () => onTeamClick(team) : undefined}
                       />
                     );
                   })}
@@ -278,6 +284,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                         q75={q75}
                         isHome={team === homeTeamKey}
                         scouterName={entry?.name}
+                        onClick={onTeamClick ? () => onTeamClick(team) : undefined}
                       />
                     );
                   })}

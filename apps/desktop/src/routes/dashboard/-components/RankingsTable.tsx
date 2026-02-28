@@ -19,6 +19,7 @@ interface RankingsTableProps {
   tbaClimbData?: Record<string, Record<string, TbaClimbEntry>>;
   useTbaClimb?: boolean;
   homeTeamKey?: string;
+  onTeamClick?: (teamKey: string) => void;
 }
 
 interface TeamRow {
@@ -47,7 +48,7 @@ function useEpaColors(tbaTeams: TBATeam[]) {
 }
 
 export const RankingsTable = forwardRef<RankingsTableHandle, RankingsTableProps>(
-  function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, useTbaClimb, homeTeamKey }, ref) {
+  function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, useTbaClimb, homeTeamKey, onTeamClick }, ref) {
   const [sortCol, setSortCol] = useState<SortColumn>("rank");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -220,13 +221,26 @@ export const RankingsTable = forwardRef<RankingsTableHandle, RankingsTableProps>
               >
                 {/* Team chip */}
                 <div className="flex justify-center">
-                  <span className="inline-flex items-center justify-center min-w-[48px] px-2.5 py-1 rounded text-sm font-bold bg-background text-primary tabular-nums">
+                  <span
+                    onClick={onTeamClick ? () => onTeamClick(row.key) : undefined}
+                    className={[
+                      "inline-flex items-center justify-center min-w-[48px] px-2.5 py-1 rounded text-sm font-bold bg-background text-primary tabular-nums transition-colors",
+                      onTeamClick ? "cursor-pointer hover:bg-primary/15 hover:ring-1 hover:ring-primary/50" : "",
+                    ].join(" ")}
+                  >
                     {row.team}
                   </span>
                 </div>
 
                 {/* Name */}
-                <span className={`text-sm truncate pl-6 pr-4 ${isHomeTeam ? "text-primary font-semibold" : "text-foreground"}`}>
+                <span
+                  onClick={onTeamClick ? () => onTeamClick(row.key) : undefined}
+                  className={[
+                    `text-sm truncate pl-6 pr-4 transition-colors`,
+                    isHomeTeam ? "text-primary font-semibold" : "text-foreground",
+                    onTeamClick ? "cursor-pointer hover:text-primary" : "",
+                  ].join(" ")}
+                >
                   {row.name}
                 </span>
 

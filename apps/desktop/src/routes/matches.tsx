@@ -24,7 +24,6 @@ export const Route = createFileRoute("/matches")({
   component: MatchesPage,
   validateSearch: (search: Record<string, unknown>) => ({
     match: (search.match as string) || "",
-    mode: (search.mode as string) || undefined, // "prediction" to force prediction view
   }),
 });
 
@@ -398,6 +397,7 @@ function MatchPlaybackView({
   videoCache,
   tbaClimbData,
   pitScoutingByTeam,
+  onTeamClick,
 }: {
   matchKey: string;
   currentEvent: string | null;
@@ -409,6 +409,7 @@ function MatchPlaybackView({
   videoCache: { data: { key: string; videos: { type: string; key: string }[] }[] } | null;
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   pitScoutingByTeam: Map<string, PitScoutingData>;
+  onTeamClick?: (teamKey: string) => void;
 }) {
   const teamsInMatch = useMemo(() => schedule.filter((s) => s.match === matchKey), [schedule, matchKey]);
   const teamsWithData = useMemo(
@@ -535,7 +536,19 @@ function MatchPlaybackView({
                     className={`rounded-xl border-4 bg-blue-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-blue-500"}`}
                     style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
                   >
-                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
+                    <div className="flex items-center justify-between shrink-0 mb-1 gap-1">
+                      <p className="text-base font-semibold text-foreground truncate flex-1 text-center">Team {s.team.replace(/frc/i, "")}</p>
+                      {onTeamClick && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onTeamClick(s.team); }}
+                          className="p-0.5 rounded text-foreground/40 hover:text-foreground transition-colors flex-shrink-0"
+                          title="Open team page"
+                        >
+                          <Maximize2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                     {hasScoutedData ? (
                       <>
                         <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
@@ -607,7 +620,15 @@ function MatchPlaybackView({
             <div className="flex items-center gap-3 rounded-lg p-3 bg-muted/50">
               <button
                 type="button"
-                onClick={() => setPlaying((p) => !p)}
+                onClick={() => {
+                  if (progress >= 1) {
+                    setProgress(0);
+                    lastProgressRef.current = 0;
+                    setPlaying(true);
+                  } else {
+                    setPlaying((p) => !p);
+                  }
+                }}
                 disabled={!canPlay}
                 className="flex items-center justify-center size-9 rounded-full bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               >
@@ -854,7 +875,19 @@ function MatchPlaybackView({
                     className={`rounded-xl border-4 bg-red-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-red-500"}`}
                     style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
                   >
-                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
+                    <div className="flex items-center justify-between shrink-0 mb-1 gap-1">
+                      <p className="text-base font-semibold text-foreground truncate flex-1 text-center">Team {s.team.replace(/frc/i, "")}</p>
+                      {onTeamClick && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onTeamClick(s.team); }}
+                          className="p-0.5 rounded text-foreground/40 hover:text-foreground transition-colors flex-shrink-0"
+                          title="Open team page"
+                        >
+                          <Maximize2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                     {hasScoutedData ? (
                       <>
                         <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
@@ -966,8 +999,7 @@ function MatchPredictionView({
   pitScoutingByTeam,
   tbaTeams,
   onBack,
-  matchHasHappened,
-  onSwitchToPlayback,
+  onTeamClick,
 }: {
   matchKey: string;
   schedule: { match: string; team: string; alliance: "red" | "blue" }[];
@@ -976,8 +1008,7 @@ function MatchPredictionView({
   pitScoutingByTeam: Map<string, PitScoutingData>;
   tbaTeams: TBATeam[];
   onBack?: () => void;
-  matchHasHappened?: boolean;
-  onSwitchToPlayback?: () => void;
+  onTeamClick?: (teamKey: string) => void;
 }) {
   const teamsInMatch = useMemo(() => schedule.filter((s) => s.match === matchKey), [schedule, matchKey]);
   const [selectedAutosForDisplay, setSelectedAutosForDisplay] = useState<Array<{ team: string; autoIndex: number }>>([]);
@@ -1010,28 +1041,17 @@ function MatchPredictionView({
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-x-hidden">
       <div className="pt-2 pb-1 px-4 flex flex-col items-center gap-1 relative">
         <h1 className="text-xl font-semibold text-primary">{getMatchLabel(matchKey)}</h1>
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-xs"
-              aria-label="Back to all matches"
-            >
-              <CornerDownLeft className="size-3.5" />
-              <span>All matches</span>
-            </button>
-          )}
-          {matchHasHappened && onSwitchToPlayback && (
-            <button
-              type="button"
-              onClick={onSwitchToPlayback}
-              className="px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground hover:opacity-90"
-            >
-              Playback
-            </button>
-          )}
-        </div>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-xs"
+            aria-label="Back to all matches"
+          >
+            <CornerDownLeft className="size-3.5" />
+            <span>All matches</span>
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 min-h-0 flex">
         <div className="flex flex-1 items-stretch justify-center gap-16 w-full max-w-[min(100%,1600px)] mx-auto min-h-0">
@@ -1056,6 +1076,7 @@ function MatchPredictionView({
                   selectedAutosForDisplay={selectedAutosForDisplay}
                   onSelectAuto={toggleAutoSelection}
                   selectedBorderColor={selectedColor}
+                  onTeamClick={onTeamClick}
                 />
               );})}
           </div>
@@ -1114,6 +1135,7 @@ function MatchPredictionView({
                   selectedAutosForDisplay={selectedAutosForDisplay}
                   onSelectAuto={toggleAutoSelection}
                   selectedBorderColor={selectedColor}
+                  onTeamClick={onTeamClick}
                 />
               );})}
           </div>
@@ -1135,6 +1157,7 @@ function PredictionTeamBox({
   selectedAutosForDisplay,
   onSelectAuto,
   selectedBorderColor,
+  onTeamClick,
 }: {
   team: string;
   alliance: "red" | "blue";
@@ -1147,6 +1170,7 @@ function PredictionTeamBox({
   selectedAutosForDisplay: Array<{ team: string; autoIndex: number }>;
   onSelectAuto: (team: string, autoIndex: number) => void;
   selectedBorderColor?: string;
+  onTeamClick?: (teamKey: string) => void;
 }) {
   const teamAutos = getTeamAutos(pitScoutingByTeam.get(team));
   const defaultIdx = getMostSelectedAutoIndex(team, teamAutos, matchData);
@@ -1172,10 +1196,22 @@ function PredictionTeamBox({
       style={isSelected ? { borderColor: selectedBorderColor ?? "hsl(var(--primary))" } : undefined}
       onClick={() => teamAutos.length > 0 && onSelectAuto(team, idx)}
     >
-      <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">
-        Team {team.replace(/frc/i, "")}
-        {epa != null && <span className="text-muted-foreground font-normal"> · {epa.toFixed(1)} EPA</span>}
-      </p>
+      <div className="flex items-center justify-between shrink-0 mb-1 gap-1">
+        <p className="text-base font-semibold text-foreground truncate flex-1 text-center">
+          Team {team.replace(/frc/i, "")}
+          {epa != null && <span className="text-muted-foreground font-normal"> · {epa.toFixed(1)} EPA</span>}
+        </p>
+        {onTeamClick && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onTeamClick(team); }}
+            className="p-0.5 rounded text-foreground/40 hover:text-foreground transition-colors flex-shrink-0"
+            title="Open team page"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        )}
+      </div>
       {teamAutos.length > 0 ? (
         <>
           <div className="flex items-center justify-center gap-1 flex-1 min-h-0">
@@ -1244,7 +1280,7 @@ function PredictionTeamBox({
 function MatchesPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
-  const { match: matchKey, mode: searchMode } = Route.useSearch();
+  const { match: matchKey } = Route.useSearch();
   const { currentEvent } = useDesktopEvent();
   const { schedule, tbaClimbData, tbaSchedule, lastDataRefreshAt } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
@@ -1327,10 +1363,13 @@ function MatchesPage() {
   const handleSelectMatch = (key: string) => {
     const label = getMatchLabel(key);
     addTab("/matches", label, { match: key }, `match-${key}`);
-    navigate({
-      to: "/matches",
-      search: { match: key, mode: searchMode ?? undefined },
-    });
+    navigate({ to: "/matches", search: { match: key } });
+  };
+
+  const handleTeamClick = (teamKey: string) => {
+    const teamNum = teamKey.replace("frc", "");
+    addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+    navigate({ to: "/team", search: { team: teamKey } });
   };
 
   const matchHasHappened = useMemo(() => {
@@ -1340,23 +1379,8 @@ function MatchesPage() {
     return tba.est_time < Math.floor(Date.now() / 1000);
   }, [matchKey, tbaSchedule]);
 
-  const predictionMode = useMemo(() => {
-    if (searchMode === "prediction") return true;
-    if (searchMode === "playback") return false;
-    return !matchHasHappened; // default: prediction for upcoming, playback for past
-  }, [searchMode, matchHasHappened]);
-
-  const setPredictionMode = useCallback(
-    (pred: boolean) => {
-      navigate({ to: "/matches", search: { match: matchKey, mode: pred ? "prediction" : "playback" } });
-    },
-    [navigate, matchKey]
-  );
-
   if (matchKey) {
-    const showPrediction = predictionMode || !matchHasHappened;
-
-    if (showPrediction) {
+    if (!matchHasHappened) {
       return (
         <MatchPredictionView
           key={matchKey}
@@ -1366,46 +1390,26 @@ function MatchesPage() {
           tbaClimbData={tbaClimbData}
           pitScoutingByTeam={pitScoutingByTeam}
           tbaTeams={tbaTeams}
-          onBack={() => navigate({ to: "/matches", search: { match: "", mode: undefined } })}
-          matchHasHappened={matchHasHappened}
-          onSwitchToPlayback={matchHasHappened ? () => setPredictionMode(false) : undefined}
+          onBack={() => navigate({ to: "/matches", search: { match: "" } })}
+          onTeamClick={handleTeamClick}
         />
       );
     }
 
     return (
-      <div className="relative">
-        {matchHasHappened && (
-          <div className="absolute top-2 right-4 z-10 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setPredictionMode(true)}
-              className="px-3 py-1.5 rounded-lg text-sm bg-muted text-muted-foreground hover:text-foreground"
-            >
-              Prediction
-            </button>
-            <button
-              type="button"
-              onClick={() => setPredictionMode(false)}
-              className="px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground"
-            >
-              Playback
-            </button>
-          </div>
-        )}
-        <MatchPlaybackView
-          matchKey={matchKey}
-          currentEvent={currentEvent}
-          schedule={schedule}
-          matchData={matchData}
-          teamDataByTeam={teamDataByTeam}
-          schema={schema}
-          onBack={() => navigate({ to: "/matches", search: { match: "", mode: undefined } })}
-          videoCache={videoCache}
-          tbaClimbData={tbaClimbData}
-          pitScoutingByTeam={pitScoutingByTeam}
-        />
-      </div>
+      <MatchPlaybackView
+        matchKey={matchKey}
+        currentEvent={currentEvent}
+        schedule={schedule}
+        matchData={matchData}
+        teamDataByTeam={teamDataByTeam}
+        schema={schema}
+        onBack={() => navigate({ to: "/matches", search: { match: "" } })}
+        videoCache={videoCache}
+        tbaClimbData={tbaClimbData}
+        pitScoutingByTeam={pitScoutingByTeam}
+        onTeamClick={handleTeamClick}
+      />
     );
   }
 

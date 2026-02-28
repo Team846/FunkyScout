@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as TestPicklistsRouteImport } from './routes/test-picklists'
+import { Route as TeamRouteImport } from './routes/team'
 import { Route as ShiftsRouteImport } from './routes/shifts'
 import { Route as ScouterRatingsRouteImport } from './routes/scouter-ratings'
 import { Route as SchedulerRouteImport } from './routes/scheduler'
@@ -33,6 +34,11 @@ const VerifyRoute = VerifyRouteImport.update({
 const TestPicklistsRoute = TestPicklistsRouteImport.update({
   id: '/test-picklists',
   path: '/test-picklists',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeamRoute = TeamRouteImport.update({
+  id: '/team',
+  path: '/team',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShiftsRoute = ShiftsRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/scheduler': typeof SchedulerRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/shifts': typeof ShiftsRoute
+  '/team': typeof TeamRoute
   '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/scheduler': typeof SchedulerRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/shifts': typeof ShiftsRoute
+  '/team': typeof TeamRoute
   '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/scheduler': typeof SchedulerRoute
   '/scouter-ratings': typeof ScouterRatingsRoute
   '/shifts': typeof ShiftsRoute
+  '/team': typeof TeamRoute
   '/test-picklists': typeof TestPicklistsRoute
   '/verify': typeof VerifyRoute
   '/auth/': typeof AuthIndexRouteRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/scheduler'
     | '/scouter-ratings'
     | '/shifts'
+    | '/team'
     | '/test-picklists'
     | '/verify'
     | '/auth'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/scheduler'
     | '/scouter-ratings'
     | '/shifts'
+    | '/team'
     | '/test-picklists'
     | '/verify'
     | '/auth'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/scheduler'
     | '/scouter-ratings'
     | '/shifts'
+    | '/team'
     | '/test-picklists'
     | '/verify'
     | '/auth/'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   SchedulerRoute: typeof SchedulerRoute
   ScouterRatingsRoute: typeof ScouterRatingsRoute
   ShiftsRoute: typeof ShiftsRoute
+  TeamRoute: typeof TeamRoute
   TestPicklistsRoute: typeof TestPicklistsRoute
   VerifyRoute: typeof VerifyRoute
   AuthIndexRouteRoute: typeof AuthIndexRouteRoute
@@ -239,6 +252,13 @@ declare module '@tanstack/react-router' {
       path: '/test-picklists'
       fullPath: '/test-picklists'
       preLoaderRoute: typeof TestPicklistsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/team': {
+      id: '/team'
+      path: '/team'
+      fullPath: '/team'
+      preLoaderRoute: typeof TeamRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/shifts': {
@@ -347,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   SchedulerRoute: SchedulerRoute,
   ScouterRatingsRoute: ScouterRatingsRoute,
   ShiftsRoute: ShiftsRoute,
+  TeamRoute: TeamRoute,
   TestPicklistsRoute: TestPicklistsRoute,
   VerifyRoute: VerifyRoute,
   AuthIndexRouteRoute: AuthIndexRouteRoute,

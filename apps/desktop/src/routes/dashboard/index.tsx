@@ -50,6 +50,15 @@ function DashboardPage() {
     [addTab, navigate]
   );
 
+  const handleTeamClick = useCallback(
+    (teamKey: string) => {
+      const teamNum = teamKey.replace("frc", "");
+      addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+      navigate({ to: "/team", search: { team: teamKey } });
+    },
+    [addTab, navigate]
+  );
+
   const scheduleTableRef = useRef<ScheduleTableHandle>(null);
   const rankingsTableRef = useRef<RankingsTableHandle>(null);
   const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
@@ -157,6 +166,7 @@ function DashboardPage() {
                 searchQuery={searchQuery}
                 homeTeamKey={homeTeamKey}
                 onMatchClick={handleMatchClick}
+                onTeamClick={handleTeamClick}
               />
             </div>
           </TabsContent>
@@ -172,6 +182,7 @@ function DashboardPage() {
                 tbaClimbData={tbaClimbData}
                 useTbaClimb={useTbaClimb}
                 homeTeamKey={homeTeamKey}
+                onTeamClick={handleTeamClick}
               />
             </div>
           </TabsContent>

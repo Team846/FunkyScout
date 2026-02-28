@@ -550,7 +550,7 @@ function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
 function ComparisonPage() {
   const navigate = useNavigate();
   const { teams: teamsParam } = Route.useSearch();
-  const { tabs, setActiveTab } = useTabContext();
+  const { tabs, setActiveTab, addTab } = useTabContext();
   const { currentEvent, useTbaClimb } = useDesktopEvent();
   const { tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
@@ -625,6 +625,12 @@ function ComparisonPage() {
       if (prev.includes(teamKey)) return prev.filter((t) => t !== teamKey);
       return [...prev, teamKey].slice(-2);
     });
+  };
+
+  const navigateToTeam = (teamKey: string) => {
+    const teamNum = teamKey.replace("frc", "");
+    addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+    navigate({ to: "/team", search: { team: teamKey } });
   };
 
   // ── Graph team toggle (max 4) ──
@@ -829,6 +835,7 @@ function ComparisonPage() {
                     metricsBetterStatus={metricsBetterStatus[displayTeams[0]]}
                     isGraphed={graphTeams.includes(displayTeams[0])}
                     onGraphToggle={(e) => toggleGraphTeam(displayTeams[0], e)}
+                    onTeamExpand={() => navigateToTeam(displayTeams[0])}
                   />
                 </div>
               )}
@@ -887,6 +894,7 @@ function ComparisonPage() {
                     metricsBetterStatus={metricsBetterStatus[displayTeams[1]]}
                     isGraphed={graphTeams.includes(displayTeams[1])}
                     onGraphToggle={(e) => toggleGraphTeam(displayTeams[1], e)}
+                    onTeamExpand={() => navigateToTeam(displayTeams[1])}
                   />
                 </div>
               )}
