@@ -212,29 +212,29 @@ function MatchEditTestPage() {
   // Calculate some basic stats for display
   const autoStation =
     matchData?.presetActions.filter(
-      (a) => a.type === "station_intake" && a.phase === "auto"
+      (a) => a.type === "stationIntake" && a.phase === "auto"
     ).length || 0;
   const teleopStation =
     matchData?.presetActions.filter(
-      (a) => a.type === "station_intake" && a.phase === "teleop"
+      (a) => a.type === "stationIntake" && a.phase === "teleop"
     ).length || 0;
   const autoStocking =
     matchData?.presetActions.filter(
-      (a) => a.type === "stocking" && a.phase === "auto"
+      (a) => a.type === "stationStocked" && a.phase === "auto"
     ).length || 0;
   const teleopStocking =
     matchData?.presetActions.filter(
-      (a) => a.type === "stocking" && a.phase === "teleop"
+      (a) => a.type === "stationStocked" && a.phase === "teleop"
     ).length || 0;
 
   // Helper to set counter values
   const setAutoStation = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "station_intake" && a.phase === "auto")
+      (a) => !(a.type === "stationIntake" && a.phase === "auto")
     );
     const newActions = Array.from({ length: Math.max(0, value) }, () => ({
-      type: "station_intake" as const,
+      type: "stationIntake" as const,
       timestamp: Date.now(),
       phase: "auto" as const,
     }));
@@ -247,10 +247,10 @@ function MatchEditTestPage() {
   const setTeleopStation = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "station_intake" && a.phase === "teleop")
+      (a) => !(a.type === "stationIntake" && a.phase === "teleop")
     );
     const newActions = Array.from({ length: Math.max(0, value) }, () => ({
-      type: "station_intake" as const,
+      type: "stationIntake" as const,
       timestamp: Date.now(),
       phase: "teleop" as const,
     }));
@@ -263,10 +263,10 @@ function MatchEditTestPage() {
   const setAutoStocking = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "stocking" && a.phase === "auto")
+      (a) => !(a.type === "stationStocked" && a.phase === "auto")
     );
     const newActions = Array.from({ length: Math.max(0, value) }, () => ({
-      type: "stocking" as const,
+      type: "stationStocked" as const,
       timestamp: Date.now(),
       phase: "auto" as const,
     }));
@@ -279,10 +279,10 @@ function MatchEditTestPage() {
   const setTeleopStocking = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "stocking" && a.phase === "teleop")
+      (a) => !(a.type === "stationStocked" && a.phase === "teleop")
     );
     const newActions = Array.from({ length: Math.max(0, value) }, () => ({
-      type: "stocking" as const,
+      type: "stationStocked" as const,
       timestamp: Date.now(),
       phase: "teleop" as const,
     }));
@@ -477,9 +477,9 @@ function MatchEditTestPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {/* Ground Rating */}
+                    {/* Intake Rating */}
                     <div className="space-y-2">
-                      <Label>Ground Intake:</Label>
+                      <Label>Intake:</Label>
                       <div className="flex gap-2">
                         {[1, 2, 3, 4, 5].map((rating) => (
                           <Button

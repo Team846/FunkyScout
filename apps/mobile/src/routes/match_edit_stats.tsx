@@ -475,15 +475,15 @@ function MatchEditStats() {
   // Calculate stats
   const teleopStocking =
     matchData?.presetActions.filter(
-      (a) => a.type === "stocking" && a.phase === "teleop"
+      (a) => a.type === "stationStocked" && a.phase === "teleop"
     ).length || 0;
   const autoIntakes =
     matchData?.locationActions.filter(
-      (a) => a.type === "ground_intake" && a.phase === "auto"
+      (a) => a.type === "groundIntake" && a.phase === "auto"
     ).length || 0;
   const teleopIntakes =
     matchData?.locationActions.filter(
-      (a) => a.type === "ground_intake" && a.phase === "teleop"
+      (a) => a.type === "groundIntake" && a.phase === "teleop"
     ).length || 0;
   const autoPasses =
     matchData?.locationActions.filter(
@@ -505,21 +505,21 @@ function MatchEditStats() {
   // Use last-event-wins for phase-specific climb state
   const hasAutoClimb =
     matchData?.toggleActions.filter(
-      (a) => a.type === "climb_L1" && a.phase === "auto"
+      (a) => a.type === "autoClimbL1"
     ).at(-1)?.active ?? false;
   const wasDisabled = activeToggles.disable;
   const didDefend = activeToggles.defend;
 
-  // For climb level, check which endgame climb is active (L1, L2, or L3).
-  // Use last-event-wins per level: get final event for each type+phase=endgame.
+  // For climb level, check which teleop climb is active (L1, L2, or L3).
+  // Use last-event-wins per level.
   const lastL3 = matchData?.toggleActions.filter(
-    (a) => a.type === "climb_L3" && a.phase === "endgame"
+    (a) => a.type === "teleopClimbL3"
   ).at(-1)?.active;
   const lastL2 = matchData?.toggleActions.filter(
-    (a) => a.type === "climb_L2" && a.phase === "endgame"
+    (a) => a.type === "teleopClimbL2"
   ).at(-1)?.active;
   const lastL1 = matchData?.toggleActions.filter(
-    (a) => a.type === "climb_L1" && a.phase === "endgame"
+    (a) => a.type === "teleopClimbL1"
   ).at(-1)?.active;
   const climbLevel = lastL3 ? "3" : lastL2 ? "2" : lastL1 ? "1" : null;
 
@@ -527,12 +527,12 @@ function MatchEditStats() {
   const setTeleopStocking = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "stocking" && a.phase === "teleop")
+      (a) => !(a.type === "stationStocked" && a.phase === "teleop")
     );
     const newActions: PresetAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
       newActions.push({
-        type: "stocking",
+        type: "stationStocked",
         timestamp: Date.now(),
         phase: "teleop",
       });
@@ -546,12 +546,12 @@ function MatchEditStats() {
   const setAutoIntakes = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.locationActions.filter(
-      (a) => !(a.type === "ground_intake" && a.phase === "auto")
+      (a) => !(a.type === "groundIntake" && a.phase === "auto")
     );
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
       newActions.push({
-        type: "ground_intake",
+        type: "groundIntake",
         timestamp: Date.now(),
         coords: [0.5, 0.5],
         phase: "auto",
@@ -566,12 +566,12 @@ function MatchEditStats() {
   const setTeleopIntakes = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.locationActions.filter(
-      (a) => !(a.type === "ground_intake" && a.phase === "teleop")
+      (a) => !(a.type === "groundIntake" && a.phase === "teleop")
     );
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
       newActions.push({
-        type: "ground_intake",
+        type: "groundIntake",
         timestamp: Date.now(),
         coords: [0.5, 0.5],
         phase: "teleop",

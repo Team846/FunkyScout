@@ -102,6 +102,10 @@ function MatchPlay() {
   const [dismountRecorded, setDismountRecorded] = useState(false);
   const dismountRecordedRef = useRef(false);
 
+  // --- Block state (defend mode hold action) ---
+  const [blockHeld, setBlockHeld] = useState(false);
+  const blockHeldRef = useRef(false);
+
   // Match scouting data - load from localStorage if exists
   const [matchData, setMatchData] = useState<MatchScoutingData>(() => {
     const saved = sessionStorage.getItem("inProgressMatchData");
@@ -156,6 +160,13 @@ function MatchPlay() {
 
   // When disabled is active, all other action buttons are disabled (grayed out, no clicks)
   const actionsDisabled = activeToggles.disable;
+
+  // Defend mode computed values
+  const isDefending = activeToggles.defend;
+  const opponentFieldImg = alliance === "red" ? blue_field : red_field;
+  // opponentIsRotated: same rotation as current field — since field images are already mirrored,
+  // same rotation = cages on opposite ends when placed side by side
+  const opponentIsRotated = isRotated;
 
   // Clear pending location action when disable is turned on
   useEffect(() => {
@@ -217,7 +228,7 @@ function MatchPlay() {
     setAutoClimbActive(true);
     autoClimbActiveRef.current = true;
     const newAction: ToggleAction = {
-      type: 'climb_L1',
+      type: 'autoClimbL1',
       timestamp: Date.now(),
       active: true,
       phase: 'auto',
@@ -232,7 +243,7 @@ function MatchPlay() {
     autoClimbActiveRef.current = false;
     setAutoClimbOrientation(null);
     const newAction: ToggleAction = {
-      type: 'climb_L1',
+      type: 'autoClimbL1',
       timestamp: Date.now(),
       active: false,
       phase: 'auto',
@@ -257,7 +268,7 @@ function MatchPlay() {
     setTeleopClimbActive(true);
     teleopClimbLevelRef.current = level;
     const newAction: ToggleAction = {
-      type: `climb_${level}` as ToggleActionType,
+      type: `teleopClimb${level}` as ToggleActionType,
       timestamp: Date.now(),
       active: true,
       phase: 'endgame',
@@ -273,7 +284,7 @@ function MatchPlay() {
     teleopClimbLevelRef.current = null;
     if (level) {
       const newAction: ToggleAction = {
-        type: `climb_${level}` as ToggleActionType,
+        type: `teleopClimb${level}` as ToggleActionType,
         timestamp: Date.now(),
         active: false,
         phase: 'endgame',
@@ -297,6 +308,44 @@ function MatchPlay() {
     updatePostMatch({ teleopClimbOrientation: orientation });
     vibrateTap();
   }, [updatePostMatch]);
+
+  // --- Block handlers (defend mode hold action) ---
+  const handleBlockDown = useCallback(() => {
+    if (actionsDisabled) return;
+    blockHeldRef.current = true;
+    setBlockHeld(true);
+    const newAction: ToggleAction = {
+      type: 'block',
+      timestamp: Date.now(),
+      active: true,
+      phase: 'teleop',
+    };
+    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    vibrateTap();
+  }, [actionsDisabled]);
+
+  const handleBlockUp = useCallback(() => {
+    if (!blockHeldRef.current) return;
+    blockHeldRef.current = false;
+    setBlockHeld(false);
+    const newAction: ToggleAction = {
+      type: 'block',
+      timestamp: Date.now(),
+      active: false,
+      phase: 'teleop',
+    };
+    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+  }, []);
+
+  // When defend is toggled off: end any in-progress block, clear defend-mode pending actions
+  useEffect(() => {
+    if (!isDefending) {
+      if (blockHeldRef.current) handleBlockUp();
+      setPendingLocationAction(prev =>
+        prev === 'camp' || prev === 'disrupt' ? null : prev
+      );
+    }
+  }, [isDefending, handleBlockUp]);
 
   // --- Dismount handler (field button during first 10s of teleop) ---
   const handleDismount = useCallback(() => {
@@ -329,52 +378,29 @@ function MatchPlay() {
     vibrateTap();
   };
 
-  // Toggle action (disable, defend, climb)
-  const toggleAction = (actionType: ToggleActionType) => {
-    // When disabled is active, only the disable button (to re-enable) works
-    if (actionsDisabled && actionType !== "disable") return;
+  // Toggle action — only used for disable and defend buttons.
+  // Climb uses dedicated handlers (handleAutoClimbStart/handleTeleopClimbStart).
+  const toggleAction = (concept: 'disable' | 'defend') => {
+    if (actionsDisabled && concept !== 'disable') return;
 
-    const currentlyActive = activeToggles[actionType];
-    const phase = isAuto ? "auto" : seconds > 140 - 10 ? "endgame" : "teleop";
+    const currentlyActive = activeToggles[concept];
+    const phase: 'auto' | 'teleop' = isAuto ? 'auto' : 'teleop';
 
-    const newActions: ToggleAction[] = [];
-
-    // Handle climb exclusivity - only one climb level can be active at a time
-    if (actionType.startsWith("climb_") && !currentlyActive) {
-      // Deactivate any other active climb levels
-      const climbTypes: ToggleActionType[] = [
-        "climb_L1",
-        "climb_L2",
-        "climb_L3",
-      ];
-      climbTypes.forEach((climbType) => {
-        if (climbType !== actionType && activeToggles[climbType]) {
-          newActions.push({
-            type: climbType,
-            timestamp: Date.now(),
-            active: false,
-            phase,
-          });
-        }
-      });
-    }
-
-    // Add the main toggle action
-    newActions.push({
-      type: actionType,
-      timestamp: Date.now(),
-      active: !currentlyActive,
-      phase,
-    });
+    // Derive the stored action type from the concept + current phase
+    const storedType: ToggleActionType =
+      concept === 'disable'
+        ? (isAuto ? 'autoDisable' : 'teleopDisable')
+        : 'teleopDefend'; // defend is teleop-only
 
     setMatchData((prev) => ({
       ...prev,
-      toggleActions: [...prev.toggleActions, ...newActions],
+      toggleActions: [
+        ...prev.toggleActions,
+        { type: storedType, timestamp: Date.now(), active: !currentlyActive, phase },
+      ],
     }));
 
-    // Clear undo stack when new action is added
     setUndoStack([]);
-
     vibrateTap();
   };
 
@@ -405,8 +431,18 @@ function MatchPlay() {
       rect.height
     );
 
-    // If field is rotated, invert coordinates to normalize them back to standard orientation
-    if (isRotated) {
+    // Convert tap coordinates to canonical red-alliance space.
+    // Own field: flip both axes when rotated (180° rotation inverts x and y).
+    // Opponent field: the opponent image x-axis is inverted relative to canonical
+    // for red alliance (blue_field cage is on the right at 0°, canonical cage is x=0),
+    // but matches canonical for blue alliance (red_field cage is on the left at 0°).
+    // Rotation additionally flips both axes.
+    if (isDefending) {
+      const flipX = (alliance === 'red') !== opponentIsRotated;
+      const flipY = opponentIsRotated;
+      if (flipX) normalizedX = 1 - normalizedX;
+      if (flipY) normalizedY = 1 - normalizedY;
+    } else if (isRotated) {
       normalizedX = 1 - normalizedX;
       normalizedY = 1 - normalizedY;
     }
@@ -416,6 +452,7 @@ function MatchPlay() {
       timestamp: Date.now(),
       coords: [normalizedX, normalizedY],
       phase: isAuto ? "auto" : "teleop",
+      ...(isDefending ? { onOpponentField: true } : {}),
     };
 
     setMatchData((prev) => ({
@@ -814,12 +851,24 @@ function MatchPlay() {
             onClick={handleFieldClick}
             className={`w-full aspect-square max-h-full relative rounded-2xl overflow-hidden ${pendingLocationAction ? "cursor-crosshair" : ""}`}
           >
+            {/* Alliance field — fades out during defend */}
             <img
-              src={alliance == "red" ? red_field : blue_field}
+              src={alliance === "red" ? red_field : blue_field}
               alt="Field"
-              className="w-full h-full object-contain pointer-events-none"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-300"
               style={{
                 transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
+                opacity: isDefending ? 0 : 1,
+              }}
+            />
+            {/* Opponent field — fades in during defend, oriented so cage sides connect */}
+            <img
+              src={opponentFieldImg}
+              alt="Opponent Field"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-300"
+              style={{
+                transform: opponentIsRotated ? "rotate(180deg)" : "rotate(0deg)",
+                opacity: isDefending ? 1 : 0,
               }}
             />
 
@@ -1018,16 +1067,15 @@ function MatchPlay() {
               </div>
             )}
           </div>
-          <div className="flex flex-col justify-center items-center w-[21.5vw] h-full gap-2.5 p-2.5 rounded-[15px] ">
-          
-
-          
+          <div className="relative flex flex-col justify-center items-center w-[21.5vw] h-full gap-2.5 p-2.5 rounded-[15px]">
+          {/* Existing action buttons — fade out during defend */}
+          <div className={`flex flex-col justify-center items-center w-full h-full gap-2.5 transition-opacity duration-300 ${isDefending ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
 
           {/* Teleop only: Stocking + Pass same size, together = Intake row width */}
           {!isAuto && (
             <div className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
               <div
-                onClick={() => addPresetAction("stocking")}
+                onClick={() => addPresetAction("stationStocked")}
                 className="flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
               >
                 <p className="text-xs text-outfit text-muted-foreground truncate">Stock</p>
@@ -1054,9 +1102,9 @@ function MatchPlay() {
           {/* Intake + Pass (auto) - same layout as Stocking+Pass */}
           <div className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
             <div
-              onClick={() => startLocationAction("ground_intake")}
+              onClick={() => startLocationAction("groundIntake")}
               className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                pendingLocationAction === "ground_intake"
+                pendingLocationAction === "groundIntake"
                   ? "border-2 border-[#CDA745]"
                   : "border-2 border-[#1E1E1E]"
               }`}
@@ -1079,7 +1127,7 @@ function MatchPlay() {
                   </svg>
                 )}
                 <p
-                  className={`text-xs text-outfit ${pendingLocationAction === "ground_intake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                  className={`text-xs text-outfit ${pendingLocationAction === "groundIntake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
                 >
                   Intake
                 </p>
@@ -1185,9 +1233,55 @@ function MatchPlay() {
               </>
             )}
           </div>
-        </div>
+          </div>{/* end inner wrapper */}
 
-        
+          {/* Defend mode buttons — overlaid when defending */}
+          {isDefending && (
+            <div className="absolute inset-0 flex flex-col h-full gap-2.5">
+              {/* Block — top half, full width, hold to record */}
+              <div
+                className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 select-none cursor-pointer transition-all duration-100 ${
+                  blockHeld
+                    ? "border-primary"
+                    : "border-[#1E1E1E]"
+                }`}
+                onPointerDown={handleBlockDown}
+                onPointerUp={handleBlockUp}
+                onPointerCancel={handleBlockUp}
+                onPointerLeave={handleBlockUp}
+              >
+                <span className="text-2xl font-black text-foreground select-none leading-none">✕</span>
+                <span className="text-xs text-outfit text-muted-foreground mt-1">block</span>
+              </div>
+
+              {/* Camp + Disrupt — bottom half */}
+              <div className="flex-1 flex gap-2.5">
+                <div
+                  className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+                    pendingLocationAction === "camp" ? "border-primary" : "border-[#1E1E1E]"
+                  }`}
+                  onClick={() => setPendingLocationAction(pendingLocationAction === "camp" ? null : "camp")}
+                >
+                  <p className={`text-xs text-outfit ${pendingLocationAction === "camp" ? "text-primary" : "text-muted-foreground"}`}>
+                    Camp
+                  </p>
+                </div>
+                <div
+                  className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+                    pendingLocationAction === "disrupt" ? "border-primary" : "border-[#1E1E1E]"
+                  }`}
+                  onClick={() => setPendingLocationAction(pendingLocationAction === "disrupt" ? null : "disrupt")}
+                >
+                  <p className={`text-xs text-outfit ${pendingLocationAction === "disrupt" ? "text-primary" : "text-muted-foreground"}`}>
+                    Disrupt
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>{/* end 21.5vw panel */}
+
+
       </div>
       <div className="flex flex-col justify-start items-center w-[10vw] shrink-0 h-full px-6 py-2.5 rounded-[10px] gap-2.5 border-2 border-[#1E1E1E]">
           {countdown !== null ? (

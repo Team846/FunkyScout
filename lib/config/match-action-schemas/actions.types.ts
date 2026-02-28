@@ -76,6 +76,9 @@ export interface MatchAction {
 
   /** Toggle state (only for toggle actions) */
   enabled?: boolean;
+
+  /** True when action was placed on the opponent's field half (defend mode) */
+  onOpponentField?: boolean;
 }
 
 /**

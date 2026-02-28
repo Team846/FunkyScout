@@ -32,27 +32,27 @@ const FIELD_HEIGHT = 318;
 const AUTO_END_MS = 20_000;
 
 const ACTION_STYLE: Record<string, { fill: string; shape: "circle" | "square" | "diamond" | "triangle" | "star" }> = {
-  ground_intake: { fill: "#22c55e", shape: "circle" },
-  groundIntake: { fill: "#22c55e", shape: "circle" },
-  passing: { fill: "#3b82f6", shape: "square" },
-  shoot: { fill: "#ef4444", shape: "diamond" },
-  station_intake: { fill: "#a855f7", shape: "square" },
-  stocking: { fill: "#f59e0b", shape: "diamond" },
+  groundIntake:   { fill: "#22c55e", shape: "circle" },
+  passing:        { fill: "#3b82f6", shape: "square" },
+  shoot:          { fill: "#ef4444", shape: "diamond" },
+  stationIntake:  { fill: "#a855f7", shape: "square" },
   stationStocked: { fill: "#f59e0b", shape: "diamond" },
-  fuelScore1: { fill: "#eab308", shape: "circle" },
-  fuelScore2: { fill: "#eab308", shape: "circle" },
-  fuelScore5: { fill: "#eab308", shape: "square" },
-  fuelScore8: { fill: "#eab308", shape: "diamond" },
-  climb_L1: { fill: "#06b6d4", shape: "triangle" },
-  climb_L2: { fill: "#06b6d4", shape: "triangle" },
-  climb_L3: { fill: "#06b6d4", shape: "triangle" },
-  autoClimbL1: { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL1: { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL2: { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL3: { fill: "#06b6d4", shape: "triangle" },
-  disable: { fill: "#78716c", shape: "star" },
-  defend: { fill: "#f59e0b", shape: "star" },
-  dropped: { fill: "#78716c", shape: "circle" },
+  fuelScore1:     { fill: "#eab308", shape: "circle" },
+  fuelScore2:     { fill: "#eab308", shape: "circle" },
+  fuelScore5:     { fill: "#eab308", shape: "square" },
+  fuelScore8:     { fill: "#eab308", shape: "diamond" },
+  autoClimbL1:    { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL1:  { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL2:  { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL3:  { fill: "#06b6d4", shape: "triangle" },
+  autoDisable:    { fill: "#78716c", shape: "star" },
+  teleopDisable:  { fill: "#78716c", shape: "star" },
+  autoDefend:     { fill: "#f59e0b", shape: "star" },
+  teleopDefend:   { fill: "#f59e0b", shape: "star" },
+  block:          { fill: "#f59e0b", shape: "star" },
+  camp:           { fill: "#a855f7", shape: "circle" },
+  disrupt:        { fill: "#f97316", shape: "diamond" },
+  dropped:        { fill: "#78716c", shape: "circle" },
 };
 const DEFAULT_ACTION_STYLE = { fill: "#94a3b8", shape: "circle" as const };
 
@@ -105,7 +105,7 @@ function getActionLabel(
   actionId: string,
   schema: ReturnType<typeof getMatchActionSchema>
 ): string {
-  const def = getActionById(schema, actionId) ?? getActionById(schema, toCamelCase(actionId));
+  const def = getActionById(schema, actionId);
   return def?.label ?? actionId;
 }
 
@@ -120,11 +120,9 @@ interface Waypoint {
   y: number;
   timestamp: number;
   actionId?: string;
+  onOpponentField?: boolean;
 }
 
-function toCamelCase(s: string): string {
-  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-}
 
 function parseStartPosition(raw: MatchDataRaw | null | undefined): { x: number; y: number } {
   let x = 0.5;
@@ -144,8 +142,19 @@ function parseStartPosition(raw: MatchDataRaw | null | undefined): { x: number; 
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
 }
 
-function toDisplayCoords(x: number, y: number, _alliance: "red" | "blue") {
-  return { x, y };
+/**
+ * Map canonical half-field coords [0,1]×[0,1] to full-field normalized coords [0,1]×[0,1].
+ * fullfield.svg: red on LEFT (x=[0,0.5]), blue on RIGHT (x=[0.5,1]).
+ * Canonical space is red-alliance orientation; blue actions are mirrored to appear on their half.
+ */
+function toDisplayCoords(x: number, y: number, alliance: "red" | "blue") {
+  if (alliance === "red") {
+    return { x: x * 0.5, y };
+  } else {
+    // Blue canonical coords are stored in red orientation (mobile flips them);
+    // mirror x to place them on the right half.
+    return { x: 0.5 + (1 - x) * 0.5, y };
+  }
 }
 
 /** Detect if timestamps are epoch ms (e.g. 1772006353418) vs match-relative ms (0-163000) */
@@ -158,56 +167,100 @@ function getActionLocation(
   schema: ReturnType<typeof getMatchActionSchema>
 ): { x: number; y: number } | null {
   if (a.location) return a.location;
-  const def = getActionById(schema, a.actionId) ?? getActionById(schema, toCamelCase(a.actionId));
+  const def = getActionById(schema, a.actionId);
   return def?.location ?? null;
 }
 
 function buildWaypoints(
   dataRaw: MatchDataRaw | null | undefined,
   schema: ReturnType<typeof getMatchActionSchema>,
-  phase: "auto" | "teleop" | "full"
+  phase: "auto" | "teleop" | "full",
+  alliance: "red" | "blue"
 ): Waypoint[] {
   if (!dataRaw) return [];
   const start = parseStartPosition(dataRaw);
+  // All waypoints are stored in full-field display coords [0,1]×[0,1] so that
+  // interpolation is seamless across own/opponent halves (no coordinate system switch mid-path).
+  const startDisp = toDisplayCoords(start.x, start.y, alliance);
   const autoActions = (dataRaw.autoActions || []).sort((a, b) => a.timestamp - b.timestamp);
   const teleopActions = (dataRaw.teleopActions || []).sort((a, b) => a.timestamp - b.timestamp);
+  const opponentAlliance: "red" | "blue" = alliance === "red" ? "blue" : "red";
 
   const isEpoch = useEpochTimestamps([...autoActions, ...teleopActions]);
 
-  if (phase === "auto") {
-    const pts: Waypoint[] = [{ x: start.x, y: start.y, timestamp: 0 }];
-    const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) : 0;
-    for (const a of autoActions) {
+  // Toggle actions that anchor the robot position but do not render a blob on the field
+  const NO_BLOB_TOGGLES = new Set(["defend", "teleopDefend", "autoDefend", "disable", "teleopDisable", "autoDisable"]);
+
+  /** Orientation-based Y for climb: button order is R=top(0.25), C=mid(0.5), L=bottom(0.75) */
+  function climbDispY(isAutoAction: boolean): number {
+    const pm = (dataRaw as MatchDataRaw).postMatch;
+    const orientation = isAutoAction ? pm?.autoClimbOrientation : pm?.teleopClimbOrientation;
+    return orientation === "right" ? 0.25 : orientation === "left" ? 0.75 : 0.5;
+  }
+
+  /** Push the right waypoint(s) for a single action — coords are full-field display space */
+  function pushWaypoint(pts: Waypoint[], a: MatchAction, ts: number) {
+    if (a.actionId === "block") {
+      // Block: robot pins to center of opponent's half. Both start and end anchor there
+      // so interpolation out of block starts from opponent center (no teleport).
+      const blockDisp = toDisplayCoords(0.5, 0.5, opponentAlliance);
+      pts.push({ x: blockDisp.x, y: blockDisp.y, timestamp: ts, actionId: a.enabled !== false ? "block" : undefined });
+    } else if (a.actionId === "autoClimbL1") {
+      const disp = toDisplayCoords(0.05, climbDispY(true), alliance);
+      pts.push({ x: disp.x, y: disp.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
+    } else if (a.actionId.startsWith("teleopClimb")) {
+      const disp = toDisplayCoords(0.05, climbDispY(false), alliance);
+      pts.push({ x: disp.x, y: disp.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
+    } else if (NO_BLOB_TOGGLES.has(a.actionId)) {
+      // Defend/disable: anchor robot at last known position, no blob
+      const last = pts[pts.length - 1]!;
+      pts.push({ x: last.x, y: last.y, timestamp: ts });
+    } else {
       const loc = getActionLocation(a, schema);
-      if (loc) pts.push({ x: loc.x, y: loc.y, timestamp: isEpoch ? a.timestamp - t0 : a.timestamp, actionId: a.actionId });
+      if (loc) {
+        const fieldAlliance = a.onOpponentField ? opponentAlliance : alliance;
+        const disp = toDisplayCoords(loc.x, loc.y, fieldAlliance);
+        pts.push({ x: disp.x, y: disp.y, timestamp: ts, actionId: a.actionId });
+      } else {
+        const last = pts[pts.length - 1]!;
+        pts.push({ x: last.x, y: last.y, timestamp: ts });
+      }
+    }
+  }
+
+  if (phase === "auto") {
+    const pts: Waypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
+    // Subtract 1 from t0 so the start position occupies ts=0 and the first action is at ts≥1,
+    // ensuring the robot visibly begins at the start marker rather than snapping to the first action.
+    const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
+    for (const a of autoActions) {
+      pushWaypoint(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
     }
     return pts.sort((a, b) => a.timestamp - b.timestamp);
   }
 
   if (phase === "teleop") {
-    const teleopStart = (() => {
-      if (autoActions.length > 0) {
-        const last = autoActions[autoActions.length - 1]!;
-        const loc = getActionLocation(last, schema);
-        if (loc) return { x: loc.x, y: loc.y };
-      }
-      return start;
-    })();
-    const pts: Waypoint[] = [{ x: teleopStart.x, y: teleopStart.y, timestamp: 0 }];
-    const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) : 0;
+    // Derive teleop start from the last accumulated position in auto, so it correctly
+    // handles toggle-only endings (defend, disable, climb) rather than only schema locations.
+    const autoWps: Waypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
+    const t0Auto = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
+    for (const a of autoActions) {
+      pushWaypoint(autoWps, a, isEpoch ? a.timestamp - t0Auto : a.timestamp);
+    }
+    const lastAuto = autoWps[autoWps.length - 1]!;
+    const pts: Waypoint[] = [{ x: lastAuto.x, y: lastAuto.y, timestamp: 0 }];
+    const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) - 1 : 0;
     for (const a of teleopActions) {
-      const loc = getActionLocation(a, schema);
-      if (loc) pts.push({ x: loc.x, y: loc.y, timestamp: isEpoch ? a.timestamp - t0 : a.timestamp - AUTO_END_MS, actionId: a.actionId });
+      pushWaypoint(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp - AUTO_END_MS);
     }
     return pts.sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  const pts: Waypoint[] = [{ x: start.x, y: start.y, timestamp: 0 }];
+  const pts: Waypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
   const allActions = [...autoActions, ...teleopActions].sort((a, b) => a.timestamp - b.timestamp);
-  const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) : 0;
+  const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) - 1 : 0;
   for (const a of allActions) {
-    const loc = getActionLocation(a, schema);
-    if (loc) pts.push({ x: loc.x, y: loc.y, timestamp: isEpoch ? a.timestamp - t0 : a.timestamp, actionId: a.actionId });
+    pushWaypoint(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
   }
   return pts.sort((a, b) => a.timestamp - b.timestamp);
 }
@@ -442,9 +495,10 @@ function MatchPlaybackView({
   const videoContainerRef = useRef<HTMLDivElement>(null);
 
   const selectedRaw = selectedTeam ? (teamDataByTeam.get(selectedTeam)?.data_raw as MatchDataRaw | undefined) : null;
+  const selAlliance = selectedTeam ? (teamsInMatch.find((t) => t.team === selectedTeam)?.alliance ?? "red") : "red";
   const waypoints = useMemo(
-    () => buildWaypoints(selectedRaw, schema, phase),
-    [selectedRaw, schema, phase]
+    () => buildWaypoints(selectedRaw, schema, phase, selAlliance),
+    [selectedRaw, schema, phase, selAlliance]
   );
 
   const totalTime = waypoints.length >= 2 ? waypoints[waypoints.length - 1]!.timestamp : 0;
@@ -490,6 +544,65 @@ function MatchPlaybackView({
   }, [playing, totalTime, tick]);
 
   const canPlay = selectedTeam && waypoints.length >= 2;
+
+  // Detect if selected team is currently defending or blocking at the current playback time
+  const currentTimeMs = progress * totalTime;
+
+  // Compute the same t0 that buildWaypoints used for the active phase, so timing aligns exactly.
+  // "full" uses min(all), "auto" uses min(auto), "teleop" uses min(teleop).
+  // Non-epoch data has t0=0 and teleop actions are offset by -AUTO_END_MS in buildWaypoints,
+  // so we match that by adjusting non-epoch teleop timestamps the same way.
+  const { phaseT0, phaseIsEpoch } = useMemo(() => {
+    if (!selectedRaw) return { phaseT0: 0, phaseIsEpoch: false };
+    const autoActions = selectedRaw.autoActions ?? [];
+    const teleopActions = selectedRaw.teleopActions ?? [];
+    const allActions = [...autoActions, ...teleopActions];
+    const isEpoch = allActions.some((a) => a.timestamp > 1e12);
+    if (phase === "auto") {
+      const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
+      return { phaseT0: t0, phaseIsEpoch: isEpoch };
+    }
+    if (phase === "teleop") {
+      const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) - 1 : 0;
+      return { phaseT0: t0, phaseIsEpoch: isEpoch };
+    }
+    // "full"
+    const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) - 1 : 0;
+    return { phaseT0: t0, phaseIsEpoch: isEpoch };
+  }, [selectedRaw, phase]);
+
+  const isDefendingNow = useMemo(() => {
+    if (!selectedRaw) return false;
+    const allActions = [...(selectedRaw.autoActions ?? []), ...(selectedRaw.teleopActions ?? [])];
+    const defendActions = allActions
+      .filter((a) => a.actionId === "teleopDefend" || a.actionId === "defend")
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((a) => {
+        // Normalize timestamp the same way buildWaypoints does for this phase
+        let ts = phaseIsEpoch ? a.timestamp - phaseT0 : a.timestamp;
+        if (!phaseIsEpoch && phase === "teleop") ts -= AUTO_END_MS;
+        return { ...a, ts };
+      });
+    const before = defendActions.filter((a) => a.ts <= currentTimeMs);
+    if (before.length === 0) return false;
+    return before[before.length - 1]!.enabled === true;
+  }, [selectedRaw, currentTimeMs, phaseT0, phaseIsEpoch, phase]);
+
+  const isBlockingNow = useMemo(() => {
+    if (!selectedRaw) return false;
+    const allActions = [...(selectedRaw.autoActions ?? []), ...(selectedRaw.teleopActions ?? [])];
+    const blockActions = allActions
+      .filter((a) => a.actionId === "block")
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((a) => {
+        let ts = phaseIsEpoch ? a.timestamp - phaseT0 : a.timestamp;
+        if (!phaseIsEpoch && phase === "teleop") ts -= AUTO_END_MS;
+        return { ...a, ts };
+      });
+    const before = blockActions.filter((a) => a.ts <= currentTimeMs);
+    if (before.length === 0) return false;
+    return before[before.length - 1]!.enabled === true;
+  }, [selectedRaw, currentTimeMs, phaseT0, phaseIsEpoch, phase]);
 
   const fieldContainerWidth = Math.min(FIELD_WIDTH, 560);
   const tbaMatchKeyForClimb = matchKey.includes("_") ? matchKey : currentEvent ? `${currentEvent}_${matchKey}` : matchKey;
@@ -643,7 +756,7 @@ function MatchPlaybackView({
               </button>
               <div className="flex-1 relative h-2 rounded-full bg-muted overflow-visible flex items-center">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-75"
+                  className="absolute inset-y-0 left-0 rounded-full bg-primary"
                   style={{ width: `${Math.min(progress * 100, 98)}%` }}
                 />
                 <div
@@ -668,7 +781,7 @@ function MatchPlaybackView({
                 onChange={(e) => setSpeed(Number(e.target.value))}
                 className="bg-background border border-border rounded px-2 py-1 text-sm shrink-0"
               >
-                {[0.5, 1, 2, 4].map((s) => (
+                {[0.25, 0.5, 1, 2, 4].map((s) => (
                   <option key={s} value={s}>{s}x</option>
                 ))}
               </select>
@@ -697,6 +810,9 @@ function MatchPlaybackView({
               viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
               preserveAspectRatio="xMidYMid meet"
             >
+              <defs>
+                <style>{`@keyframes robotBlockPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.7); opacity: 0; } }`}</style>
+              </defs>
               {/* X at selected team's start position */}
               {selectedTeam && (() => {
                 const s = teamsWithData.find((t) => t.team === selectedTeam);
@@ -717,11 +833,10 @@ function MatchPlaybackView({
               {/* Action blobs for selected team — render before team markers so numbers stay on top */}
               {selectedTeam &&
                 (() => {
-                  const selAlliance = teamsInMatch.find((t) => t.team === selectedTeam)?.alliance ?? "red";
                   return waypoints.map((wp, i) => {
                     if (i === 0 || !wp.actionId) return null;
-                    const disp = toDisplayCoords(wp.x, wp.y, selAlliance);
-                    const { x, y } = normToSvg(disp.x, disp.y);
+                    // Waypoints carry full-field display coords — use directly
+                    const { x, y } = normToSvg(wp.x, wp.y);
                     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
                     const style = getStyle(wp.actionId);
                     const label = getActionLabel(wp.actionId, schema);
@@ -745,11 +860,16 @@ function MatchPlaybackView({
                 const start = raw ? parseStartPosition(raw) : { x: 0.5, y: 0.9 };
                 const isSelected = selectedTeam === s.team;
                 const showAtCurrent = isSelected && currentPosition;
-                const pos = showAtCurrent ? currentPosition : start;
-                const disp = toDisplayCoords(pos.x, pos.y, s.alliance);
-                const { x, y } = normToSvg(disp.x, disp.y);
+                // Waypoints carry full-field display coords; fall back to converted start position
+                const pos = showAtCurrent ? currentPosition! : toDisplayCoords(start.x, start.y, s.alliance);
+                const defending = isSelected && isDefendingNow;
+                const blocking = isSelected && isBlockingNow;
+                const { x, y } = normToSvg(pos.x, pos.y);
                 const num = s.team.replace(/frc/i, "");
-                const fill = s.alliance === "red" ? "#ef4444" : "#3b82f6";
+                const allianceFill = s.alliance === "red" ? "#ef4444" : "#3b82f6";
+                const fill = allianceFill;
+                const stroke = defending ? "#000000" : isSelected ? "#fff" : "transparent";
+                const strokeWidth = defending ? 3 : isSelected ? 4 : 0;
                 const size = isSelected ? 44 : 38;
                 if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
                 return (
@@ -758,14 +878,32 @@ function MatchPlaybackView({
                     className="cursor-pointer"
                     onClick={() => setSelectedTeam(s.team)}
                   >
+                    {/* Pulsing ring on robot when actively blocking */}
+                    {blocking && (
+                      <rect
+                        x={x - size / 2}
+                        y={y - size / 2}
+                        width={size}
+                        height={size}
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth={3}
+                        rx={4}
+                        style={{
+                          animation: "robotBlockPulse 0.9s ease-out infinite",
+                          transformBox: "fill-box",
+                          transformOrigin: "center",
+                        }}
+                      />
+                    )}
                     <rect
                       x={x - size / 2}
                       y={y - size / 2}
                       width={size}
                       height={size}
                       fill={fill}
-                      stroke={isSelected ? "#fff" : "transparent"}
-                      strokeWidth={isSelected ? 4 : 0}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
                       rx={4}
                     />
                     <text
@@ -1106,8 +1244,8 @@ function MatchPredictionView({
                       <FullfieldPathOverlay drawing={auto.drawing} alliance={alliance} strokeColor={color} />
                       {auto.climbDuringAuto && (() => {
                         const [nx, ny] = PRESET_ACTION_LOCATIONS.climb;
-                        const x = (alliance === "red" ? nx : 1 - nx) * FIELD_WIDTH;
-                        const y = ny * FIELD_HEIGHT;
+                        const climbDisp = toDisplayCoords(nx, ny, alliance);
+                        const { x, y } = normToSvg(climbDisp.x, climbDisp.y);
                         return <circle key={`${sel.team}-${sel.autoIndex}-climb`} cx={x} cy={y} r={8} fill={color} opacity={0.9} />;
                       })()}
                     </g>

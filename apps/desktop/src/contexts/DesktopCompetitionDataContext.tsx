@@ -262,7 +262,7 @@ export function DesktopCompetitionDataProvider({
     const unregister = registerRefreshCallback(() => {
       // Realtime change detected: trigger Rust sync, then re-read SQLite
       invoke("trigger_sync_now").catch(console.error);
-      setTimeout(() => fetchDataRef.current?.(), 3_000);
+      setTimeout(() => fetchDataRef.current?.(), 15_000);
     });
 
     return unregister;

@@ -282,14 +282,14 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           <p className="text-base font-semibold text-primary mb-3">AUTO</p>
           <div className="flex flex-col gap-3">
             <p className="text-sm">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.auto.shoots.toFixed(1)}</span></p>
-            <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.auto.groundIntakes + aggregateStats.averages.auto.stationIntakes).toFixed(1)}</span></p>
+            <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats?.averages.auto.intakes.toFixed(1)}</span></p>
           </div>
         </div>)}
           {aggregateStats?.averages.teleop && (<div className="rounded-2xl bg-muted px-5 py-4">
           <p className="text-base font-semibold text-primary mb-3">TELEOP</p>
           <div className="flex flex-col gap-3">
               <p className="text-sm">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.shoots.toFixed(1)}</span></p>
-              <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats && (aggregateStats.averages.teleop.groundIntakes + aggregateStats.averages.teleop.stationIntakes).toFixed(1)}</span></p>
+              <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.intakes.toFixed(1)}</span></p>
             </div>
           </div>)}
       </div>
@@ -360,14 +360,12 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
   }
 
   const autoScore =
-    matchStats.auto.groundIntakes +
-    matchStats.auto.stationIntakes +
+    matchStats.auto.intakes +
     matchStats.auto.passes +
     matchStats.auto.shoots +
     matchStats.auto.stocking;
   const teleopScore =
-    matchStats.teleop.groundIntakes +
-    matchStats.teleop.stationIntakes +
+    matchStats.teleop.intakes +
     matchStats.teleop.passes +
     matchStats.teleop.shoots +
     matchStats.teleop.stocking;
@@ -416,7 +414,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
           
             
             <p className="text-xs text-muted-foreground mb-1">Shoots: <span className="text-primary">{matchStats.auto.shoots}</span></p>
-            <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.auto.groundIntakes + matchStats.auto.stationIntakes}</span></p>
+            <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.auto.intakes}</span></p>
             
         </div>
           
@@ -431,7 +429,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
           </p>
           <p className="text-xs text-muted-foreground mb-1">Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
 
-          <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.teleop.groundIntakes + matchStats.teleop.stationIntakes}</span></p>
+          <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.teleop.intakes}</span></p>
         </div>
         <div className="rounded-lg bg-background p-3">
           <p className="text-xs text-muted-foreground mb-1">Auto Climb</p>

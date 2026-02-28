@@ -6,13 +6,15 @@
  * 2. Repeatable fuel actions with preset locations
  * 3. On/off toggle actions (disable, defend, climb)
  * 4. Post-match ratings and selections
+ *
+ * Action IDs match the schema in lib/config/match-action-schemas/2026.json exactly.
  */
 
 // ============================================================================
 // Category 1: Location Actions with User-Selected Field Position
 // ============================================================================
 
-export type LocationActionType = 'ground_intake' | 'passing' | 'shoot';
+export type LocationActionType = 'groundIntake' | 'passing' | 'shoot' | 'camp' | 'disrupt';
 
 export interface LocationAction {
   type: LocationActionType;
@@ -20,6 +22,7 @@ export interface LocationAction {
   coords: [number, number]; // [x, y] normalized 0-1 coordinates (device-independent)
   phase: 'auto' | 'teleop';
   success?: boolean; // Optional: track if action was successful
+  onOpponentField?: boolean; // true when action is placed on opponent's half (defend mode)
 }
 
 // ============================================================================
@@ -27,13 +30,13 @@ export interface LocationAction {
 // ============================================================================
 
 export type PresetActionType =
-  | 'station_intake'  // Station intake (fixed location)
-  | 'stocking'        // Stocking (fixed location)
+  | 'stationIntake'   // Station intake (fixed location)
+  | 'stationStocked'  // Stocking (fixed location)
   // Fuel actions - kept in structure but not used in UI currently
-  | 'fuel_1'
-  | 'fuel_2'
-  | 'fuel_5'
-  | 'fuel_8';
+  | 'fuelScore1'
+  | 'fuelScore2'
+  | 'fuelScore5'
+  | 'fuelScore8';
 
 export interface PresetAction {
   type: PresetActionType;
@@ -46,18 +49,22 @@ export interface PresetAction {
 // ============================================================================
 
 // TIMING CONSTRAINTS:
-// - disable: Available in both auto and teleop
-// - defend: TELEOP ONLY
-// - climb_L1: Available in both auto and teleop
-// - climb_L2: TELEOP ONLY
-// - climb_L3: TELEOP ONLY
+// - autoDisable / teleopDisable: Available in both auto and teleop
+// - teleopDefend: TELEOP ONLY
+// - block: TELEOP ONLY (hold action during defend mode)
+// - autoClimbL1: Auto phase only
+// - teleopClimbL1/L2/L3: Teleop/endgame only
 
 export type ToggleActionType =
-  | 'disable'         // No location needed (both phases)
-  | 'defend'          // No location needed (TELEOP ONLY)
-  | 'climb_L1'        // Has preset location (both phases)
-  | 'climb_L2'        // Has preset location (TELEOP ONLY)
-  | 'climb_L3';       // Has preset location (TELEOP ONLY)
+  | 'autoDisable'     // No location needed (auto phase)
+  | 'teleopDisable'   // No location needed (teleop phase)
+  | 'autoDefend'      // No location needed (auto phase, rare)
+  | 'teleopDefend'    // No location needed (TELEOP ONLY)
+  | 'block'           // Hold action during defend mode (TELEOP ONLY)
+  | 'autoClimbL1'     // Has preset location (auto phase)
+  | 'teleopClimbL1'   // Has preset location (TELEOP ONLY)
+  | 'teleopClimbL2'   // Has preset location (TELEOP ONLY)
+  | 'teleopClimbL3';  // Has preset location (TELEOP ONLY)
 
 export interface ToggleAction {
   type: ToggleActionType;
@@ -132,15 +139,16 @@ export interface MatchScoutingData {
 // ============================================================================
 
 /**
- * Active toggle states during the match
- * Tracks which toggles are currently "on"
+ * Active toggle states during the match (UI keys — phase-agnostic)
+ * Multiple stored action types (e.g. autoDisable + teleopDisable) map to a single UI key.
  */
 export interface ActiveToggles {
   disable: boolean;
   defend: boolean;
-  climb_L1: boolean;
-  climb_L2: boolean;
-  climb_L3: boolean;
+  block: boolean;
+  climbL1: boolean;
+  climbL2: boolean;
+  climbL3: boolean;
 }
 
 /**
@@ -174,10 +182,10 @@ export function createEmptyMatchData(): MatchScoutingData {
  */
 export function calculateFuelTotal(actions: PresetAction[]): FuelCounters {
   const fuelMap: Record<string, number> = {
-    fuel_1: 1,
-    fuel_2: 2,
-    fuel_5: 5,
-    fuel_8: 8,
+    fuelScore1: 1,
+    fuelScore2: 2,
+    fuelScore5: 5,
+    fuelScore8: 8,
   };
 
   let auto = 0;
@@ -199,6 +207,19 @@ export function calculateFuelTotal(actions: PresetAction[]): FuelCounters {
   };
 }
 
+/** Maps stored ToggleActionType to the corresponding ActiveToggles UI key */
+const TOGGLE_TYPE_TO_KEY: Record<string, keyof ActiveToggles> = {
+  autoDisable:   'disable',
+  teleopDisable: 'disable',
+  autoDefend:    'defend',
+  teleopDefend:  'defend',
+  block:         'block',
+  autoClimbL1:   'climbL1',
+  teleopClimbL1: 'climbL1',
+  teleopClimbL2: 'climbL2',
+  teleopClimbL3: 'climbL3',
+};
+
 /**
  * Get currently active toggles from action history
  */
@@ -206,15 +227,16 @@ export function getActiveToggles(actions: ToggleAction[]): ActiveToggles {
   const state: ActiveToggles = {
     disable: false,
     defend: false,
-    climb_L1: false,
-    climb_L2: false,
-    climb_L3: false,
+    block: false,
+    climbL1: false,
+    climbL2: false,
+    climbL3: false,
   };
 
-  // Process actions in order to get final state
   actions.forEach(action => {
-    if (action.type in state) {
-      (state as unknown as Record<string, boolean>)[action.type] = action.active;
+    const key = TOGGLE_TYPE_TO_KEY[action.type];
+    if (key !== undefined) {
+      state[key] = action.active;
     }
   });
 

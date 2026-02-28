@@ -32,13 +32,14 @@ export function transformMatchData(
   const autoActions: MatchAction[] = [];
   const teleopActions: MatchAction[] = [];
 
-  // Transform locationActions (ground_intake, passing, shoot)
+  // Transform locationActions (ground_intake, passing, shoot, camp, disrupt)
   // These have user-selected field coordinates
   scoutingData.locationActions.forEach(action => {
     const matchAction: MatchAction = {
       actionId: action.type,
       timestamp: action.timestamp,
-      location: { x: action.coords[0], y: action.coords[1] }
+      location: { x: action.coords[0], y: action.coords[1] },
+      ...(action.onOpponentField ? { onOpponentField: true } : {}),
     };
 
     if (action.phase === 'auto') {
@@ -127,7 +128,7 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
 
   // Process auto actions
   dataRaw.autoActions?.forEach(action => {
-    if (action.actionId === 'station_intake' || action.actionId === 'stocking') {
+    if (action.actionId === 'stationIntake' || action.actionId === 'stationStocked') {
       // Preset action (no location)
       presetActions.push({
         type: action.actionId as PresetActionType,
@@ -135,15 +136,16 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
         phase: 'auto'
       });
     } else if (action.location) {
-      // Location action (ground_intake, passing, shoot)
+      // Location action (ground_intake, passing, shoot, camp, disrupt)
       locationActions.push({
         type: action.actionId as LocationActionType,
         timestamp: action.timestamp,
         coords: [action.location.x, action.location.y],
-        phase: 'auto'
+        phase: 'auto',
+        ...(action.onOpponentField ? { onOpponentField: true } : {}),
       });
     } else if (action.enabled !== undefined) {
-      // Toggle action (climb, disable, defend, etc.)
+      // Toggle action (climb, disable, defend, block, etc.)
       toggleActions.push({
         type: action.actionId as ToggleActionType,
         timestamp: action.timestamp,
@@ -155,7 +157,7 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
 
   // Process teleop actions
   dataRaw.teleopActions?.forEach(action => {
-    if (action.actionId === 'station_intake' || action.actionId === 'stocking') {
+    if (action.actionId === 'stationIntake' || action.actionId === 'stationStocked') {
       presetActions.push({
         type: action.actionId as PresetActionType,
         timestamp: action.timestamp,
@@ -166,14 +168,16 @@ export function reverseTransformMatchData(dataRaw: MatchDataRaw): MatchScoutingD
         type: action.actionId as LocationActionType,
         timestamp: action.timestamp,
         coords: [action.location.x, action.location.y],
-        phase: 'teleop'
+        phase: 'teleop',
+        ...(action.onOpponentField ? { onOpponentField: true } : {}),
       });
     } else if (action.enabled !== undefined) {
+      const isClimb = action.actionId.startsWith('teleopClimb') || action.actionId.startsWith('autoClimb');
       toggleActions.push({
         type: action.actionId as ToggleActionType,
         timestamp: action.timestamp,
         active: action.enabled,
-        phase: action.actionId.startsWith('climb_') ? 'endgame' : 'teleop'
+        phase: isClimb ? 'endgame' : 'teleop'
       });
     }
   });

@@ -20,11 +20,12 @@ import type {
  * Action counts by type
  */
 interface ActionCounts {
-  groundIntakes: number;
-  stationIntakes: number;
+  intakes: number;
   passes: number;
   shoots: number;
   stocking: number;
+  camps: number;    // defend-mode: camp placements on opponent field
+  disrupts: number; // defend-mode: disrupt placements on opponent field
 }
 
 /**
@@ -84,15 +85,22 @@ export interface MatchStats {
     teleopActionDensity: number; // Actions per second (20-160s)
   };
 
+  // Duration metrics (seconds per match)
+  durations: {
+    blockTime: number;    // seconds block was held (teleop)
+    defendTime: number;   // total seconds defending (auto + teleop)
+    disabledTime: number; // total seconds disabled (auto + teleop)
+  };
+
   // Success metrics (null if not tracked)
   successRates: {
     auto: {
-      groundIntakes: number | null;
+      intakes: number | null;
       passes: number | null;
       shoots: number | null;
     };
     teleop: {
-      groundIntakes: number | null;
+      intakes: number | null;
       passes: number | null;
       shoots: number | null;
     };
@@ -134,6 +142,13 @@ export interface TeamStats {
   disabledPercentage: number; // % of matches disabled
   defendPercentage: number; // % of matches playing defense
 
+  // Average duration metrics (seconds per match)
+  averageDurations: {
+    blockTime: number;
+    defendTime: number;
+    disabledTime: number;
+  };
+
   // Capabilities (any match where true)
   hasBump: boolean;
   hasTrough: boolean;
@@ -153,12 +168,12 @@ export interface TeamStats {
   // Success rates (requires success field in actions)
   successRates: {
     auto: {
-      groundIntakes: number | null; // % successful (0-100)
+      intakes: number | null; // % successful (0-100)
       passes: number | null;
       shoots: number | null;
     };
     teleop: {
-      groundIntakes: number | null;
+      intakes: number | null;
       passes: number | null;
       shoots: number | null;
     };
@@ -202,11 +217,23 @@ export function calculateSingleMatchStats(
   // Extract ratings
   const ratings = extractRatings(raw.postMatch, raw.driverRating);
 
+  const autoActions = raw.autoActions || [];
+  const teleopActions = raw.teleopActions || [];
+
   return {
     auto: autoCounts,
     teleop: teleopCounts,
     climb: climbInfo,
     ratings,
+    durations: {
+      blockTime: computeToggleDuration(teleopActions, "block", 140),
+      defendTime:
+        computeToggleDuration(autoActions, "autoDefend", 20) +
+        computeToggleDuration(teleopActions, "teleopDefend", 140),
+      disabledTime:
+        computeToggleDuration(autoActions, "autoDisable", 20) +
+        computeToggleDuration(teleopActions, "teleopDisable", 140),
+    },
     capabilities: {
       bump: raw.postMatch?.bump || false,
       trough: raw.postMatch?.trough || false,
@@ -219,12 +246,12 @@ export function calculateSingleMatchStats(
     wasDisabled: detectToggleState(
       raw.autoActions || [],
       raw.teleopActions || [],
-      "disable"
+      "autoDisable", "teleopDisable"
     ),
     didDefend: detectToggleState(
       raw.autoActions || [],
       raw.teleopActions || [],
-      "defend"
+      "autoDefend", "teleopDefend"
     ),
     notes: raw.notes || null,
     timeline: calculateSingleMatchTimeline(
@@ -272,6 +299,16 @@ export function calculateTeamStats(
     ratings: calculateAverageRatings(matchStats),
     disabledPercentage: calculatePercentage(matchStats, (s) => s.wasDisabled),
     defendPercentage: calculatePercentage(matchStats, (s) => s.didDefend),
+    averageDurations: (() => {
+      const n = matchStats.length;
+      const sum = (fn: (s: MatchStats) => number) =>
+        n > 0 ? matchStats.reduce((acc, s) => acc + fn(s), 0) / n : 0;
+      return {
+        blockTime: sum((s) => s.durations.blockTime),
+        defendTime: sum((s) => s.durations.defendTime),
+        disabledTime: sum((s) => s.durations.disabledTime),
+      };
+    })(),
     hasBump: matchStats.some((s) => s.capabilities.bump),
     hasTrough: matchStats.some((s) => s.capabilities.trough),
     hasStation: matchStats.some((s) => s.capabilities.canStation),
@@ -331,19 +368,21 @@ function calculateAutoRunCounts(
  */
 function countActions(actions: MatchAction[]): ActionCounts {
   const counts: ActionCounts = {
-    groundIntakes: 0,
-    stationIntakes: 0,
+    intakes: 0,
     passes: 0,
     shoots: 0,
     stocking: 0,
+    camps: 0,
+    disrupts: 0,
   };
 
   for (const action of actions) {
-    if (action.actionId === "ground_intake") counts.groundIntakes++;
-    else if (action.actionId === "station_intake") counts.stationIntakes++;
+    if (action.actionId === "groundIntake") counts.intakes++;
     else if (action.actionId === "passing") counts.passes++;
     else if (action.actionId === "shoot") counts.shoots++;
-    else if (action.actionId === "stocking") counts.stocking++;
+    else if (action.actionId === "stationStocked") counts.stocking++;
+    else if (action.actionId === "camp") counts.camps++;
+    else if (action.actionId === "disrupt") counts.disrupts++;
   }
 
   return counts;
@@ -359,37 +398,41 @@ function analyzeClimbActions(
   teleopActions: MatchAction[],
   postMatch?: PostMatchData
 ): ClimbInfo {
-  // --- Auto climb (climb_L1 only in auto) ---
-  const autoClimbActions = autoActions.filter((a) => a.actionId === "climb_L1");
+  // Phase-start references (min timestamp across all actions in that phase).
+  // Timestamps are stored as Unix ms; normalizing relative to phase start gives seconds-into-phase.
+  const autoStartMs = autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) : 0;
+  const teleopStartMs = teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) : 0;
+
+  // --- Auto climb (autoClimbL1 only in auto) ---
+  const autoClimbActions = autoActions.filter((a) => a.actionId === "autoClimbL1");
   let hasAutoClimb = false;
   let autoClimbTime: number | null = null;
 
   if (autoClimbActions.length > 0) {
     const lastStart = [...autoClimbActions].reverse().find((a) => a.enabled === true);
     if (lastStart) {
-      // Check if there's a fail (enabled=false) after the last start
       const lastStartIdx = autoClimbActions.indexOf(lastStart);
       const failAfter = autoClimbActions.slice(lastStartIdx + 1).some((a) => a.enabled === false);
       if (!failAfter) {
         hasAutoClimb = true;
-        // timestamp is ms from match start during auto (0-20000ms)
-        autoClimbTime = Math.max(0, 20 - lastStart.timestamp / 1000);
+        // seconds from climb press to end of auto (20s)
+        const secondsIntoAuto = (lastStart.timestamp - autoStartMs) / 1000;
+        autoClimbTime = Math.max(0, 20 - secondsIntoAuto);
       }
     }
   }
 
   // --- Teleop climb (L1/L2/L3) ---
   // Walk chronologically: each enabled=true sets level, each enabled=false for that level clears it.
-  // This handles toggles correctly (e.g. L3 on then off, L2 on → final level is L2).
   const teleopClimbActions = teleopActions
-    .filter((a) => a?.actionId?.startsWith("climb_L"))
+    .filter((a) => a?.actionId?.startsWith("teleopClimb"))
     .sort((a, b) => a.timestamp - b.timestamp);
   let level: "L1" | "L2" | "L3" | null = null;
   let teleopClimbTime: number | null = null;
   let lastSuccessfulStart: (typeof teleopClimbActions)[0] | null = null;
 
   for (const a of teleopClimbActions) {
-    const lvl = a.actionId === "climb_L1" ? "L1" : a.actionId === "climb_L2" ? "L2" : a.actionId === "climb_L3" ? "L3" : null;
+    const lvl = a.actionId === "teleopClimbL1" ? "L1" : a.actionId === "teleopClimbL2" ? "L2" : a.actionId === "teleopClimbL3" ? "L3" : null;
     if (!lvl) continue;
     if (a.enabled === true) {
       level = lvl;
@@ -400,7 +443,9 @@ function analyzeClimbActions(
     }
   }
   if (lastSuccessfulStart) {
-    teleopClimbTime = Math.max(0, 140 - lastSuccessfulStart.timestamp / 1000);
+    // seconds from climb press to end of teleop (140s)
+    const secondsIntoTeleop = (lastSuccessfulStart.timestamp - teleopStartMs) / 1000;
+    teleopClimbTime = Math.max(0, 140 - secondsIntoTeleop);
   }
 
   // Count failed teleop climb attempts (enabled=true with a subsequent enabled=false)
@@ -434,15 +479,52 @@ function extractRatings(
 }
 
 /**
+ * Compute total seconds a toggle was active within a phase.
+ * Uses the minimum timestamp of all phase actions as the phase-start reference
+ * so that absolute Unix timestamps normalize correctly.
+ * If the toggle is still active at phase end, counts the remaining time.
+ */
+function computeToggleDuration(
+  phaseActions: MatchAction[],
+  actionId: string,
+  phaseDurationSeconds: number
+): number {
+  if (phaseActions.length === 0) return 0;
+  const filtered = phaseActions
+    .filter((a) => a.actionId === actionId)
+    .sort((a, b) => a.timestamp - b.timestamp);
+  if (filtered.length === 0) return 0;
+
+  const phaseStartMs = Math.min(...phaseActions.map((a) => a.timestamp));
+  const phaseEndMs = phaseStartMs + phaseDurationSeconds * 1000;
+
+  let total = 0;
+  let startMs: number | null = null;
+  for (const a of filtered) {
+    if (a.enabled === true && startMs === null) {
+      startMs = a.timestamp;
+    } else if (a.enabled === false && startMs !== null) {
+      total += (a.timestamp - startMs) / 1000;
+      startMs = null;
+    }
+  }
+  if (startMs !== null) {
+    total += Math.max(0, (phaseEndMs - startMs) / 1000);
+  }
+  return Math.max(0, total);
+}
+
+/**
  * Detect if a toggle action was activated at any point
  */
 function detectToggleState(
   autoActions: MatchAction[],
   teleopActions: MatchAction[],
-  actionId: string
+  ...actionIds: string[]
 ): boolean {
+  const ids = new Set(actionIds);
   const allActions = [...autoActions, ...teleopActions];
-  return allActions.some((a) => a.actionId === actionId && a.enabled === true);
+  return allActions.some((a) => ids.has(a.actionId) && a.enabled === true);
 }
 
 /**
@@ -473,12 +555,12 @@ function calculateSingleMatchSuccessRates(
   // Placeholder - returns null until success field is added to actions
   return {
     auto: {
-      groundIntakes: null,
+      intakes: null,
       passes: null,
       shoots: null,
     },
     teleop: {
-      groundIntakes: null,
+      intakes: null,
       passes: null,
       shoots: null,
     },
@@ -494,18 +576,20 @@ function calculateAverageActions(matchStats: MatchStats[]) {
 
   return {
     auto: {
-      groundIntakes: avg(matchStats.map((s) => s.auto.groundIntakes)),
-      stationIntakes: avg(matchStats.map((s) => s.auto.stationIntakes)),
+      intakes: avg(matchStats.map((s) => s.auto.intakes)),
       passes: avg(matchStats.map((s) => s.auto.passes)),
       shoots: avg(matchStats.map((s) => s.auto.shoots)),
       stocking: avg(matchStats.map((s) => s.auto.stocking)),
+      camps: avg(matchStats.map((s) => s.auto.camps)),
+      disrupts: avg(matchStats.map((s) => s.auto.disrupts)),
     },
     teleop: {
-      groundIntakes: avg(matchStats.map((s) => s.teleop.groundIntakes)),
-      stationIntakes: avg(matchStats.map((s) => s.teleop.stationIntakes)),
+      intakes: avg(matchStats.map((s) => s.teleop.intakes)),
       passes: avg(matchStats.map((s) => s.teleop.passes)),
       shoots: avg(matchStats.map((s) => s.teleop.shoots)),
       stocking: avg(matchStats.map((s) => s.teleop.stocking)),
+      camps: avg(matchStats.map((s) => s.teleop.camps)),
+      disrupts: avg(matchStats.map((s) => s.teleop.disrupts)),
     },
   };
 }
@@ -611,13 +695,11 @@ function calculateConsistencyScores(matchStats: MatchStats[]) {
   // Total action count standard deviation
   const actionCounts = matchStats.map(
     (s) =>
-      s.auto.groundIntakes +
-      s.auto.stationIntakes +
+      s.auto.intakes +
       s.auto.passes +
       s.auto.shoots +
       s.auto.stocking +
-      s.teleop.groundIntakes +
-      s.teleop.stationIntakes +
+      s.teleop.intakes +
       s.teleop.passes +
       s.teleop.shoots +
       s.teleop.stocking
@@ -649,12 +731,12 @@ function calculateSuccessRates(_matchStats: MatchStats[]) {
   // For now, return null - can be implemented when success tracking is added
   return {
     auto: {
-      groundIntakes: null,
+      intakes: null,
       passes: null,
       shoots: null,
     },
     teleop: {
-      groundIntakes: null,
+      intakes: null,
       passes: null,
       shoots: null,
     },
@@ -800,24 +882,24 @@ function absoluteNorm(min: number, max: number) {
 
 export const GRAPHABLE_STATS: GraphableStat[] = [
   // Auto
-  { key: "auto_shoots",           label: "Auto Shoots",           group: "Auto",     getValue: (s) => s.auto.shoots,          normalize: relativeNorm },
-  { key: "auto_ground_intakes",   label: "Auto Ground Intakes",   group: "Auto",     getValue: (s) => s.auto.groundIntakes,   normalize: relativeNorm },
-  { key: "auto_station_intakes",  label: "Auto Outpost Intakes",  group: "Auto",     getValue: (s) => s.auto.stationIntakes,  normalize: relativeNorm },
-  { key: "auto_passes",           label: "Auto Passes",           group: "Auto",     getValue: (s) => s.auto.passes,          normalize: relativeNorm },
+  { key: "auto_shoots",         label: "Auto Shoots",         group: "Auto",    getValue: (s) => s.auto.shoots,   normalize: relativeNorm },
+  { key: "auto_intakes",        label: "Auto Intakes",        group: "Auto",    getValue: (s) => s.auto.intakes,  normalize: relativeNorm },
+  { key: "auto_passes",         label: "Auto Passes",         group: "Auto",    getValue: (s) => s.auto.passes,   normalize: relativeNorm },
   {
     key: "auto_total_actions", label: "Auto Total Actions", group: "Auto",
-    getValue: (s) => s.auto.groundIntakes + s.auto.stationIntakes + s.auto.passes + s.auto.shoots + s.auto.stocking,
+    getValue: (s) => s.auto.intakes + s.auto.passes + s.auto.shoots + s.auto.stocking,
     normalize: relativeNorm,
   },
 
   // Teleop
-  { key: "teleop_shoots",          label: "Teleop Shoots",          group: "Teleop",  getValue: (s) => s.teleop.shoots,         normalize: relativeNorm },
-  { key: "teleop_ground_intakes",  label: "Teleop Ground Intakes",  group: "Teleop",  getValue: (s) => s.teleop.groundIntakes,  normalize: relativeNorm },
-  { key: "teleop_station_intakes", label: "Teleop Outpost Intakes", group: "Teleop",  getValue: (s) => s.teleop.stationIntakes, normalize: relativeNorm },
-  { key: "teleop_passes",          label: "Teleop Passes",          group: "Teleop",  getValue: (s) => s.teleop.passes,         normalize: relativeNorm },
+  { key: "teleop_shoots",       label: "Teleop Shoots",       group: "Teleop",  getValue: (s) => s.teleop.shoots,    normalize: relativeNorm },
+  { key: "teleop_intakes",      label: "Teleop Intakes",      group: "Teleop",  getValue: (s) => s.teleop.intakes,   normalize: relativeNorm },
+  { key: "teleop_passes",       label: "Teleop Passes",       group: "Teleop",  getValue: (s) => s.teleop.passes,    normalize: relativeNorm },
+  { key: "teleop_camps",        label: "Camps",               group: "Teleop",  getValue: (s) => s.teleop.camps,     normalize: relativeNorm },
+  { key: "teleop_disrupts",     label: "Disrupts",            group: "Teleop",  getValue: (s) => s.teleop.disrupts,  normalize: relativeNorm },
   {
     key: "teleop_total_actions", label: "Teleop Total Actions", group: "Teleop",
-    getValue: (s) => s.teleop.groundIntakes + s.teleop.stationIntakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
+    getValue: (s) => s.teleop.intakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
     normalize: relativeNorm,
   },
 
@@ -829,15 +911,30 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   },
   {
     key: "total_intakes", label: "Total Intakes", group: "Combined",
-    getValue: (s) => s.auto.groundIntakes + s.auto.stationIntakes + s.teleop.groundIntakes + s.teleop.stationIntakes,
+    getValue: (s) => s.auto.intakes + s.teleop.intakes,
     normalize: relativeNorm,
   },
   {
     key: "total_actions", label: "Total Actions", group: "Combined",
     getValue: (s) =>
-      s.auto.groundIntakes + s.auto.stationIntakes + s.auto.passes + s.auto.shoots + s.auto.stocking +
-      s.teleop.groundIntakes + s.teleop.stationIntakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
+      s.auto.intakes + s.auto.passes + s.auto.shoots + s.auto.stocking +
+      s.teleop.intakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
     normalize: relativeNorm,
+  },
+  {
+    key: "block_time",    label: "Block Hold Time (s)",  group: "Combined",
+    getValue: (s) => s.durations.blockTime,
+    normalize: absoluteNorm(0, 140),
+  },
+  {
+    key: "defend_time",   label: "Defend Time (s)",      group: "Combined",
+    getValue: (s) => s.durations.defendTime,
+    normalize: absoluteNorm(0, 160),
+  },
+  {
+    key: "disabled_time", label: "Disabled Time (s)",    group: "Combined",
+    getValue: (s) => s.durations.disabledTime,
+    normalize: absoluteNorm(0, 160),
   },
 
   // Climb
