@@ -200,14 +200,12 @@ impl SupabaseService {
         match_key: &str,
         team: &str,
         uid: &str,
-        timestamp_ms: i64,
     ) -> Result<()> {
-        let timestamp_iso = Self::timestamp_to_iso(timestamp_ms);
         let now = Self::now_iso();
 
         println!(
-            "[Supabase] Deleting match data: event={}, match={}, team={}, uid={}, timestamp_ms={}, timestamp_iso={}",
-            event, match_key, team, uid, timestamp_ms, timestamp_iso
+            "[Supabase] Deleting match data: event={}, match={}, team={}, uid={}",
+            event, match_key, team, uid
         );
 
         let payload = json!({
@@ -222,7 +220,6 @@ impl SupabaseService {
             .eq("match", match_key)
             .eq("team", team)
             .eq("uid", uid)
-            .eq("timestamp", &timestamp_iso)
             .execute()
             .await
             .context("Failed to delete match data")?;
@@ -914,6 +911,25 @@ impl SupabaseService {
         let body = response.text().await?;
         let data: Vec<Value> = serde_json::from_str(&body)
             .context("Failed to parse match data response")?;
+
+        Ok(data)
+    }
+
+    /// Fetch only (match, team) keys for active match records — used for delete reconciliation.
+    /// Lightweight query: no data_raw. Supabase RLS returns only non-deleted rows.
+    /// Compared against local SQLite to detect orphaned (stale-deleted) rows.
+    pub async fn fetch_active_match_keys(&self, event: &str) -> Result<Vec<Value>> {
+        let response = self.auth_client()
+            .from("event_match_data")
+            .select("match, team")
+            .eq("event", event)
+            .execute()
+            .await
+            .context("Failed to fetch active match keys from Supabase")?;
+
+        let body = response.text().await?;
+        let data: Vec<Value> = serde_json::from_str(&body)
+            .context("Failed to parse active match keys response")?;
 
         Ok(data)
     }

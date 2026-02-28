@@ -123,6 +123,8 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
 // Error classification result
 export interface ErrorClassification {
   retryable: boolean;
+  /** True for connectivity failures (no internet). Do NOT increment retry counter — let the poller retry naturally. */
+  networkError: boolean;
   message: string;
 }
 
@@ -154,55 +156,63 @@ export function calculateRetryDelay(
 }
 
 /**
- * Classify error to determine if it's retryable
+ * Classify error to determine if it's retryable and whether it's a network error.
+ * Network errors do NOT increment the retry counter — the item stays in queue
+ * and the 30s poller retries it indefinitely until connectivity returns.
  */
 export function classifyError(error: any): ErrorClassification {
   // PostgreSQL error codes
   if (error.code === "23505") {
     // Unique constraint violation - already exists, not retryable
-    return { retryable: false, message: "Duplicate entry (already synced)" };
+    return { retryable: false, networkError: false, message: "Duplicate entry (already synced)" };
   }
 
   if (error.code === "42P01") {
     // Table doesn't exist - schema error, not retryable
-    return { retryable: false, message: "Schema error (table not found)" };
+    return { retryable: false, networkError: false, message: "Schema error (table not found)" };
   }
 
   if (error.code === "23503") {
     // Foreign key violation - data integrity issue, not retryable
     return {
       retryable: false,
+      networkError: false,
       message: "Data integrity error (foreign key violation)",
     };
   }
 
-  // Network-related errors - retryable
+  // Network-related errors — retryable but do NOT increment retry counter.
+  // navigator.onLine can be true even without internet (e.g. WiFi with no internet),
+  // so these must not burn through the retry limit.
   if (
-    error.message?.toLowerCase().includes("network") ||
-    error.message?.toLowerCase().includes("fetch") ||
+    error.message?.toLowerCase().includes("failed to fetch") ||
+    error.message?.toLowerCase().includes("networkerror") ||
+    error.message?.toLowerCase().includes("network request failed") ||
+    error.message?.toLowerCase().includes("err_internet_disconnected") ||
     error.message?.toLowerCase().includes("timeout") ||
     error.name === "NetworkError" ||
-    error.name === "FetchError"
+    error.name === "FetchError" ||
+    error.name === "TypeError" && error.message?.toLowerCase().includes("fetch")
   ) {
-    return { retryable: true, message: `Network error: ${error.message}` };
+    return { retryable: true, networkError: true, message: `Network error: ${error.message}` };
   }
 
   // HTTP status codes
   if (error.status) {
     if (error.status >= 500 && error.status < 600) {
-      // Server errors - retryable
-      return { retryable: true, message: `Server error: ${error.status}` };
+      // Server errors - retryable with backoff
+      return { retryable: true, networkError: false, message: `Server error: ${error.status}` };
     }
     if (error.status === 429) {
       // Rate limit - retryable with backoff
-      return { retryable: true, message: "Rate limit exceeded" };
+      return { retryable: true, networkError: false, message: "Rate limit exceeded" };
     }
     if (error.status >= 400 && error.status < 500) {
       // Client errors (except 429) - not retryable
-      return { retryable: false, message: `Client error: ${error.status}` };
+      return { retryable: false, networkError: false, message: `Client error: ${error.status}` };
     }
   }
 
   // Default: treat as retryable to be safe
-  return { retryable: true, message: error.message || "Unknown error" };
+  return { retryable: true, networkError: false, message: error.message || "Unknown error" };
 }

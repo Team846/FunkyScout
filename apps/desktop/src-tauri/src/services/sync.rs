@@ -642,6 +642,22 @@ impl SyncService {
                 .context("Failed to cache match data to SQLite")?;
         }
 
+        // Reconcile on first sync after startup: catch old mobile deletions that are outside
+        // the incremental window (their last_modified predates our sync window) or hidden by RLS.
+        // Fetches only (match, team) keys — minimal egress.
+        if is_first_sync {
+            match self.supabase.fetch_active_match_keys(&self.current_event).await {
+                Ok(active_keys) => {
+                    if let Err(e) = self.reconcile_match_deletions(&active_keys).await {
+                        eprintln!("[Sync] Match reconciliation error: {}", e);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Sync] Failed to fetch active match keys for reconciliation: {}", e);
+                }
+            }
+        }
+
         // 16. Fetch team data — incremental if SQLite has rows, full if empty.
         let team_since = if self.sqlite_has_rows("event_team_data", &self.current_event).await {
             since_iso.as_deref()
@@ -1071,8 +1087,62 @@ impl SyncService {
         Ok(())
     }
 
-    /// Cache match scouting data to local SQLite
-    /// Converts PostgreSQL timestamps to epoch milliseconds for mobile compatibility
+    /// Reconcile local match cache against Supabase's active set.
+    /// Soft-deletes any local non-deleted rows that are absent from Supabase's response.
+    /// Handles old mobile deletions outside the incremental sync window, and cases where
+    /// Supabase RLS filters deleted rows from the full fetch.
+    async fn reconcile_match_deletions(&self, active_keys: &[serde_json::Value]) -> Result<()> {
+        // Build set of (match, team) pairs that Supabase considers active
+        let active_set: std::collections::HashSet<(String, String)> = active_keys
+            .iter()
+            .filter_map(|v| {
+                let m = v.get("match").and_then(|x| x.as_str())?.to_string();
+                let t = v.get("team").and_then(|x| x.as_str())?.to_string();
+                Some((m, t))
+            })
+            .collect();
+
+        // Fetch local non-deleted rows (keys only)
+        let local_rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT match, team FROM event_match_data WHERE event = ? AND deleted_at IS NULL"
+        )
+        .bind(&self.current_event)
+        .fetch_all(&self.sqlx_pool)
+        .await?;
+
+        if local_rows.is_empty() {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut marked = 0usize;
+
+        for (match_key, team) in &local_rows {
+            if !active_set.contains(&(match_key.clone(), team.clone())) {
+                sqlx::query(
+                    "UPDATE event_match_data SET deleted_at = ?, last_modified = ?
+                     WHERE event = ? AND match = ? AND team = ? AND deleted_at IS NULL"
+                )
+                .bind(now)
+                .bind(now)
+                .bind(&self.current_event)
+                .bind(match_key)
+                .bind(team)
+                .execute(&self.sqlx_pool)
+                .await?;
+                marked += 1;
+            }
+        }
+
+        if marked > 0 {
+            println!("[Sync] Reconciliation: soft-deleted {} orphaned match records (deleted in Supabase but stale in local cache)", marked);
+        } else {
+            println!("[Sync] Reconciliation: all {} local match records verified active in Supabase", local_rows.len());
+        }
+
+        Ok(())
+    }
+
     async fn cache_match_data_to_sqlite(&self, match_records: &[serde_json::Value]) -> Result<()> {
         if match_records.is_empty() {
             return Ok(());
@@ -1277,8 +1347,51 @@ impl SyncService {
         Ok(())
     }
 
-    /// Mark queue item as failed with retry limit
+    /// Returns true if the error string looks like a transient network connectivity issue
+    /// (offline, DNS failure, TCP reset, etc.) rather than a server-level error.
+    /// Network errors should NOT burn retries — the item stays pending until connectivity
+    /// returns. Server errors (4xx schema errors, auth errors) should count toward the
+    /// retry limit so genuinely broken payloads don't loop forever.
+    fn is_network_error(error: &str) -> bool {
+        let lower = error.to_lowercase();
+        lower.contains("error sending request")
+            || lower.contains("connection refused")
+            || lower.contains("connection reset")
+            || lower.contains("connection closed")
+            || lower.contains("failed to lookup")
+            || lower.contains("network unreachable")
+            || lower.contains("dns error")
+            || lower.contains("error trying to connect")
+            || lower.contains("timed out")
+            || lower.contains("broken pipe")
+            || lower.contains("no route to host")
+            || lower.contains("failed to fetch")
+            || lower.contains("os error 111") // ECONNREFUSED on Linux
+            || lower.contains("os error 101") // ENETUNREACH on Linux
+    }
+
+    /// Mark queue item as failed with retry limit.
+    /// Network connectivity errors leave the item as 'pending' without incrementing
+    /// retries so items survive extended offline periods. Server-level errors
+    /// (bad payload, auth failure, schema mismatch) count toward the 5-retry limit.
     async fn mark_queue_failed(&self, id: i64, error: String) -> Result<()> {
+        // Don't burn retries on transient network failures — just reset to pending
+        // and record the error for debugging. The next 120s cycle will retry.
+        if Self::is_network_error(&error) {
+            println!("[SyncQueue] Network error for item {} — leaving as pending (retries not incremented): {}", id, error);
+            sqlx::query(
+                "UPDATE sync_queue
+                 SET status = 'pending', last_error = ?, last_attempt = ?
+                 WHERE id = ?"
+            )
+            .bind(&error)
+            .bind(chrono::Utc::now().timestamp_millis())
+            .bind(id)
+            .execute(&self.sqlx_pool)
+            .await?;
+            return Ok(());
+        }
+
         let retries: (i64,) = sqlx::query_as(
             "SELECT retries FROM sync_queue WHERE id = ?"
         )
@@ -1296,7 +1409,7 @@ impl SyncService {
         )
         .bind(status)
         .bind(new_retries)
-        .bind(error)
+        .bind(&error)
         .bind(chrono::Utc::now().timestamp_millis())
         .bind(id)
         .execute(&self.sqlx_pool)
@@ -1405,20 +1518,20 @@ impl SyncService {
             .ok_or_else(|| anyhow::anyhow!("Missing team"))?;
         let uid = payload.get("uid").and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing uid"))?;
-        let timestamp = payload.get("timestamp").and_then(|v| v.as_i64())
-            .ok_or_else(|| anyhow::anyhow!("Missing timestamp"))?;
 
-        // Update Supabase (soft-delete)
-        self.supabase.delete_match_data(event, match_key, team, uid, timestamp).await?;
+        let now = chrono::Utc::now().to_rfc3339();
 
-        // Update local cache with deleted_at timestamp
+        // Update Supabase (soft-delete) — keyed by (event, match, team, uid), no timestamp needed
+        self.supabase.delete_match_data(event, match_key, team, uid).await?;
+
+        // Update local cache
         sqlx::query(
             "UPDATE event_match_data
              SET deleted_at = ?, last_modified = ?
              WHERE event = ? AND match = ? AND team = ? AND uid = ?"
         )
-        .bind(timestamp)
-        .bind(timestamp)
+        .bind(&now)
+        .bind(&now)
         .bind(event)
         .bind(match_key)
         .bind(team)

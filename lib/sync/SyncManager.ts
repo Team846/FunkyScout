@@ -199,7 +199,7 @@ export class SyncManager {
       await removeSyncQueueItem(item.id);
     } catch (error: any) {
       // Classify error
-      const { retryable, message } = classifyError(error);
+      const { retryable, networkError, message } = classifyError(error);
 
       if (!retryable) {
         console.error(`[Sync] Non-retryable error for item ${item.id}: ${message}`);
@@ -208,7 +208,17 @@ export class SyncManager {
         return;
       }
 
-      // Increment retry count
+      if (networkError) {
+        // Connectivity failure — do NOT increment the retry counter.
+        // navigator.onLine can be true even with no actual internet (e.g. WiFi
+        // with no connectivity), so incrementing here would burn through all 5
+        // retries in a single offline period and permanently lose the data.
+        // The 30s poller will retry automatically when connectivity returns.
+        console.warn(`[Sync] Network error for item ${item.id} (${item.type}), keeping in queue without incrementing retries: ${message}`);
+        return;
+      }
+
+      // Increment retry count for non-network errors (server errors, rate limits, etc.)
       await incrementSyncQueueRetry(item.id, message);
 
       // Schedule retry with exponential backoff
@@ -396,7 +406,7 @@ export class SyncManager {
   private async syncDeleteMatchData(
     payload: DeleteMatchDataPayload,
   ): Promise<void> {
-    const { event, match, team, uid, timestamp } = payload;
+    const { event, match, team, uid } = payload;
     const now = new Date().toISOString();
 
     const { error } = await this.supabaseClient
@@ -408,8 +418,7 @@ export class SyncManager {
       .eq("event", event)
       .eq("match", match)
       .eq("team", team)
-      .eq("uid", uid)
-      .eq("timestamp", timestamp);
+      .eq("uid", uid);
 
     if (error) {
       throw error;

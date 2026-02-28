@@ -409,7 +409,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
 
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col rounded-lg bg-background p-3">
-          <p className="text-sm text-muted-foreground mb-1">Auto Actions: <span className="text-lg font-semibold text-primary">{autoScore}</span></p>
+          <p className="text-sm text-muted-foreground mb-1">Auto Actions: </p>
 
           
             
@@ -425,7 +425,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
         <div className="flex flex-col rounded-lg bg-background p-3">
 
           <p className="text-sm text-muted-foreground mb-1">
-            Teleop Actions: <span className="text-lg font-semibold text-primary">{teleopScore}</span>
+            Teleop Actions: 
           </p>
           <p className="text-xs text-muted-foreground mb-1">Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
 

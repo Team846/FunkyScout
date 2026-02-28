@@ -413,55 +413,60 @@ function MatchEditStats() {
   );
 
   const toggleAction = (
-    actionType: ToggleActionType,
+    uiAction: string, // Shorthand: "climb_L1", "climb_L2", "climb_L3", "disable", "defend"
     phase: "auto" | "teleop" | "endgame" = "teleop"
   ) => {
     if (!matchData) return;
 
-    // For climb actions, check phase-specific state (auto and teleop climbs are independent).
-    // Use last-event-wins: get the final event for this type+phase, check if it's active.
-    // For non-climb toggles (disable, defend), use cross-phase activeToggles.
-    const currentlyActive = actionType.startsWith("climb_")
-      ? (matchData.toggleActions.filter((a) => a.type === actionType && a.phase === phase).at(-1)?.active ?? false)
-      : activeToggles[actionType];
+    // Map UI shorthand + phase to the canonical ToggleActionType stored in matchData.
+    // Buttons use convenient shorthand; stored actions use schema IDs (autoClimbL1, teleopDisable, etc.)
+    const resolveType = (action: string, ph: string): ToggleActionType => {
+      switch (action) {
+        case "climb_L1": return ph === "auto" ? "autoClimbL1" : "teleopClimbL1";
+        case "climb_L2": return "teleopClimbL2";
+        case "climb_L3": return "teleopClimbL3";
+        case "disable":  return ph === "auto" ? "autoDisable" : "teleopDisable";
+        case "defend":   return ph === "auto" ? "autoDefend"  : "teleopDefend";
+        default:         return action as ToggleActionType;
+      }
+    };
 
-    // Handle climb exclusivity - only one climb level can be active at a time PER PHASE
-    // Auto climb (L1 in auto) and teleop climb (L1/L2/L3 in endgame) are independent
+    const resolvedType = resolveType(uiAction, phase);
+    const isClimb = resolvedType.startsWith("autoClimb") || resolvedType.startsWith("teleopClimb");
+
+    // Current active state: climbs use last-event-wins on the resolved ID;
+    // non-climb toggles (disable/defend) use activeToggles which merges auto+teleop phases.
+    const currentlyActive = isClimb
+      ? (matchData.toggleActions.filter((a) => a.type === resolvedType).at(-1)?.active ?? false)
+      : uiAction === "disable" ? activeToggles.disable
+      : uiAction === "defend"  ? activeToggles.defend
+      : uiAction === "block"   ? activeToggles.block
+      : false;
+
+    // Climb exclusivity: activating a climb level deactivates all others in the same phase
     const newActions: ToggleAction[] = [];
-    if (actionType.startsWith("climb_") && !currentlyActive) {
-      // Deactivate any other active climb levels IN THE SAME PHASE
-      const climbTypes: ToggleActionType[] = [
-        "climb_L1",
-        "climb_L2",
-        "climb_L3",
-      ];
-      climbTypes.forEach((climbType) => {
-        if (climbType !== actionType) {
-          // Check if this climb type is active in the CURRENT phase (last-event-wins)
-          const isActiveInSamePhase = matchData?.toggleActions.filter(
-            (a) => a.type === climbType && a.phase === phase
-          ).at(-1)?.active ?? false;
+    if (isClimb && !currentlyActive) {
+      const samePhaseClimbs: ToggleActionType[] = phase === "auto"
+        ? ["autoClimbL1"]
+        : ["teleopClimbL1", "teleopClimbL2", "teleopClimbL3"];
+
+      samePhaseClimbs.forEach((climbType) => {
+        if (climbType !== resolvedType) {
+          const isActiveInSamePhase =
+            matchData.toggleActions.filter((a) => a.type === climbType).at(-1)?.active ?? false;
           if (isActiveInSamePhase) {
-            newActions.push({
-              type: climbType,
-              timestamp: Date.now(),
-              active: false,
-              phase,
-            });
+            newActions.push({ type: climbType, timestamp: Date.now(), active: false, phase });
           }
         }
       });
     }
 
-    // For climb actions added in edit mode, set timestamp to phase end
-    // so climbTime calculates to 0 (indicating added in post)
-    // Auto phase is 20s, teleop/endgame is 140s
-    const isClimbAction = actionType.startsWith("climb_");
+    // Climb actions added in edit mode get a phase-end timestamp so climbTime = 0
     const climbTimestamp = phase === "auto" ? 20000 : 140000;
-    
+
     const newAction: ToggleAction = {
-      type: actionType,
-      timestamp: isClimbAction ? climbTimestamp : Date.now(),
+      type: resolvedType,
+      timestamp: isClimb ? climbTimestamp : Date.now(),
       active: !currentlyActive,
       phase,
     };

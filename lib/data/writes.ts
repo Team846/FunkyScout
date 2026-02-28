@@ -16,7 +16,7 @@
 import {
   addToSyncQueue,
   cacheEventTeamData,
-  cacheEventMatchData,
+  upsertEventMatchDataRows,
   cacheEventSchedule,
   insertPicklistToCache,
   updatePicklistCache,
@@ -267,8 +267,9 @@ export async function putMatchData(
     last_modified: now,
   };
 
-  // 1. Write to local SQLite
-  await cacheEventMatchData(eventKey, [matchData]);
+  // 1. Write to local SQLite — use upsertEventMatchDataRows (not cacheEventMatchData)
+  //    to avoid wiping all other event match data before reinserting just this one row
+  await upsertEventMatchDataRows(eventKey, [matchData]);
 
   // 2. Queue for sync - CRITICAL: Only include name if defined to prevent null overwrites
   await addToSyncQueue("PUT_MATCH_DATA", {
@@ -353,22 +354,25 @@ export async function deleteMatchData(
   }
 
   // MOBILE: Update local cache then queue for sync
+  // Use upsertEventMatchDataRows (not cacheEventMatchData) to avoid wiping all
+  // other match data for this event — cacheEventMatchData does a DELETE+reinsert.
   const existing = await getEventMatchData(eventKey, matchNumber, teamNumber);
   if (existing.length > 0) {
     const toDelete = existing.filter((e: EventMatchData) => e.uid === uid);
-    await cacheEventMatchData(
-      eventKey,
-      toDelete.map((e: EventMatchData) => ({ ...e, deleted_at: now })),
-    );
+    if (toDelete.length > 0) {
+      await upsertEventMatchDataRows(
+        eventKey,
+        toDelete.map((e: EventMatchData) => ({ ...e, deleted_at: now })),
+      );
+    }
   }
 
-  // Queue for sync
+  // Queue for sync — (event, match, team, uid) is sufficient to identify the row
   await addToSyncQueue("DELETE_MATCH_DATA", {
     event: eventKey,
     match: matchNumber,
     team: teamNumber,
     uid: uid,
-    timestamp: now,
   });
 
   console.log(

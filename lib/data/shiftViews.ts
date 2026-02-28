@@ -254,13 +254,13 @@ interface PitDataInput {
 
 function extractScoutedClimbLevel(data_raw: unknown): "L1" | "L2" | "L3" | null {
   const toggles: any[] = ((data_raw as any)?.teleopActions ?? []).filter(
-    (a: any) => a?.actionId?.startsWith?.("climb_L")
+    (a: any) => a?.actionId?.startsWith?.("teleopClimb")
   );
   if (toggles.length === 0) return null;
   const sorted = [...toggles].sort((a, b) => a.timestamp - b.timestamp);
   let level: "L1" | "L2" | "L3" | null = null;
   for (const a of sorted) {
-    const lvl = a.actionId === "climb_L1" ? "L1" : a.actionId === "climb_L2" ? "L2" : a.actionId === "climb_L3" ? "L3" : null;
+    const lvl = a.actionId === "teleopClimbL1" ? "L1" : a.actionId === "teleopClimbL2" ? "L2" : a.actionId === "teleopClimbL3" ? "L3" : null;
     if (!lvl) continue;
     if (a.enabled === true) level = lvl;
     else if (a.enabled === false && level === lvl) level = null;

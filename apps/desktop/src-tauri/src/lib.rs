@@ -33,7 +33,14 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            tauri::async_runtime::spawn(async move {
+            // Block until AppState is initialized and managed.
+            // This ensures handle.manage() is called before setup() returns and the window
+            // opens, preventing "state not managed" errors on fresh installs where migrations
+            // run for the first time and the frontend fires commands before state is ready.
+            //
+            // block_in_place moves the current task off this thread so block_on can safely
+            // run without deadlocking the tokio runtime that Tauri already started.
+            tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(async {
                 // Create sync trigger channel (for instant sync on writes)
                 let (sync_tx, sync_rx) = tokio::sync::mpsc::channel::<()>(100);
 
@@ -88,8 +95,8 @@ pub fn run() {
                 let jwt_arc = Arc::clone(&state.user_jwt_shared);
                 let event_arc = Arc::clone(&state.current_event_shared);
 
-                let app_state = Mutex::new(state);
-                handle.manage(app_state);
+                // Manage state before returning — window won't open until this point
+                handle.manage(Mutex::new(state));
 
                 // Start background sync service if configured
                 if !tba_key.is_empty() && !supabase_url.is_empty() && !supabase_key.is_empty() {
@@ -120,7 +127,7 @@ pub fn run() {
                     println!("[App] Missing - TBA: {}, Supabase URL: {}, Supabase Key: {}",
                         tba_key.is_empty(), supabase_url.is_empty(), supabase_key.is_empty());
                 }
-            });
+            }));
 
             Ok(())
         })

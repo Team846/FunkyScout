@@ -201,6 +201,33 @@ export function SyncProvider({
     };
   }, [router]);
 
+  // Trigger 5: App visibility (tab/browser/mobile app returning to foreground)
+  // Push-only + incremental refresh (no sync key clearing) to keep costs low.
+  useEffect(() => {
+    if (!dbInitialized) return;
+
+    const handleVisibility = () => {
+      if (document.hidden || !isOnline) return;
+      console.log("[SyncContext] App visible again, pushing writes + incremental refresh");
+      // Flush write queue (push-only)
+      syncManagerRef.current?.forceSyncNow().catch((error) => {
+        console.error("[SyncContext] Visibility push failed:", error);
+      });
+      // Incremental refresh — sync keys are NOT cleared, so each context
+      // fetches only rows modified since its last sync timestamp
+      refreshCallbacks.current.forEach((callback) => {
+        try {
+          callback();
+        } catch (error) {
+          console.error("[SyncContext] Error in visibility refresh callback:", error);
+        }
+      });
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [dbInitialized, isOnline]);
+
   // Trigger 4: Auth changes (login/logout)
   useEffect(() => {
     if (!syncManagerRef.current) return;
