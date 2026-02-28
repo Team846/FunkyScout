@@ -686,9 +686,9 @@ function MatchPlay() {
     <>
       {isWrongOrientation && <RotateDevicePrompt />}
       <div
-        className={`flex flex-row w-screen h-screen gap-5 py-5 pr-5 pl-[max(1.25rem,env(safe-area-inset-left,0px))] ${shake ? "animate-shake" : ""}`}
+        className={`flex bg-background flex-row w-screen h-screen gap-5 py-5 pr-5 pl-[max(1.25rem,env(safe-area-inset-left,0px))] ${shake ? "animate-shake" : ""}`}
       >
-        <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-black-950 gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
+        <div className="flex flex-col justify-between items-center w-[10vw] h-full bg-card gap-2.5 py-3 rounded-[15px] border-2 border-[#1E1E1E]">
           <div className="flex w-[62px] flex-col text-outfit text-xs justify-start items-center gap-[5px]">
             <p className="text-[#CDA745]">
               {matchNum ? getMatchLabel(matchNum) : ""}
@@ -983,7 +983,7 @@ function MatchPlay() {
         </div>
         
         {/* Preset action buttons (fixed location), 40% */}
-        <div className="flex justify-center items-center w-[30vw] h-full gap-0 p-2.5 rounded-[15px] bg-black-950">
+        <div className="flex justify-center items-center w-[30vw] h-full gap-0 p-2.5 rounded-[15px] bg-card">
           {/*side bar, 5% */}
           <div className="flex flex-col justify-center-items-center w-[8.5vw] h-full gap-2.5 p-2.5">
             <div
@@ -1018,7 +1018,7 @@ function MatchPlay() {
               </div>
             )}
           </div>
-          <div className="flex flex-col justify-center items-center w-[21.5vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-black-950 ">
+          <div className="flex flex-col justify-center items-center w-[21.5vw] h-full gap-2.5 p-2.5 rounded-[15px] bg-card ">
           
 
           
@@ -1189,7 +1189,7 @@ function MatchPlay() {
 
         
       </div>
-      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-black-950 border-2 border-[#1E1E1E]">
+      <div className="flex flex-col justify-start items-center w-[10vw] h-full px-6 py-2.5 rounded-[10px] gap-2.5 bg-card border-2 border-[#1E1E1E]">
           {countdown !== null ? (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-6xl font-bold text-[#4ADE80] animate-pulse font-mono w-[60px] text-center">
