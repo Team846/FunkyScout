@@ -15,7 +15,6 @@
 
 import {
   addToSyncQueue,
-  cacheEventTeamData,
   upsertEventMatchDataRows,
   cacheEventSchedule,
   insertPicklistToCache,

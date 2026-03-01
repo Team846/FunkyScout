@@ -119,19 +119,63 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       ]);
 
       if (cachedSchedule.length > 0) {
-        setSchedule(
-          cachedSchedule.map(
-            (s: { match: string; team: string; alliance: string }) => ({
-              match: s.match,
-              team: s.team,
-              alliance: s.alliance as "red" | "blue",
-            })
-          )
-        );
+        // Include all cached fields — est_time and predictions come from desktop
+        // via Supabase and are stored in event_schedule by cacheEventScheduleRows.
+        const entries = (cachedSchedule as any[]).map((s) => ({
+          match: s.match,
+          team: s.team,
+          alliance: s.alliance as "red" | "blue",
+          name: s.name,
+          uid: s.uid,
+          est_time: s.est_time,
+          red_score: s.red_score,
+          blue_score: s.blue_score,
+          red_win_prob: s.red_win_prob,
+          predicted_red_score: s.predicted_red_score,
+          predicted_blue_score: s.predicted_blue_score,
+        }));
+        setSchedule(entries);
         hasLoadedDataRef.current = true;
-      }
 
-      if (cachedTba.length > 0) {
+        // Build tbaSchedule from schedule cache if desktop has synced est_time.
+        // This mirrors the online hasMatchData path so that offline launches have
+        // the same timing and prediction data without a separate tba_event_matches hit.
+        const hasCachedMatchData = entries.some((e) => e.est_time != null);
+        if (hasCachedMatchData) {
+          const matchData: Record<string, TBAMatchData> = {};
+          entries.forEach((entry) => {
+            if (!matchData[entry.match]) {
+              const matchEntries = entries.filter((e) => e.match === entry.match);
+              matchData[entry.match] = {
+                redTeams: matchEntries.filter((e) => e.alliance === "red").map((e) => e.team),
+                blueTeams: matchEntries.filter((e) => e.alliance === "blue").map((e) => e.team),
+                est_time: entry.est_time ?? 0,
+                redScore: entry.red_score ?? null,
+                blueScore: entry.blue_score ?? null,
+                red_win_prob: entry.red_win_prob ?? null,
+                predicted_red_score: entry.predicted_red_score ?? null,
+                predicted_blue_score: entry.predicted_blue_score ?? null,
+              };
+            }
+          });
+          setTbaSchedule(matchData);
+        } else if (cachedTba.length > 0) {
+          // Fallback: desktop hasn't synced est_time yet — use tba_event_matches
+          // (populated by the TBA direct fetch path when online).
+          const map: Record<string, TBAMatchData> = {};
+          for (const m of cachedTba as TbaMatch[]) {
+            map[m.match_key] = {
+              redTeams: m.red_teams,
+              blueTeams: m.blue_teams,
+              est_time: m.est_time ?? 0,
+              redScore: m.red_score ?? null,
+              blueScore: m.blue_score ?? null,
+            };
+          }
+          setTbaSchedule(map);
+        }
+      } else if (cachedTba.length > 0) {
+        // No schedule cache at all — still try tba_event_matches for timing
         const map: Record<string, TBAMatchData> = {};
         for (const m of cachedTba as TbaMatch[]) {
           map[m.match_key] = {

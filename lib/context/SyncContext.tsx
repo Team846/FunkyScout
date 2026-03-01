@@ -45,9 +45,17 @@ export function SyncProvider({
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const prevEventRef = useRef<string | null>(null);
   const prevOnlineRef = useRef<boolean>(isOnline);
+  // Ref so SyncManager's getIsOnline() closure always reads the latest value
+  // even though the SyncManager is only instantiated once (when dbInitialized).
+  const isOnlineRef = useRef<boolean>(isOnline);
 
   // Callback registry for data context refresh functions
   const refreshCallbacks = useRef<Set<() => void>>(new Set());
+
+  // Keep isOnlineRef in sync so SyncManager's getIsOnline() never reads a stale closure
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
 
   // Initialize SyncManager
   useEffect(() => {
@@ -55,7 +63,7 @@ export function SyncProvider({
 
     syncManagerRef.current = new SyncManager(
       supabase,
-      () => isOnline,
+      () => isOnlineRef.current,
       (type, error) => {
         console.error(`[SyncContext] Permanent sync failure: ${type} — ${error}`);
         toast.error(`Upload failed permanently (${type})`, {

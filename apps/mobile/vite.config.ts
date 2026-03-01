@@ -46,6 +46,17 @@ const plugins: PluginOption[] = [
       scope: "/",
       icons: [
         {
+          src: "icon-180.png",
+          sizes: "180x180",
+          type: "image/png",
+        },
+        {
+          src: "icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any maskable",
+        },
+        {
           src: "icon.svg",
           sizes: "any",
           type: "image/svg+xml",
@@ -54,11 +65,11 @@ const plugins: PluginOption[] = [
       ],
     },
     injectManifest: {
-      // Pre-cache JS/CSS/font bundles AND static SVG assets (field images etc.)
-      globPatterns: ["**/*.{js,css,woff2,ttf,svg}"],
-      // Exclude WASM and SQLite worker files — they rely on special response
-      // headers and must not be served from the SW cache
-      globIgnores: ["**/*.wasm", "**/sqlite*.js", "**/sqlite3*.js"],
+      // Pre-cache JS/CSS/font/SVG/WASM bundles AND index.html.
+      // HTML must be pre-cached so the app can launch offline on first install.
+      // WASM and SQLite worker JS must also be pre-cached so SQLite can init
+      // offline (they do NOT require COOP/COEP headers — only the HTML page does).
+      globPatterns: ["**/*.{js,css,woff2,ttf,svg,html,wasm}"],
     },
   }),
 ];
