@@ -76,7 +76,7 @@ export function DataPage() {
   const [sortField, setSortField] = useState<SortField>("rank");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  const OUR_TEAM = 233;
+  const OUR_TEAM = 8724;
 
   // Fetch match scouting data and team data from Supabase (with local cache)
   useEffect(() => {

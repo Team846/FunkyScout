@@ -60,12 +60,12 @@ export interface PitScoutFormData {
   };
   autoClimb: {
     level: string | null;
-    orientation: string | null;
+    orientation: string[];
     declimbTime?: string;
   };
   teleopClimb: {
-    level: string | null;
-    orientation: string | null;
+    level: string[];
+    orientation: string[];
   };
     /* GENERATED:END */
   autos: AutoEntry[];

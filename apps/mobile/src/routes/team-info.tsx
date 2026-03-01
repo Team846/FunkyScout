@@ -50,12 +50,12 @@ interface PitData {
   };
   autoClimb: {
     level: string | null;
-    orientation?: string | null;
+    orientation?: string[];
     declimbTime?: string;
   };
   teleopClimb: {
-    level: string | null;
-    orientation?: string | null;
+    level: string[];
+    orientation?: string[];
   };
   autos: Array<{
     name?: string;
@@ -97,12 +97,12 @@ interface Verifications {
     passing: VerificationItem;
   };
   autoClimb: {
-    level: VerificationItem;
-    orientation: VerificationItem;
+    observed: boolean;
+    orientations: Set<string>; // lowercase
   };
   teleopClimb: {
-    level: VerificationItem;
-    orientation: VerificationItem;
+    levels: Set<string>;
+    orientations: Set<string>; // lowercase
   };
 }
 function VerificationBadge({ item }: { item: VerificationItem }) {
@@ -358,16 +358,24 @@ function TeamInfoPage() {
     stocking:     matches.some(m => m.data_raw?.postMatch?.canStocking),
     shootMoving:  matches.some(m => m.data_raw?.postMatch?.shootMoving),
     passing:      matches.some(m => m.data_raw?.postMatch?.canPass),
-    autoClimbLevel:       matches.some(m => !!calculateSingleMatchStats(m)?.climb?.hasAutoClimb),
-    autoClimbOrientation: matches
-      .map(m => m.data_raw?.postMatch?.autoClimbOrientation)
-      .find(v => v != null) ?? null,
-    teleopClimbLevel: matches
-      .map(m => calculateSingleMatchStats(m)?.climb?.level)
-      .find(v => v != null) ?? null,
-    teleopClimbOrientation: matches
-      .map(m => m.data_raw?.postMatch?.teleopClimbOrientation)
-      .find(v => v != null) ?? null,
+    autoClimbObserved: matches.some(m => !!calculateSingleMatchStats(m)?.climb?.hasAutoClimb),
+    autoClimbOrientations: new Set(
+      matches
+        .map(m => m.data_raw?.postMatch?.autoClimbOrientation)
+        .filter((v): v is string => v != null)
+        .map(v => v.toLowerCase())
+    ),
+    teleopClimbLevels: new Set<string>(
+      matches
+        .map(m => calculateSingleMatchStats(m)?.climb?.level)
+        .filter((v): v is "L1" | "L2" | "L3" => v != null)
+    ),
+    teleopClimbOrientations: new Set(
+      matches
+        .map(m => m.data_raw?.postMatch?.teleopClimbOrientation)
+        .filter((v): v is string => v != null)
+        .map(v => v.toLowerCase())
+    ),
   };
 
   const boolItem = (pitVal: boolean, obsVal: boolean): VerificationItem => ({
@@ -376,15 +384,6 @@ function TeamInfoPage() {
     // Only flag discrepancy if pit said YES but match never showed it
     // (pit said NO but match showed YES is also notable)
     verified: pitVal === obsVal || (!pitVal && obsVal), 
-  });
-
-  const strItem = (
-    pitVal: string | null,
-    obsVal: string | null
-  ): VerificationItem => ({
-    pitClaimed: pitVal,
-    matchObserved: obsVal,
-    verified: obsVal == null || pitVal === obsVal,
   });
 
   return {
@@ -402,12 +401,12 @@ function TeamInfoPage() {
       passing:     boolItem(pit.fuel?.passing ?? false, observed.passing),
     },
     autoClimb: {
-      level:       boolItem(pit.autoClimb?.level != null, observed.autoClimbLevel),
-      orientation: strItem(pit.autoClimb?.orientation ?? null, observed.autoClimbOrientation),
+      observed: observed.autoClimbObserved,
+      orientations: observed.autoClimbOrientations,
     },
     teleopClimb: {
-      level:       strItem(pit.teleopClimb?.level ?? null, observed.teleopClimbLevel),
-      orientation: strItem(pit.teleopClimb?.orientation ?? null, observed.teleopClimbOrientation),
+      levels: observed.teleopClimbLevels,
+      orientations: observed.teleopClimbOrientations,
     },
   };
   };
@@ -915,16 +914,22 @@ function TeamInfoPage() {
                   )}
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Auto Climb</p>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-foreground">{pitData.autoClimb?.level || "None"}</p>
-                      {verifications && <VerificationBadge item={verifications.autoClimb.level} />}
-                    </div>
+                    <p className={`font-semibold ${verifications?.autoClimb.observed && pitData.autoClimb?.level === "Climb" ? "text-chart-2" : "text-foreground"}`}>
+                      {pitData.autoClimb?.level || "None"}
+                    </p>
                   </div>
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Orientation</p>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-foreground">{pitData.autoClimb?.orientation || "None"}</p>
-                      {verifications && <VerificationBadge item={verifications.autoClimb.orientation} />}
+                    <div className="flex items-center gap-1.5">
+                      {(pitData.autoClimb?.orientation?.length ?? 0) > 0
+                        ? pitData.autoClimb!.orientation!.map((o, i) => (
+                            <span key={o} className="font-semibold">
+                              {i > 0 && <span className="text-foreground">, </span>}
+                              <span className={verifications?.autoClimb.orientations.has(o.toLowerCase()) ? "text-chart-2" : "text-foreground"}>{o}</span>
+                            </span>
+                          ))
+                        : <span className="font-semibold text-foreground">None</span>
+                      }
                     </div>
                   </div>
                 </div>
@@ -936,16 +941,30 @@ function TeamInfoPage() {
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Climb Level</p>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-foreground">{pitData.teleopClimb?.level || "None"}</p>
-                      {verifications && <VerificationBadge item={verifications.teleopClimb.level} />}
+                    <div className="flex items-center gap-1.5">
+                      {(pitData.teleopClimb?.level?.length ?? 0) > 0
+                        ? pitData.teleopClimb!.level!.map((l, i) => (
+                            <span key={l} className="font-semibold">
+                              {i > 0 && <span className="text-foreground">, </span>}
+                              <span className={verifications?.teleopClimb.levels.has(l) ? "text-chart-2" : "text-foreground"}>{l}</span>
+                            </span>
+                          ))
+                        : <span className="font-semibold text-foreground">None</span>
+                      }
                     </div>
                   </div>
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Orientation</p>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-foreground">{pitData.teleopClimb?.orientation || "None"}</p>
-                      {verifications && <VerificationBadge item={verifications.teleopClimb.orientation} />}
+                    <div className="flex items-center gap-1.5">
+                      {(pitData.teleopClimb?.orientation?.length ?? 0) > 0
+                        ? pitData.teleopClimb!.orientation!.map((o, i) => (
+                            <span key={o} className="font-semibold">
+                              {i > 0 && <span className="text-foreground">, </span>}
+                              <span className={verifications?.teleopClimb.orientations.has(o.toLowerCase()) ? "text-chart-2" : "text-foreground"}>{o}</span>
+                            </span>
+                          ))
+                        : <span className="font-semibold text-foreground">None</span>
+                      }
                     </div>
                   </div>
                 </div>
