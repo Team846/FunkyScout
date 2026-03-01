@@ -121,10 +121,15 @@ function VerificationBadge({ item }: { item: VerificationItem }) {
   return null;
 }
 
+// Session-scoped cache: storage path → blob URL.
+// Images are immutable once uploaded (UUID paths), so this is safe to keep
+// for the whole session. Prevents re-downloading when navigating between teams.
+const imageCache = new Map<string, string>();
+
 /**
  * Fetches image via fetch() and displays via blob URL.
  * Works around COEP (require-corp) which blocks cross-origin img src from Supabase Storage.
- * Uses Intersection Observer for lazy loading to limit Supabase egress.
+ * Uses Intersection Observer for lazy loading and a session cache to limit Supabase egress.
  */
 function PitImageWithRetry({
   path,
@@ -159,6 +164,13 @@ function PitImageWithRetry({
     let activeController: AbortController | null = null;
 
     const doFetch = async (attempt = 0) => {
+      // Serve from session cache if already fetched this session — no network request
+      const cached = imageCache.get(path);
+      if (cached) {
+        if (!cancelled) setBlobUrl(cached);
+        return;
+      }
+
       const url = getImageUrl(path);
       activeController = new AbortController();
       // 15s timeout — covers slow event-day WiFi without hanging forever
@@ -168,7 +180,9 @@ function PitImageWithRetry({
         clearTimeout(timeout);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const blob = await r.blob();
-        if (!cancelled) setBlobUrl(URL.createObjectURL(blob));
+        const objectUrl = URL.createObjectURL(blob);
+        imageCache.set(path, objectUrl); // store for session reuse
+        if (!cancelled) setBlobUrl(objectUrl);
       } catch {
         clearTimeout(timeout);
         if (!cancelled && attempt === 0) {
@@ -197,11 +211,8 @@ function PitImageWithRetry({
     };
   }, [path, blobUrl, errored]);
 
-  useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
+  // Don't revoke cached blob URLs — they're reused when navigating back to this team.
+  // Blob URLs are freed when the page unloads.
 
   if (errored) {
     return (

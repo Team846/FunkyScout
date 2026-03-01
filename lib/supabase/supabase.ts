@@ -27,7 +27,12 @@ const supabase = createClient
        // Persist session across app restarts
        persistSession: true,
        autoRefreshToken: true,
-       detectSessionInUrl: true, // Required for password reset email links (token in URL hash)
+       detectSessionInUrl: true, // Required for password reset / email confirmation links (token in URL hash)
+       flowType: "implicit", // Avoid PKCE: the code verifier lives in Safari's localStorage,
+                             // which is isolated from SafariViewController (the in-app browser
+                             // that opens when tapping a confirmation link from Mail).
+                             // Implicit flow delivers the session token in the URL hash,
+                             // so it works from any browser context.
      },
    }
 );

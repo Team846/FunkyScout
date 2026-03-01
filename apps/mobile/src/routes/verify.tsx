@@ -9,26 +9,39 @@ export const Route = createFileRoute("/verify")({
 });
 
 function VerifyPage() {
-  const [, setTimedOut] = useState(false);
   const navigate = useNavigate();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      setTimedOut(true);
-      setStatus("error");
-    }, 10000);
+    let handled = false;
 
+    const resolve = (confirmed: boolean) => {
+      if (handled) return;
+      handled = true;
+      clearTimeout(timeout);
+      if (confirmed) {
+        setStatus("success");
+        toast.success("Email verified!");
+      } else {
+        setStatus("error");
+      }
+    };
+
+    const timeout = setTimeout(() => resolve(false), 10000);
+
+    // 1. Check immediately — Supabase may have already exchanged the confirmation
+    //    token from the URL before this effect ran, firing INITIAL_SESSION instead
+    //    of SIGNED_IN. The listener below would miss it, causing a 10s timeout.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email_confirmed_at) resolve(true);
+    });
+
+    // 2. Listen for auth events in case the token exchange is still in flight.
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-        clearTimeout(timeout);
-
-        if (session?.user?.email_confirmed_at) {
-          setStatus("success");
-          toast.success("Email verified!");
-        } else {
-          setStatus("error");
-        }
+      if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
+        if (session?.user?.email_confirmed_at) resolve(true);
+        else if (event !== "INITIAL_SESSION") resolve(false);
+        // INITIAL_SESSION without confirmation = pre-existing session, ignore
       }
     });
 
