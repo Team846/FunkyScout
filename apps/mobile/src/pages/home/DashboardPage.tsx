@@ -112,7 +112,7 @@ export function DashboardPage() {
   });
   const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
 
-  const OUR_TEAM = 8724;
+  const OUR_TEAM = 846;
 
   // DEV TEST: Set to true to test future match UI with mock data
   const DEV_TEST_FUTURE = false;
