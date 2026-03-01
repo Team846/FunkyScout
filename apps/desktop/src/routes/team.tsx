@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { ChevronLeft } from "lucide-react";
-import { useDesktopEvent } from "../contexts/DesktopEventContext";
+import { useDesktopTeamData, type PitScoutingData } from "../contexts/DesktopTeamDataContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
-import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
-import { getPitScoutingData, type PitScoutingData } from "../lib/db";
 import { useTabContext } from "../contexts/TabContext";
+import { getMatchLabel } from "@lib/utils/match";
 
 export const Route = createFileRoute("/team")({
   component: TeamPage,
@@ -100,21 +99,17 @@ function getTeamAutos(pitData: PitScoutingData | undefined): TeamAutoDisplay[] {
 function TeamPage() {
   const { closeTab } = useTabContext();
   const { team: teamKey } = Route.useSearch();
-  const { currentEvent } = useDesktopEvent();
-  const { lastDataRefreshAt } = useDesktopCompetitionData();
-  const { tbaTeams } = useDesktopTeamData();
+  const { tbaTeams, pitScoutingData } = useDesktopTeamData();
+  const { matchScoutingData } = useDesktopCompetitionData();
 
-  const [pitData, setPitData] = useState<PitScoutingData[]>([]);
-
-  useEffect(() => {
-    if (!currentEvent) return;
-    getPitScoutingData(currentEvent).then(setPitData).catch(console.error);
-  }, [currentEvent, lastDataRefreshAt]);
-
-  const teamPitData = useMemo(() => pitData.find((p) => p.team === teamKey), [pitData, teamKey]);
+  const teamPitData = useMemo(() => pitScoutingData.find((p) => p.team === teamKey), [pitScoutingData, teamKey]);
   const tbaTeam = useMemo(() => tbaTeams.find((t) => t.key === teamKey), [tbaTeams, teamKey]);
   const teamNum = teamKey.replace("frc", "");
   const autos = useMemo(() => getTeamAutos(teamPitData), [teamPitData]);
+  const teamMatches = useMemo(
+    () => matchScoutingData.filter((m) => m.team === teamKey).sort((a, b) => a.match.localeCompare(b.match)),
+    [matchScoutingData, teamKey]
+  );
 
   const handleBack = useCallback(() => {
     closeTab(`team-${teamKey}`);
@@ -163,14 +158,92 @@ function TeamPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4 min-h-0">
-        {!teamPitData ? (
+        {teamMatches.length === 0 && !teamPitData ? (
           <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
-            <span className="text-sm">No pit scouting data for Team {teamNum}</span>
+            <span className="text-sm">No scouting data for Team {teamNum}</span>
           </div>
         ) : (
           <div className="space-y-6 max-w-4xl">
+            {/* Match History */}
+            {teamMatches.length > 0 && (
+              <div>
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                  Scouted Matches ({teamMatches.length})
+                </h2>
+                <div className="space-y-1">
+                  {teamMatches.map((m) => {
+                    const raw = m.data_raw as { driverRating?: number } | null;
+                    return (
+                      <div key={m.match} className="flex items-center gap-3 text-xs py-1.5 border-b border-border/50 last:border-0">
+                        <span className="font-medium text-foreground w-16 flex-shrink-0">{getMatchLabel(m.match)}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${m.alliance === "red" ? "bg-red-500/15 text-red-400" : "bg-blue-500/15 text-blue-400"}`}>
+                          {m.alliance}
+                        </span>
+                        {raw?.driverRating != null && (
+                          <span className="text-muted-foreground flex-shrink-0">Driver {raw.driverRating}/5</span>
+                        )}
+                        {m.name && (
+                          <span className="text-muted-foreground truncate ml-auto">{m.name}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Robot Info */}
+            {teamPitData && (() => {
+              const d = teamPitData.data as Record<string, Record<string, unknown>> | null;
+              if (!d) return null;
+              const movement = d.movement as { bump?: boolean; trough?: boolean } | undefined;
+              const intake = d.intake as { ground?: boolean; outpost?: boolean; stocking?: boolean } | undefined;
+              const fuel = d.fuel as { shootMoving?: boolean; passing?: boolean; bps?: string; capacity?: string } | undefined;
+              const autoClimb = d.autoClimb as { level?: string | null; orientation?: string | null; declimbTime?: string } | undefined;
+              const teleopClimb = d.teleopClimb as { level?: string | null; orientation?: string | null } | undefined;
+              const chips: string[] = [];
+              if (movement?.bump) chips.push("Bump");
+              if (movement?.trough) chips.push("Trough");
+              if (intake?.ground) chips.push("Ground Intake");
+              if (intake?.outpost) chips.push("Outpost Intake");
+              if (intake?.stocking) chips.push("Stocking");
+              if (fuel?.shootMoving) chips.push("Shoot Moving");
+              if (fuel?.passing) chips.push("Passing");
+              const hasInfo = chips.length > 0 || fuel?.bps || fuel?.capacity || autoClimb?.level || teleopClimb?.level;
+              if (!hasInfo) return null;
+              return (
+                <div>
+                  <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                    Robot Info
+                  </h2>
+                  {chips.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {chips.map((chip) => (
+                        <span key={chip} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                    {fuel?.bps && <span>Balls/sec: <span className="text-foreground">{fuel.bps}</span></span>}
+                    {fuel?.capacity && <span>Ball capacity: <span className="text-foreground">{fuel.capacity}</span></span>}
+                    {autoClimb?.level && autoClimb.level !== "None" && (
+                      <span>Auto climb: <span className="text-foreground">{autoClimb.level}{autoClimb.orientation ? ` (${autoClimb.orientation})` : ""}{autoClimb.declimbTime ? `, ${autoClimb.declimbTime}s declimb` : ""}</span></span>
+                    )}
+                    {autoClimb?.level === "None" && (
+                      <span>Auto climb: <span className="text-foreground">None</span></span>
+                    )}
+                    {teleopClimb?.level && (
+                      <span>Teleop climb: <span className="text-foreground">{teleopClimb.level}{teleopClimb.orientation ? ` (${teleopClimb.orientation})` : ""}</span></span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Autonomous routines */}
-            <div>
+            {teamPitData && <div>
               <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                 Autonomous Routines {autos.length > 0 && `(${autos.length})`}
               </h2>
@@ -205,7 +278,7 @@ function TeamPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         )}
       </div>

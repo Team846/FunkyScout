@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -21,7 +21,6 @@ import { Label } from "@shadcn/ui/components/label.tsx";
 import { Loader2, Save, RefreshCw } from "lucide-react";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
-import { getMatchScoutingData } from "../lib/db";
 import { reverseTransformMatchData } from "@lib/data/matchDataTransform";
 import { transformMatchData } from "@lib/data/matchDataTransform";
 import { putMatchData } from "@lib/data/writes";
@@ -36,14 +35,11 @@ export const Route = createFileRoute("/match-edit-test")({
 
 function MatchEditTestPage() {
   const { currentEvent } = useDesktopEvent();
-  const { lastDataRefreshAt } = useDesktopCompetitionData();
-  const [allMatchData, setAllMatchData] = useState<any[]>([]);
+  const { matchScoutingData, refresh: refreshCompetition } = useDesktopCompetitionData();
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
   const [matchData, setMatchData] = useState<MatchScoutingData | null>(null);
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const hasLoadedRef = useRef(false);
   const [queueStatus, setQueueStatus] = useState<{ pending: number; processing: number; failed: number } | null>(null);
 
   const refreshQueueStatus = async () => {
@@ -62,36 +58,6 @@ function MatchEditTestPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load all match data when event changes or after a sync cycle.
-  // Only shows spinner on first load — background refreshes update silently.
-  useEffect(() => {
-    if (!currentEvent) return;
-    const event = currentEvent;
-
-    async function loadMatchData() {
-      if (!hasLoadedRef.current) setIsLoading(true);
-      try {
-        console.log("[MatchEditTest] Loading match data for event:", event);
-        const data = await getMatchScoutingData(event);
-        console.log("[MatchEditTest] Loaded match data:", data.length, "submissions");
-        setAllMatchData(data);
-      } catch (error) {
-        console.error("[MatchEditTest] Failed to load match data:", error);
-        toast.error("Failed to load match data");
-      } finally {
-        hasLoadedRef.current = true;
-        setIsLoading(false);
-      }
-    }
-
-    loadMatchData();
-  }, [currentEvent, lastDataRefreshAt]);
-
-  // Reset load flag when event changes
-  useEffect(() => {
-    hasLoadedRef.current = false;
-  }, [currentEvent]);
-
   // Load selected match data
   useEffect(() => {
     if (!selectedMatch) {
@@ -100,7 +66,7 @@ function MatchEditTestPage() {
       return;
     }
 
-    const selected = allMatchData.find((m) =>
+    const selected = matchScoutingData.find((m) =>
       `${m.match}:${m.team}` === selectedMatch
     );
 
@@ -119,7 +85,7 @@ function MatchEditTestPage() {
 
     // Reverse transform from database format to UI format
     if (selected.data_raw && Object.keys(selected.data_raw).length > 0) {
-      const uiData = reverseTransformMatchData(selected.data_raw);
+      const uiData = reverseTransformMatchData(selected.data_raw as any);
       console.log("[MatchEditTest] Reverse transformed data:", {
         hasPresetActions: Array.isArray(uiData.presetActions),
         presetActionsCount: uiData.presetActions?.length ?? 0,
@@ -140,7 +106,7 @@ function MatchEditTestPage() {
       });
       setNotes("");
     }
-  }, [selectedMatch, allMatchData]);
+  }, [selectedMatch, matchScoutingData]);
 
   const handleSave = async () => {
     if (!matchData || !currentEvent || !selectedMatch) {
@@ -148,7 +114,7 @@ function MatchEditTestPage() {
       return;
     }
 
-    const selected = allMatchData.find((m) =>
+    const selected = matchScoutingData.find((m) =>
       `${m.match}:${m.team}` === selectedMatch
     );
 
@@ -198,9 +164,8 @@ function MatchEditTestPage() {
 
       toast.success("Match data saved!");
 
-      // Reload match data to see updates
-      const refreshedData = await getMatchScoutingData(currentEvent);
-      setAllMatchData(refreshedData);
+      // Refresh context so the updated entry is visible immediately
+      await refreshCompetition();
     } catch (error) {
       console.error("[MatchEditTest] Failed to save:", error);
       toast.error(`Failed to save: ${error instanceof Error ? error.message : String(error)}`);
@@ -327,7 +292,7 @@ function MatchEditTestPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Choose a match...</SelectItem>
-                {allMatchData.map((m) => (
+                {matchScoutingData.map((m) => (
                   <SelectItem key={`${m.match}:${m.team}`} value={`${m.match}:${m.team}`}>
                     {m.match} - Team {m.team.replace("frc", "")} ({m.alliance}) - by {m.name || "Unknown"}
                   </SelectItem>
@@ -336,14 +301,7 @@ function MatchEditTestPage() {
             </Select>
           </div>
 
-          {isLoading && (
-            <div className="text-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-              <p className="text-sm text-muted-foreground mt-2">Loading match data...</p>
-            </div>
-          )}
-
-          {!isLoading && allMatchData.length === 0 && (
+          {matchScoutingData.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               No match data found for this event
             </div>
@@ -584,7 +542,7 @@ function MatchEditTestPage() {
             </>
           )}
 
-          {!selectedMatch && !isLoading && allMatchData.length > 0 && (
+          {!selectedMatch && matchScoutingData.length > 0 && (
             <div className="text-center py-12 text-muted-foreground">
               Select a match to start editing
             </div>
@@ -606,7 +564,7 @@ function MatchEditTestPage() {
         <CardContent>
           <div className="space-y-3 text-sm font-mono">
             <p>Event: {currentEvent}</p>
-            <p>Total Matches: {allMatchData.length}</p>
+            <p>Total Matches: {matchScoutingData.length}</p>
             <p>Selected: {selectedMatch || "None"}</p>
             <p>Has Match Data: {matchData ? "Yes" : "No"}</p>
             {matchData && (

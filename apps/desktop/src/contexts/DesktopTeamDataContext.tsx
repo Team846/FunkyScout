@@ -8,12 +8,17 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useDesktopEvent } from "./DesktopEventContext";
 import { useDesktopRealtime } from "./DesktopRealtimeContext";
 import {
   getTeams as getSQLiteTeams,
+  getPitScoutingData,
   type EventTeamData,
+  type PitScoutingData,
 } from "../lib/db";
+
+export type { PitScoutingData };
 
 export interface Team {
   key: string;
@@ -45,6 +50,7 @@ export interface TBATeam {
 interface DesktopTeamDataContextType {
   teams: Team[];
   tbaTeams: TBATeam[];
+  pitScoutingData: PitScoutingData[];
   loading: boolean;
   refresh: () => Promise<void>;
 }
@@ -59,6 +65,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
+  const [pitScoutingData, setPitScoutingData] = useState<PitScoutingData[]>([]);
   const [loading, setLoading] = useState(false);
 
   const hasLoadedDataRef = useRef(false);
@@ -76,11 +83,15 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     if (!currentEvent) return;
 
     try {
-      const cached = await getSQLiteTeams(currentEvent);
+      const [cached, pitData] = await Promise.all([
+        getSQLiteTeams(currentEvent),
+        getPitScoutingData(currentEvent),
+      ]);
       if (cached.length > 0) {
         processTeamData(cached);
         hasLoadedDataRef.current = true;
       }
+      setPitScoutingData(pitData);
     } catch (error) {
       console.error("[DesktopTeamData] Failed to read from SQLite:", error);
     } finally {
@@ -144,6 +155,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     if (!currentEvent) {
       setTeams([]);
       setTbaTeams([]);
+      setPitScoutingData([]);
       hasLoadedDataRef.current = false;
       return;
     }
@@ -187,14 +199,15 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   }, [currentEvent]);
 
   // Register refresh callback for realtime updates (when realtime is re-enabled)
-  // and for manual sync button (via DesktopSyncContext.forceSyncNow)
+  // and for manual sync button (via DesktopSyncContext.forceSyncNow).
+  // Mirrors DesktopCompetitionDataContext: trigger Rust sync then re-read SQLite
+  // after 15s so fresh Supabase data has time to land in SQLite before we read.
   useEffect(() => {
     if (!currentEvent) return;
 
     const unregister = registerRefreshCallback(() => {
-      // Realtime change detected: re-read SQLite
-      // (Rust sync handles the actual Supabase pull via trigger_sync_now)
-      fetchTeamsRef.current?.();
+      invoke("trigger_sync_now").catch(console.error);
+      setTimeout(() => fetchTeamsRef.current?.(), 7_000);
     });
 
     return unregister;
@@ -207,8 +220,8 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const contextValue = useMemo(
-    () => ({ teams, tbaTeams, loading, refresh }),
-    [teams, tbaTeams, loading, refresh]
+    () => ({ teams, tbaTeams, pitScoutingData, loading, refresh }),
+    [teams, tbaTeams, pitScoutingData, loading, refresh]
   );
 
   return (

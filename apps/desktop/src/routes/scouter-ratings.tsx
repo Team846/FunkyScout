@@ -17,14 +17,13 @@ import {
 import { Star, Loader2 } from "lucide-react";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
+import { useUserProfiles } from "../contexts/UserProfilesContext";
 import {
-  getUserProfiles,
   getScouterRatings,
   setScouterRating,
   type ScouterRating,
 } from "@lib/data/scouterRatings";
 import type { EventMatchData } from "@lib/db";
-import { getMatchScoutingData } from "../lib/db";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/scouter-ratings")({
@@ -33,29 +32,22 @@ export const Route = createFileRoute("/scouter-ratings")({
 
 function ScouterRatingsPage() {
   const { currentEvent } = useDesktopEvent();
-  const { schedule, lastDataRefreshAt } = useDesktopCompetitionData(); // Use context for schedule
+  const { schedule, matchScoutingData } = useDesktopCompetitionData();
+  const { userProfiles } = useUserProfiles();
   const [scouterRatings, setScouterRatings] = useState<ScouterRating[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const hasLoadedRef = useRef(false);
 
   /**
-   * Fetch user profiles and match data to calculate ratings
-   * Schedule comes from DesktopCompetitionDataContext
+   * Compute scouter ratings from context data (no async fetches needed).
+   * Re-runs whenever matchScoutingData, userProfiles, or schedule updates.
    */
   const fetchData = useCallback(async () => {
     if (!currentEvent) return;
 
     try {
-      console.log("[ScouterRatings] Fetching user profiles and match data");
-
-      // Fetch user profiles from local SQLite cache (Rust sync keeps it fresh)
-      const userProfiles = await getUserProfiles();
-
-      // Fetch match data from local SQLite cache (Rust sync keeps it fresh)
-      const cachedData = await getMatchScoutingData(currentEvent);
-      console.log(`[ScouterRatings] Using ${cachedData.length} match records from local cache`);
-      const fetchedMatchData: EventMatchData[] = cachedData.map((m) => ({
+      const fetchedMatchData: EventMatchData[] = matchScoutingData.map((m) => ({
         event: m.event,
         match: m.match,
         team: m.team,
@@ -69,8 +61,6 @@ function ScouterRatingsPage() {
         deleted_at: undefined,
       }));
 
-      // Calculate ratings for each scouter
-      // Schedule comes from context, convert to expected format
       const scheduleEntries = schedule.map((s) => ({
         event: currentEvent,
         match: s.match,
@@ -78,34 +68,32 @@ function ScouterRatingsPage() {
         alliance: s.alliance as "red" | "blue",
         name: s.name ?? undefined,
         uid: s.uid ?? undefined,
-        last_modified: Date.now(), // Not used in ratings calculation
+        last_modified: Date.now(),
         deleted_at: undefined,
       }));
 
       const ratings = await getScouterRatings(
         currentEvent,
-        userProfiles,
+        userProfiles as any,
         fetchedMatchData,
         scheduleEntries
       );
       setScouterRatings(ratings);
-
-      console.log(`[ScouterRatings] Loaded ${ratings.length} scouter profiles`);
     } catch (error) {
-      console.error("[ScouterRatings] Error fetching data:", error);
+      console.error("[ScouterRatings] Error computing ratings:", error);
       toast.error("Failed to fetch scouter ratings");
     } finally {
       setLoading(false);
     }
-  }, [currentEvent, schedule]);
+  }, [currentEvent, schedule, userProfiles, matchScoutingData]);
 
-  // Fetch on event change and after each 120s sync.
+  // Re-compute whenever context data changes.
   // Only shows spinner on first load — background refreshes update silently.
   useEffect(() => {
     if (!currentEvent) return;
     if (!hasLoadedRef.current) setLoading(true);
     fetchData().finally(() => { hasLoadedRef.current = true; });
-  }, [currentEvent, fetchData, lastDataRefreshAt]);
+  }, [currentEvent, fetchData]);
 
   // Reset load flag when event changes so switching events shows the spinner
   useEffect(() => {

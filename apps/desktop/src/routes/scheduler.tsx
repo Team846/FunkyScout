@@ -6,15 +6,15 @@ import { Label } from "@shadcn/ui/components/label.tsx";
 import { Checkbox } from "@shadcn/ui/components/checkbox.tsx";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
+import { useUserProfiles } from "../contexts/UserProfilesContext";
 import { runCycleForEvent } from "@lib/schedule/runCycleForEvent";
-import { assignShiftsFromCycle, assignPitTeams } from "@lib/data/writes";
+import { assignShiftsFromCycle, assignShiftsDiff, assignPitTeams } from "@lib/data/writes";
 import type { CycleAssignment, Scouter } from "@lib/schedule/cycle";
 import { getMatchLabel, getMatchSortOrder } from "@lib/utils/match";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
 import { Pencil, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { getEventSchedule } from "@lib/db";
 import { useTabContext } from "../contexts/TabContext";
 
 export const Route = createFileRoute("/scheduler")({
@@ -50,7 +50,9 @@ function SchedulerPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const { currentEvent } = useDesktopEvent();
-  const { lastDataRefreshAt } = useDesktopCompetitionData();
+  // Use context data — updates automatically on event change, passive polling, and realtime
+  const { schedule: contextSchedule } = useDesktopCompetitionData();
+  const { userProfiles } = useUserProfiles();
 
   const handleMatchClick = useCallback(
     (matchKey: string) => {
@@ -90,9 +92,6 @@ function SchedulerPage() {
 
   // Prevents loading spinner during background sync refreshes
   const hasLoadedRef = useRef(false);
-  // True when the current effect invocation is an event switch (not a background sync).
-  // Read inside the async promise callback to decide whether to overwrite editing state.
-  const isEventChangeRef = useRef(false);
   // Mirrors dirtyAssignmentCount so the init effect can read it without adding it as a dep.
   const hasDirtyAssignmentsRef = useRef(false);
 
@@ -112,8 +111,8 @@ function SchedulerPage() {
     hasDirtyAssignmentsRef.current = dirtyAssignmentCount > 0;
   }, [dirtyAssignmentCount]);
 
-  // Combined init effect — reads local SQLite only (no Supabase JS calls).
-  // Runs on mount and whenever currentEvent or lastDataRefreshAt changes.
+  // Combined init effect — derives schedule + scouters from context data (no direct SQLite calls).
+  // Runs on event change, passive polling (120s), and realtime events automatically.
   useEffect(() => {
     if (!currentEvent) {
       setSchedule(null);
@@ -123,121 +122,103 @@ function SchedulerPage() {
     }
 
     // On event switch: immediately clear selection so the persist effect below
-    // doesn't overwrite _persistedSelectedUids before the async init resolves.
+    // doesn't overwrite _persistedSelectedUids before data for the new event arrives.
     if (currentEvent !== _persistedEventKey) {
       _persistedSelectedUids = null;
       _persistedEventKey = currentEvent;
       setSelectedUids(new Set());
       hasLoadedRef.current = false;
-      isEventChangeRef.current = true;
       setIsEditingAssignments(false);
-    } else {
-      isEventChangeRef.current = false;
     }
 
     // Only show the loading spinner on first load; background refreshes update silently.
     if (!hasLoadedRef.current) setLoadingScouters(true);
 
-    // Capture at call time — the async callback reads these to decide what to update.
-    const capturedIsEventChange = isEventChangeRef.current;
-
-    Promise.all([
-      getEventSchedule(currentEvent),
-      invoke<{ uid: string; name: string; role: string }[]>("get_user_profiles", { uids: [] }),
-    ])
-      .then(([data, profiles]) => {
-        // ── Build schedule (QM-only) ──
-        const scheduleMap = new Map<string, TeamSchedule>();
-        data.forEach((entry) => {
-          if (!scheduleMap.has(entry.match)) {
-            scheduleMap.set(entry.match, {
-              matchKey: entry.match,
-              redTeams: [],
-              blueTeams: [],
-              predictedTime: entry.est_time || 0,
-            });
-          }
-          const matchEntry = scheduleMap.get(entry.match)!;
-          const teamInfo = {
-            teamKey: entry.team,
-            teamNumber: parseInt(entry.team.replace("frc", ""), 10),
-          };
-          if (entry.alliance === "red") {
-            matchEntry.redTeams.push(teamInfo);
-          } else {
-            matchEntry.blueTeams.push(teamInfo);
-          }
+    // ── Build schedule (QM-only) from context ──
+    const scheduleMap = new Map<string, TeamSchedule>();
+    contextSchedule.forEach((entry) => {
+      if (!scheduleMap.has(entry.match)) {
+        scheduleMap.set(entry.match, {
+          matchKey: entry.match,
+          redTeams: [],
+          blueTeams: [],
+          predictedTime: entry.est_time || 0,
         });
-        const qualOnly = Array.from(scheduleMap.values()).filter(
-          (m) => getMatchSortOrder(m.matchKey)[0] === 0,
-        );
-        const sorted = qualOnly.sort((a, b) => {
-          const oa = getMatchSortOrder(a.matchKey);
-          const ob = getMatchSortOrder(b.matchKey);
-          return (oa[1] ?? 0) - (ob[1] ?? 0);
-        });
-        setSchedule(sorted);
+      }
+      const matchEntry = scheduleMap.get(entry.match)!;
+      const teamInfo = {
+        teamKey: entry.team,
+        teamNumber: parseInt(entry.team.replace("frc", ""), 10),
+      };
+      if (entry.alliance === "red") {
+        matchEntry.redTeams.push(teamInfo);
+      } else {
+        matchEntry.blueTeams.push(teamInfo);
+      }
+    });
+    const qualOnly = Array.from(scheduleMap.values()).filter(
+      (m) => getMatchSortOrder(m.matchKey)[0] === 0,
+    );
+    const sorted = qualOnly.sort((a, b) => {
+      const oa = getMatchSortOrder(a.matchKey);
+      const ob = getMatchSortOrder(b.matchKey);
+      return (oa[1] ?? 0) - (ob[1] ?? 0);
+    });
+    setSchedule(sorted);
 
-        // ── Pre-populate assignments from existing SQLite data ──
-        const newAssignedMatchTeams = new Set<string>();
-        const newMatchScouterMap: Record<string, string> = {};
-        const newMatchUidMap: Record<string, string> = {};
-        const assignedUids = new Set<string>();
-        data.forEach((entry) => {
-          if (entry.uid && entry.name) {
-            const key = `${entry.match}|${entry.team}`;
-            newAssignedMatchTeams.add(key);
-            newMatchScouterMap[key] = entry.name;
-            newMatchUidMap[key] = entry.uid;
-            assignedUids.add(entry.uid);
+    // ── Pre-populate assignments from context schedule (skip if user has unsaved edits) ──
+    const newAssignedMatchTeams = new Set<string>();
+    const newMatchScouterMap: Record<string, string> = {};
+    const newMatchUidMap: Record<string, string> = {};
+    const assignedUids = new Set<string>();
+    contextSchedule.forEach((entry) => {
+      if (entry.uid && entry.name) {
+        const key = `${entry.match}|${entry.team}`;
+        newAssignedMatchTeams.add(key);
+        newMatchScouterMap[key] = entry.name;
+        newMatchUidMap[key] = entry.uid;
+        assignedUids.add(entry.uid);
+      }
+    });
+
+    if (!hasDirtyAssignmentsRef.current) {
+      setAssignedMatchTeams(newAssignedMatchTeams);
+      setMatchScouterMap(newMatchScouterMap);
+      setMatchUidMap(newMatchUidMap);
+      setSavedMatchUidMap(newMatchUidMap);
+    }
+
+    // ── Build eligible scouters from context profiles ──
+    const eligible = userProfiles
+      .filter((p) => p.role === "scouter" || p.role === "admin")
+      .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: (p.role as string) ?? "scouter" }));
+    setAllScouters(eligible);
+
+    // ── Initialize selectedUids: in-memory > schedule UIDs > localStorage > all ──
+    if (_persistedSelectedUids === null) {
+      let initialUids: Set<string>;
+      if (assignedUids.size > 0) {
+        initialUids = assignedUids;
+      } else {
+        const storageKey = `sched_scouters_${currentEvent}`;
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          try {
+            initialUids = new Set(JSON.parse(saved) as string[]);
+          } catch {
+            initialUids = new Set(eligible.map((s) => s.uid));
           }
-        });
-
-        // On background sync with unsaved edits, preserve the current editing state.
-        // Only overwrite on event switch or when there's nothing dirty.
-        if (capturedIsEventChange || !hasDirtyAssignmentsRef.current) {
-          setAssignedMatchTeams(newAssignedMatchTeams);
-          setMatchScouterMap(newMatchScouterMap);
-          setMatchUidMap(newMatchUidMap);
-          setSavedMatchUidMap(newMatchUidMap);
+        } else {
+          initialUids = new Set(eligible.map((s) => s.uid));
         }
+      }
+      _persistedSelectedUids = initialUids;
+      setSelectedUids(initialUids);
+    }
 
-        // ── Build eligible scouters ──
-        const eligible = profiles
-          .filter((p) => p.role === "scouter" || p.role === "admin")
-          .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: p.role ?? "scouter" }));
-        setAllScouters(eligible);
-
-        // ── Initialize selectedUids: in-memory > schedule UIDs > localStorage > all ──
-        if (_persistedSelectedUids === null) {
-          let initialUids: Set<string>;
-          if (assignedUids.size > 0) {
-            initialUids = assignedUids;
-          } else {
-            const storageKey = `sched_scouters_${currentEvent}`;
-            const saved = localStorage.getItem(storageKey);
-            if (saved) {
-              try {
-                initialUids = new Set(JSON.parse(saved) as string[]);
-              } catch {
-                initialUids = new Set(eligible.map((s) => s.uid));
-              }
-            } else {
-              initialUids = new Set(eligible.map((s) => s.uid));
-            }
-          }
-          _persistedSelectedUids = initialUids;
-          setSelectedUids(initialUids);
-        }
-      })
-      .catch((e) => {
-        console.error("[Scheduler] Failed to initialize:", e);
-      })
-      .finally(() => {
-        hasLoadedRef.current = true;
-        setLoadingScouters(false);
-      });
-  }, [currentEvent, lastDataRefreshAt]);
+    hasLoadedRef.current = true;
+    setLoadingScouters(false);
+  }, [currentEvent, contextSchedule, userProfiles]);
 
   // Persist selected scouters across tab switches and app restarts.
   // currentEvent is intentionally excluded from deps: including it would cause this effect
@@ -326,21 +307,28 @@ function SchedulerPage() {
 
   const handleSaveAssignments = async () => {
     if (!currentEvent) return;
-    // Build full assignment list from current state (only assigned entries).
-    // assignShiftsFromCycle clears uid/name for entries NOT in this list.
-    const allAssignments: CycleAssignment[] = Object.entries(matchUidMap)
-      .filter(([, uid]) => uid)
-      .map(([key, uid]) => {
+    // Compute only the changed entries (added, reassigned, or removed).
+    const allKeys = new Set([...Object.keys(matchUidMap), ...Object.keys(savedMatchUidMap)]);
+    const changes: Array<{ matchKey: string; teamKey: string; uid: string | null; name: string | null }> = [];
+    for (const key of allKeys) {
+      const currentUid = matchUidMap[key] ?? null;
+      const savedUid = savedMatchUidMap[key] ?? null;
+      if (currentUid !== savedUid) {
         const sepIdx = key.indexOf("|");
-        const matchKey = key.slice(0, sepIdx);
-        const teamKey = key.slice(sepIdx + 1);
-        return { matchKey, teamKey, uid, name: matchScouterMap[key] };
-      });
+        changes.push({
+          matchKey: key.slice(0, sepIdx),
+          teamKey: key.slice(sepIdx + 1),
+          uid: currentUid,
+          name: currentUid ? (matchScouterMap[key] ?? null) : null,
+        });
+      }
+    }
+    if (changes.length === 0) return;
     setSavingAssignments(true);
     try {
-      await assignShiftsFromCycle(currentEvent, allAssignments);
+      await assignShiftsDiff(currentEvent, changes);
       setSavedMatchUidMap({ ...matchUidMap });
-      toast.success(`Saved ${allAssignments.length} assignments`);
+      toast.success(`Saved ${changes.length} change${changes.length !== 1 ? "s" : ""}`);
     } catch (e: any) {
       toast.error(`Failed to save: ${e.message ?? String(e)}`);
     } finally {

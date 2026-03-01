@@ -57,12 +57,10 @@ import { toast } from "sonner";
 import { useTabContext } from "../contexts/TabContext";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
-import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
+import type { TbaClimbEntry, MatchScoutingData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import type { TBATeam } from "../contexts/DesktopTeamDataContext";
 import { usePicklistEditor } from "@lib/hooks/usePicklistEditor";
-import { getMatchScoutingData } from "../lib/db";
-import type { MatchScoutingData } from "../lib/db";
 import { deletePicklist, updatePicklist } from "@lib/data/writes";
 import { GRAPHABLE_STATS, getStatDataPoints, getTbaStatDataPoints } from "@lib/data/matchStats";
 import type { PicklistEntry } from "@lib/data/schema";
@@ -672,11 +670,10 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const { currentEvent, useTbaClimb } = useDesktopEvent();
-  const { picklists, tbaClimbData, lastDataRefreshAt, refresh } = useDesktopCompetitionData();
+  const { picklists, tbaClimbData, matchScoutingData, refresh } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
 
   // ── State ──
-  const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
   const [selectedTeams, setSelectedTeams] = useState<string[]>(
     () => _picklistUIState.get(picklistId)?.selectedTeams ?? [],
   );
@@ -711,17 +708,6 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     }
   }, [selectedPicklist?.type]);
 
-  // Load match data
-  useEffect(() => {
-    if (!currentEvent) return;
-    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
-  }, [currentEvent]);
-
-  // Re-fetch match data whenever DesktopCompetitionData refreshes SQLite (120s sync cycle)
-  useEffect(() => {
-    if (!currentEvent || lastDataRefreshAt === 0) return;
-    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
-  }, [currentEvent, lastDataRefreshAt]);
 
   // ── Merge picklist entries with all event teams ──
   const mergedInitialEntries = useMemo<PicklistEntry[]>(() => {
@@ -870,8 +856,8 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
       }
       // GRAPHABLE_STAT: descending by average
       return (
-        getTeamStatAvg(sortKey, b.team, matchData) -
-        getTeamStatAvg(sortKey, a.team, matchData)
+        getTeamStatAvg(sortKey, b.team, matchScoutingData) -
+        getTeamStatAvg(sortKey, a.team, matchScoutingData)
       );
     });
     setEntries(sorted.map((e, i) => ({ ...e, rank: i + 1 })));
@@ -1210,7 +1196,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                         teamKey={teamKey}
                         entry={entries.find((e) => e.team === teamKey)}
                         tbaTeam={tbaTeams.find((t) => t.key === teamKey)}
-                        matchData={matchData}
+                        matchData={matchScoutingData}
                         tbaClimbData={tbaClimbData}
                         useTbaClimb={useTbaClimb}
                         onMoveUp={() => moveRank(teamKey, "up")}
@@ -1255,7 +1241,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
               key={metricKey}
               metricKey={metricKey}
               teams={selectedTeams}
-              matchData={matchData}
+              matchData={matchScoutingData}
               tbaTeams={tbaTeams}
               tbaClimbData={tbaClimbData}
               showPercentiles={!!showPercentiles[metricKey]}

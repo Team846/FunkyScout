@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   useState,
   useEffect,
-  useRef,
   useMemo,
   useCallback,
   type ReactNode,
@@ -40,14 +39,7 @@ import {
   type MatchCard,
 } from "@lib/data/shiftViews";
 import { setScouterRating } from "@lib/data/scouterRatings";
-import {
-  getMatchScoutingData,
-  getPitScoutingData,
-  getUserProfiles,
-  type MatchScoutingData,
-  type PitScoutingData,
-  type UserProfile,
-} from "../lib/db";
+import { useUserProfiles } from "../contexts/UserProfilesContext";
 import { setTeamPriority } from "@lib/data/writes";
 import { permanentlyExcludeScouter } from "@lib/data/scouterExclusions";
 import { toast } from "sonner";
@@ -445,9 +437,10 @@ function ShiftViewerPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const { currentEvent } = useDesktopEvent();
-  const { schedule, tbaClimbData, lastDataRefreshAt } =
+  const { schedule, tbaClimbData, matchScoutingData, refresh: refreshCompetition } =
     useDesktopCompetitionData();
-  const { tbaTeams } = useDesktopTeamData();
+  const { tbaTeams, pitScoutingData, refresh: refreshTeams } = useDesktopTeamData();
+  const { userProfiles, refresh: refreshUserProfiles } = useUserProfiles();
 
   const handleMatchClick = useCallback(
     (matchKey: string) => {
@@ -466,12 +459,6 @@ function ShiftViewerPage() {
     [addTab, navigate]
   );
 
-  const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [pitData, setPitData] = useState<PitScoutingData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const hasLoadedRef = useRef(false);
-
   const [scouterSearch, setScouterSearch] = useState("");
   const [teamSearch, setTeamSearch] = useState("");
 
@@ -480,44 +467,20 @@ function ShiftViewerPage() {
   const [dirtyPriorities, setDirtyPriorities] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
 
-  // Load per-event data from local SQLite; refresh on every sync cycle.
-  // Only shows spinner on first load — background refreshes update silently.
+  // Clear dirty state when event changes
   useEffect(() => {
-    if (!currentEvent) return;
-    if (!hasLoadedRef.current) setLoading(true);
-    Promise.all([
-      getMatchScoutingData(currentEvent),
-      getPitScoutingData(currentEvent),
-      getUserProfiles(),
-    ])
-      .then(([md, pd, prof]) => {
-        setMatchData(md);
-        setPitData(pd);
-        setProfiles(prof);
-      })
-      .catch((e) => console.error("[Shifts] Failed to load data:", e))
-      .finally(() => {
-        hasLoadedRef.current = true;
-        setLoading(false);
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentEvent, lastDataRefreshAt]);
-
-  // Clear dirty state and reset load flag when event changes
-  useEffect(() => {
-    hasLoadedRef.current = false;
     setDirtyRatings({});
     setDirtyPriorities({});
   }, [currentEvent]);
 
   const scouterRows = useMemo(
-    () => buildScouterViewData({ schedule, matchData, profiles, tbaClimbData }),
-    [schedule, matchData, profiles, tbaClimbData]
+    () => buildScouterViewData({ schedule, matchData: matchScoutingData, profiles: userProfiles, tbaClimbData }),
+    [schedule, matchScoutingData, userProfiles, tbaClimbData]
   );
 
   const teamRows = useMemo(
-    () => buildTeamViewData({ schedule, matchData, tbaTeams, pitData, tbaClimbData, profiles }),
-    [schedule, matchData, tbaTeams, pitData, tbaClimbData, profiles]
+    () => buildTeamViewData({ schedule, matchData: matchScoutingData, tbaTeams, pitData: pitScoutingData, tbaClimbData, profiles: userProfiles }),
+    [schedule, matchScoutingData, tbaTeams, pitScoutingData, tbaClimbData, userProfiles]
   );
 
   const filteredScouters = useMemo(
@@ -550,7 +513,7 @@ function ShiftViewerPage() {
     // Only mark dirty if the value actually differs from the saved rating.
     // Prevents the save/reset buttons from appearing when the user clicks
     // the same star that's already persisted.
-    const savedProfile = profiles.find((p) => p.uid === uid);
+    const savedProfile = userProfiles.find((p) => p.uid === uid);
     const savedRating = (savedProfile?.settings as any)?.scouterRating ?? null;
     setDirtyRatings((prev) => {
       if (n === savedRating) {
@@ -559,12 +522,12 @@ function ShiftViewerPage() {
       }
       return { ...prev, [uid]: n };
     });
-  }, [profiles]);
+  }, [userProfiles]);
 
   const handlePriorityChange = useCallback((teamKey: string, n: number) => {
     // Only mark dirty if the value actually differs from the saved priority.
     // Use Number() to handle JSON number/string type mismatches from SQLite.
-    const savedPit = pitData.find((p) => teamsMatch(p.team, teamKey));
+    const savedPit = pitScoutingData.find((p) => teamsMatch(p.team, teamKey));
     const raw = savedPit?.data?.priority;
     const savedNum =
       raw === undefined || raw === null ? null : Number(raw);
@@ -576,7 +539,7 @@ function ShiftViewerPage() {
       }
       return { ...prev, [teamKey]: n };
     });
-  }, [pitData]);
+  }, [pitScoutingData]);
 
   const handleSaveAll = useCallback(async () => {
     if (!currentEvent) return;
@@ -602,12 +565,7 @@ function ShiftViewerPage() {
       ]);
       // Re-read from local SQLite so the UI reflects saved values immediately
       // (without waiting for the next 120s Rust sync cycle)
-      const [pd, prof] = await Promise.all([
-        getPitScoutingData(currentEvent),
-        getUserProfiles(),
-      ]);
-      setPitData(pd);
-      setProfiles(prof);
+      await Promise.all([refreshTeams(), refreshUserProfiles()]);
       toast.success("Saved");
     } catch (e) {
       console.error("[Shifts] Save failed:", e);
@@ -629,16 +587,15 @@ function ShiftViewerPage() {
     if (!currentEvent) return;
     try {
       // Cast needed: MatchScoutingData (desktop) vs EventMatchData (lib) differ only in `name` nullability
-      await permanentlyExcludeScouter(uid, currentEvent, matchData as any);
-      // Refresh local match data so excluded submissions disappear immediately
-      const md = await getMatchScoutingData(currentEvent);
-      setMatchData(md);
+      await permanentlyExcludeScouter(uid, currentEvent, matchScoutingData as any);
+      // Re-read from SQLite so excluded submissions disappear immediately
+      await refreshCompetition();
       toast.success("Scouter data excluded");
     } catch (e) {
       console.error("[Shifts] Failed to exclude scouter:", e);
       toast.error("Failed to exclude scouter data");
     }
-  }, [currentEvent, matchData]);
+  }, [currentEvent, matchScoutingData, refreshCompetition]);
 
   const hasScouterChanges = Object.keys(dirtyRatings).length > 0;
   const hasTeamChanges = Object.keys(dirtyPriorities).length > 0;
@@ -694,9 +651,7 @@ function ShiftViewerPage() {
             )}
           </div>
 
-          {loading ? (
-            <EmptyState>Loading…</EmptyState>
-          ) : filteredScouters.length === 0 ? (
+          {filteredScouters.length === 0 ? (
             <EmptyState>
               {scouterSearch
                 ? "No scouters match the search"
@@ -751,9 +706,7 @@ function ShiftViewerPage() {
             )}
           </div>
 
-          {loading ? (
-            <EmptyState>Loading…</EmptyState>
-          ) : filteredTeams.length === 0 ? (
+          {filteredTeams.length === 0 ? (
             <EmptyState>
               {teamSearch
                 ? "No teams match the search"

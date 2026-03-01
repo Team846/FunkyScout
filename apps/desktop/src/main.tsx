@@ -10,6 +10,7 @@ import { DesktopSyncProvider } from "./contexts/DesktopSyncContext";
 import { DesktopRealtimeProvider } from "./contexts/DesktopRealtimeContext";
 import { DesktopTeamDataProvider } from "./contexts/DesktopTeamDataContext";
 import { DesktopCompetitionDataProvider } from "./contexts/DesktopCompetitionDataContext";
+import { UserProfilesProvider } from "./contexts/UserProfilesContext";
 import { TabProvider } from "./contexts/TabContext";
 
 const router = createRouter({ routeTree });
@@ -31,9 +32,11 @@ if (!rootElement.innerHTML) {
           <DesktopRealtimeProvider>
             <DesktopTeamDataProvider>
               <DesktopCompetitionDataProvider>
-                <TabProvider router={router}>
-                  <RouterProvider router={router} />
-                </TabProvider>
+                <UserProfilesProvider>
+                  <TabProvider router={router}>
+                    <RouterProvider router={router} />
+                  </TabProvider>
+                </UserProfilesProvider>
               </DesktopCompetitionDataProvider>
             </DesktopTeamDataProvider>
           </DesktopRealtimeProvider>

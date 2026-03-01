@@ -14,8 +14,12 @@ import { useDesktopRealtime } from "./DesktopRealtimeContext";
 import {
   getSchedule as getSQLiteSchedule,
   getPicklists as getSQLitePicklists,
+  getMatchScoutingData,
   type EventScheduleEntry,
+  type MatchScoutingData,
 } from "../lib/db";
+
+export type { MatchScoutingData };
 
 export interface ScheduleEntry {
   match: string;
@@ -75,6 +79,7 @@ interface DesktopCompetitionDataContextType {
   tbaSchedule: Record<string, TBAMatchData>;
   picklists: Picklist[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
+  matchScoutingData: MatchScoutingData[];
   loading: boolean;
   lastDataRefreshAt: number; // Bumped each time SQLite is re-read; watch this to react to syncs
   refresh: () => Promise<void>;
@@ -99,6 +104,7 @@ export function DesktopCompetitionDataProvider({
   );
   const [picklists, setPicklists] = useState<Picklist[]>([]);
   const [tbaClimbData, setTbaClimbData] = useState<Record<string, Record<string, TbaClimbEntry>>>({});
+  const [matchScoutingData, setMatchScoutingData] = useState<MatchScoutingData[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastDataRefreshAt, setLastDataRefreshAt] = useState(0);
 
@@ -159,9 +165,10 @@ export function DesktopCompetitionDataProvider({
     if (!currentEvent) return;
 
     try {
-      const [cachedSchedule, cachedPicklists] = await Promise.all([
+      const [cachedSchedule, cachedPicklists, cachedMatchScouting] = await Promise.all([
         getSQLiteSchedule(currentEvent),
         getSQLitePicklists(currentEvent),
+        getMatchScoutingData(currentEvent),
       ]);
 
       if (cachedSchedule.length > 0) {
@@ -170,6 +177,7 @@ export function DesktopCompetitionDataProvider({
       }
 
       setPicklists(cachedPicklists);
+      setMatchScoutingData(cachedMatchScouting);
 
       // TBA climb data (populated by Rust sync service)
       try {
@@ -203,6 +211,7 @@ export function DesktopCompetitionDataProvider({
       setTbaSchedule({});
       setPicklists([]);
       setTbaClimbData({});
+      setMatchScoutingData([]);
       hasLoadedDataRef.current = false;
       return;
     }
@@ -262,7 +271,7 @@ export function DesktopCompetitionDataProvider({
     const unregister = registerRefreshCallback(() => {
       // Realtime change detected: trigger Rust sync, then re-read SQLite
       invoke("trigger_sync_now").catch(console.error);
-      setTimeout(() => fetchDataRef.current?.(), 15_000);
+      setTimeout(() => fetchDataRef.current?.(), 7_000);
     });
 
     return unregister;
@@ -283,12 +292,13 @@ export function DesktopCompetitionDataProvider({
       tbaSchedule,
       picklists,
       tbaClimbData,
+      matchScoutingData,
       loading,
       lastDataRefreshAt,
       refresh,
       refreshFromCache,
     }),
-    [schedule, tbaSchedule, picklists, tbaClimbData, loading, lastDataRefreshAt, refresh, refreshFromCache]
+    [schedule, tbaSchedule, picklists, tbaClimbData, matchScoutingData, loading, lastDataRefreshAt, refresh, refreshFromCache]
   );
 
   return (

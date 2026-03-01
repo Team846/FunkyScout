@@ -20,12 +20,8 @@ pub struct SyncService {
     sqlx_pool: sqlx::SqlitePool,
     /// Updated after each successful sync — used to filter incremental fetches
     last_sync_time: std::sync::Mutex<Option<chrono::DateTime<chrono::Utc>>>,
-    /// Snapshot of event_team_data as last pulled from Supabase (full on cold start,
-    /// incrementally merged thereafter). Passed to bulk_upsert_team_data so it can
-    /// skip its own redundant full SELECT every 120s.
-    team_data_snapshot: Vec<serde_json::Value>,
     /// Snapshot of event_schedule as last pulled from Supabase.
-    /// Same pattern as team_data_snapshot — eliminates the SELECT in bulk_upsert_schedule.
+    /// Passed to bulk_upsert_schedule so it can skip a redundant SELECT every 120s.
     schedule_snapshot: Vec<serde_json::Value>,
 }
 
@@ -46,27 +42,7 @@ impl SyncService {
             current_event_shared,
             sqlx_pool,
             last_sync_time: std::sync::Mutex::new(None),
-            team_data_snapshot: Vec::new(),
             schedule_snapshot: Vec::new(),
-        }
-    }
-
-    /// Merge newly pulled team_data rows into the in-memory snapshot.
-    /// Full pull (is_full=true) replaces the snapshot; incremental upserts changed rows.
-    fn update_team_data_snapshot(&mut self, rows: &[serde_json::Value], is_full: bool) {
-        if is_full {
-            self.team_data_snapshot = rows.to_vec();
-            return;
-        }
-        for row in rows {
-            let team = row.get("team").and_then(|v| v.as_str()).unwrap_or("");
-            if team.is_empty() { continue; }
-            match self.team_data_snapshot.iter().position(|r| {
-                r.get("team").and_then(|v| v.as_str()) == Some(team)
-            }) {
-                Some(pos) => self.team_data_snapshot[pos] = row.clone(),
-                None => self.team_data_snapshot.push(row.clone()),
-            }
         }
     }
 
@@ -103,8 +79,7 @@ impl SyncService {
                     let ev = self.current_event_shared.read().unwrap().clone();
                     if !ev.is_empty() && ev != self.current_event {
                         self.current_event = ev;
-                        // Clear snapshots — they belong to the old event
-                        self.team_data_snapshot.clear();
+                        // Clear schedule snapshot — it belongs to the old event
                         self.schedule_snapshot.clear();
                     } else if !ev.is_empty() {
                         self.current_event = ev;
@@ -328,22 +303,18 @@ impl SyncService {
                     .await
                     .context("Failed to cache team data to SQLite")?;
 
-                // Pass the pull-phase snapshot so bulk_upsert_team_data can skip
-                // its own redundant Supabase SELECT. On cold start the snapshot is
-                // empty — the function falls back to fetching from Supabase once.
+                // Always fetch fresh data from Supabase before merging.
+                // Using a stale in-memory snapshot risks overwriting pit scouting data
+                // that was submitted between sync cycles — always pass None so
+                // bulk_upsert_team_data fetches the current state right before merging.
                 let teams_with_epa = team_data_records.iter()
                     .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
                     .count();
-                println!("[Sync] Pushing {} teams to Supabase ({} with EPA, snapshot={} rows)",
-                    team_data_records.len(), teams_with_epa, self.team_data_snapshot.len());
-                let team_snapshot = if self.team_data_snapshot.is_empty() {
-                    None
-                } else {
-                    Some(self.team_data_snapshot.as_slice())
-                };
+                println!("[Sync] Pushing {} teams to Supabase ({} with EPA)",
+                    team_data_records.len(), teams_with_epa);
 
                 match self.supabase
-                    .bulk_upsert_team_data(&self.current_event, team_data_records, team_snapshot)
+                    .bulk_upsert_team_data(&self.current_event, team_data_records, None)
                     .await
                 {
                     Ok(_) => println!("[Sync] ✓ Pushed team data to Supabase"),
@@ -680,8 +651,6 @@ impl SyncService {
             self.cache_teams_to_sqlite(&team_data)
                 .await
                 .context("Failed to cache team data to SQLite")?;
-            // Update snapshot for next push cycle's change detection
-            self.update_team_data_snapshot(&team_data, team_since.is_none());
         }
 
         // 17. Fetch schedule — incremental if SQLite has rows, full if empty.
@@ -1305,6 +1274,7 @@ impl SyncService {
                 "DELETE_MATCH_DATA" => self.sync_delete_match_data(payload).await,
                 "ASSIGN_SHIFT" => self.sync_assign_shift(payload).await,
                 "ASSIGN_SHIFTS_BULK" => self.sync_assign_shifts_bulk(payload).await,
+                "ASSIGN_SHIFTS_DIFF" => self.sync_assign_shifts_diff(payload).await,
                 "ASSIGN_PIT_TEAMS_BULK" => self.sync_assign_pit_teams_bulk(payload).await,
                 "UPDATE_USER_PROFILE" => self.sync_update_user_profile(payload).await,
                 _ => {
@@ -1572,6 +1542,21 @@ impl SyncService {
         let count = assignments.len();
         self.supabase.bulk_assign_shifts(event, &assignments).await?;
         println!("[Sync] ✅ Bulk assigned {} shifts to Supabase", count);
+        Ok(())
+    }
+
+    /// Sync ASSIGN_SHIFTS_DIFF operation to Supabase (incremental patch, no clear)
+    async fn sync_assign_shifts_diff(&self, payload: serde_json::Value) -> Result<()> {
+        let event = payload.get("event").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
+        let assignments = payload.get("assignments")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing assignments array"))?
+            .clone();
+
+        let count = assignments.len();
+        self.supabase.patch_assign_shifts(event, &assignments).await?;
+        println!("[Sync] ✅ Patched {} shifts in Supabase (incremental diff)", count);
         Ok(())
     }
 

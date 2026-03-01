@@ -1,15 +1,13 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import supabase from "@lib/supabase/supabase";
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { Search, ArrowDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shadcn/ui/components/tabs.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { useDesktopTeamData } from "../../contexts/DesktopTeamDataContext";
 import { useDesktopCompetitionData } from "../../contexts/DesktopCompetitionDataContext";
 import { useDesktopEvent } from "../../contexts/DesktopEventContext";
-import { getUserProfiles } from "@lib/data/scouterRatings";
-import { getMatchScoutingData } from "../../lib/db";
-import type { MatchScoutingData } from "../../lib/db";
+import { useUserProfiles } from "../../contexts/UserProfilesContext";
 import { useTabContext } from "../../contexts/TabContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { LeftPanel } from "./-components/LeftPanel";
@@ -29,18 +27,13 @@ export const Route = createFileRoute("/dashboard/")({
   component: DashboardPage,
 });
 
-interface UserProfile {
-  uid: string;
-  name: string;
-  settings: Record<string, unknown>;
-}
-
 function DashboardPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const { tbaTeams } = useDesktopTeamData();
-  const { schedule, tbaSchedule, tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
-  const { currentEvent, homeTeam, useTbaClimb } = useDesktopEvent();
+  const { schedule, tbaSchedule, tbaClimbData, matchScoutingData } = useDesktopCompetitionData();
+  const { userProfiles } = useUserProfiles();
+  const { homeTeam, useTbaClimb } = useDesktopEvent();
 
   const handleMatchClick = useCallback(
     (matchKey: string) => {
@@ -61,34 +54,8 @@ function DashboardPage() {
 
   const scheduleTableRef = useRef<ScheduleTableHandle>(null);
   const rankingsTableRef = useRef<RankingsTableHandle>(null);
-  const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("schedule");
-
-  // Re-fetch match data on event change and after each 120s sync
-  useEffect(() => {
-    if (!currentEvent) return;
-    getMatchScoutingData(currentEvent)
-      .then(setMatchData)
-      .catch((e) => console.error("[Dashboard] Failed to load match data:", e));
-  }, [currentEvent, lastDataRefreshAt]);
-
-  // Re-fetch user profiles on event change and after each sync (profiles hold scouter ratings)
-  useEffect(() => {
-    if (!currentEvent) return;
-    getUserProfiles()
-      .then((p) =>
-        setProfiles(
-          p.map((prof) => ({
-            uid: prof.uid,
-            name: prof.name,
-            settings: (prof.settings as Record<string, unknown>) ?? {},
-          }))
-        )
-      )
-      .catch((e) => console.error("[Dashboard] Failed to load profiles:", e));
-  }, [currentEvent, lastDataRefreshAt]);
 
   const homeTeamKey = `frc${homeTeam}`;
 
@@ -103,7 +70,7 @@ function DashboardPage() {
   return (
     <div className="h-full flex overflow-hidden pb-3">
       {/* Left Panel */}
-      <LeftPanel schedule={schedule} matchData={matchData} profiles={profiles} />
+      <LeftPanel schedule={schedule} matchData={matchScoutingData} profiles={userProfiles} />
 
       {/* Middle Panel */}
       <div className="flex-1 flex flex-col overflow-hidden pr-2">
@@ -177,7 +144,7 @@ function DashboardPage() {
               <RankingsTable
                 ref={rankingsTableRef}
                 tbaTeams={tbaTeams}
-                matchData={matchData}
+                matchData={matchScoutingData}
                 searchQuery={searchQuery}
                 tbaClimbData={tbaClimbData}
                 useTbaClimb={useTbaClimb}

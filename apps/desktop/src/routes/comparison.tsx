@@ -29,11 +29,9 @@ import {
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
-import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
+import type { TbaClimbEntry, MatchScoutingData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import type { TBATeam } from "../contexts/DesktopTeamDataContext";
-import { getMatchScoutingData } from "../lib/db";
-import type { MatchScoutingData } from "../lib/db";
 import {
   GRAPHABLE_STATS,
   getStatDataPoints,
@@ -96,11 +94,11 @@ const DEFAULT_COMP_METRICS = [
 function getTeamStatAvg(
   statKey: string,
   teamKey: string,
-  matchData: MatchScoutingData[]
+  matchScoutingData: MatchScoutingData[]
 ): number {
   const pts = getStatDataPoints(
     statKey,
-    matchData.filter((m) => m.team === teamKey) as any
+    matchScoutingData.filter((m) => m.team === teamKey) as any
   );
   if (!pts.length) return 0;
   return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
@@ -109,7 +107,7 @@ function getTeamStatAvg(
 function computeGraphData(
   metricKey: string,
   teams: string[],
-  matchData: MatchScoutingData[],
+  matchScoutingData: MatchScoutingData[],
   tbaTeams: TBATeam[],
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>
 ): { raws: (number | null)[]; normalized: number[]; winnerIdx: number } {
@@ -126,7 +124,7 @@ function computeGraphData(
       if (!pts.length) return null;
       return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
     }
-    const pts = getStatDataPoints(metricKey, matchData.filter((m) => m.team === teamKey) as any);
+    const pts = getStatDataPoints(metricKey, matchScoutingData.filter((m) => m.team === teamKey) as any);
     if (!pts.length) return null;
     return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
   };
@@ -551,8 +549,8 @@ function ComparisonPage() {
   const navigate = useNavigate();
   const { teams: teamsParam } = Route.useSearch();
   const { tabs, setActiveTab, addTab } = useTabContext();
-  const { currentEvent, useTbaClimb } = useDesktopEvent();
-  const { tbaClimbData, lastDataRefreshAt } = useDesktopCompetitionData();
+  const { useTbaClimb } = useDesktopEvent();
+  const { tbaClimbData, matchScoutingData } = useDesktopCompetitionData();
   const { tbaTeams } = useDesktopTeamData();
 
   // ── State ──
@@ -579,23 +577,10 @@ function ComparisonPage() {
   const [searchTeam, setSearchTeam] = useState("");
   const [sortKey, setSortKey] = useState("rank");
   const [sortOpen, setSortOpen] = useState(false);
-  const [matchData, setMatchData] = useState<MatchScoutingData[]>([]);
-
   // Persist UI state across tab navigation
   useEffect(() => {
     _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics };
   }, [displayTeams, graphTeams, compMetrics, graphMetrics]);
-
-  // Load match data
-  useEffect(() => {
-    if (!currentEvent) return;
-    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
-  }, [currentEvent]);
-
-  useEffect(() => {
-    if (!currentEvent || lastDataRefreshAt === 0) return;
-    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
-  }, [currentEvent, lastDataRefreshAt]);
 
   // ── Sorted + filtered team list ──
   const sortedTeams = useMemo(() => {
@@ -604,9 +589,9 @@ function ComparisonPage() {
       if (sortKey === "epa")
         return (b.epa?.total_points?.mean ?? 0) - (a.epa?.total_points?.mean ?? 0);
       if (sortKey === "opr") return (b.opr ?? 0) - (a.opr ?? 0);
-      return getTeamStatAvg(sortKey, b.key, matchData) - getTeamStatAvg(sortKey, a.key, matchData);
+      return getTeamStatAvg(sortKey, b.key, matchScoutingData) - getTeamStatAvg(sortKey, a.key, matchScoutingData);
     });
-  }, [tbaTeams, sortKey, matchData]);
+  }, [tbaTeams, sortKey, matchScoutingData]);
 
   const filteredTeams = useMemo(() => {
     if (!searchTeam.trim()) return sortedTeams;
@@ -656,7 +641,7 @@ function ComparisonPage() {
       const { winnerIdx } = computeGraphData(
         metricKey,
         [a, b],
-        matchData,
+        matchScoutingData,
         tbaTeams,
         tbaClimbData
       );
@@ -664,7 +649,7 @@ function ComparisonPage() {
       else if (winnerIdx === 1) out[b] = (out[b] ?? 0) + 1;
     }
     return out;
-  }, [displayTeams, compMetrics, matchData, tbaTeams, tbaClimbData]);
+  }, [displayTeams, compMetrics, matchScoutingData, tbaTeams, tbaClimbData]);
 
   // "higher" | "lower" | "tie" for metricsBetterAt coloring
   const metricsBetterStatus = useMemo(() => {
@@ -820,7 +805,7 @@ function ComparisonPage() {
                     teamKey={displayTeams[0]}
                     entry={undefined}
                     tbaTeam={tbaTeams.find((t) => t.key === displayTeams[0])}
-                    matchData={matchData}
+                    matchData={matchScoutingData}
                     tbaClimbData={tbaClimbData}
                     useTbaClimb={useTbaClimb}
                     onMoveUp={() => {}}
@@ -849,7 +834,7 @@ function ComparisonPage() {
                       metricKey={metricKey}
                       teamA={displayTeams[0]}
                       teamB={displayTeams[1]}
-                      matchData={matchData}
+                      matchData={matchScoutingData}
                       tbaTeams={tbaTeams}
                       tbaClimbData={tbaClimbData}
                       onSwitch={() => setShowCompPickerFor(idx)}
@@ -879,7 +864,7 @@ function ComparisonPage() {
                     teamKey={displayTeams[1]}
                     entry={undefined}
                     tbaTeam={tbaTeams.find((t) => t.key === displayTeams[1])}
-                    matchData={matchData}
+                    matchData={matchScoutingData}
                     tbaClimbData={tbaClimbData}
                     useTbaClimb={useTbaClimb}
                     onMoveUp={() => {}}
@@ -909,7 +894,7 @@ function ComparisonPage() {
               key={metricKey}
               metricKey={metricKey}
               teams={graphTeams}
-              matchData={matchData}
+              matchData={matchScoutingData}
               tbaTeams={tbaTeams}
               tbaClimbData={tbaClimbData}
               showPercentiles={!!showPercentiles[metricKey]}

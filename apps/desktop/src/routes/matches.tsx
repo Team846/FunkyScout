@@ -3,9 +3,9 @@ import { useTabContext } from "../contexts/TabContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
-import { getMatchScoutingData, getPitScoutingData, type PitScoutingData } from "../lib/db";
 import type { EventMatchData } from "@lib/db";
-import type { TBATeam } from "../contexts/DesktopTeamDataContext";
+import type { TBATeam, PitScoutingData } from "../contexts/DesktopTeamDataContext";
+import type { MatchScoutingData } from "../contexts/DesktopCompetitionDataContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
@@ -458,7 +458,7 @@ function MatchPlaybackView({
   matchKey: string;
   currentEvent: string | null;
   schedule: { match: string; team: string; alliance: "red" | "blue" }[];
-  matchData: Awaited<ReturnType<typeof getMatchScoutingData>>;
+  matchData: MatchScoutingData[];
   teamDataByTeam: Map<string, (typeof matchData)[number]>;
   schema: ReturnType<typeof getMatchActionSchema>;
   onBack?: () => void;
@@ -1423,11 +1423,10 @@ function MatchesPage() {
   const { addTab } = useTabContext();
   const { match: matchKey } = Route.useSearch();
   const { currentEvent } = useDesktopEvent();
-  const { schedule, tbaClimbData, tbaSchedule, lastDataRefreshAt } = useDesktopCompetitionData();
-  const { tbaTeams } = useDesktopTeamData();
+  const { schedule, tbaClimbData, tbaSchedule, matchScoutingData } = useDesktopCompetitionData();
+  const { tbaTeams, pitScoutingData } = useDesktopTeamData();
   const [search, setSearch] = useState("");
-  const [matchData, setMatchData] = useState<Awaited<ReturnType<typeof getMatchScoutingData>>>([]);
-  const [pitScoutingData, setPitScoutingData] = useState<PitScoutingData[]>([]);
+  const matchData = matchScoutingData;
   const [videoCache, setVideoCache] = useState<{ data: { key: string; videos: { type: string; key: string }[] }[] } | null>(null);
 
   const schema = useMemo(() => getMatchActionSchema(currentEvent || "2026"), [currentEvent]);
@@ -1483,16 +1482,6 @@ function MatchesPage() {
     }
     return map;
   }, [matchData, matchKey]);
-
-  useEffect(() => {
-    if (!currentEvent) return;
-    getMatchScoutingData(currentEvent).then(setMatchData).catch(console.error);
-  }, [currentEvent, lastDataRefreshAt]);
-
-  useEffect(() => {
-    if (!currentEvent) return;
-    getPitScoutingData(currentEvent).then(setPitScoutingData).catch(console.error);
-  }, [currentEvent, lastDataRefreshAt]);
 
   useEffect(() => {
     if (!currentEvent) return;

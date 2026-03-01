@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { ExternalLink, Edit2, Calendar } from "lucide-react";
 import {
   Dialog,
@@ -13,6 +14,8 @@ import { Label } from "@shadcn/ui/components/label.tsx";
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
 import type { ScheduleEntry, TBAMatchData } from "../../../contexts/DesktopCompetitionDataContext";
 import { useDesktopEvent } from "../../../contexts/DesktopEventContext";
+import { useTabContext } from "../../../contexts/TabContext";
+import { getMatchLabel } from "@lib/utils/match";
 
 interface RightPanelProps {
   tbaTeams: TBATeam[];
@@ -57,9 +60,10 @@ interface UpcomingMatchCardProps {
   tba: TBAMatchData;
   tbaTeams: TBATeam[];
   homeTeamKey: string;
+  onMatchClick: (matchKey: string) => void;
 }
 
-function UpcomingMatchCard({ matchKey, tba, tbaTeams, homeTeamKey }: UpcomingMatchCardProps) {
+function UpcomingMatchCard({ matchKey, tba, tbaTeams, homeTeamKey, onMatchClick }: UpcomingMatchCardProps) {
   const homeAlliance =
     tba.redTeams.includes(homeTeamKey)
       ? "red"
@@ -75,7 +79,10 @@ function UpcomingMatchCard({ matchKey, tba, tbaTeams, homeTeamKey }: UpcomingMat
   };
 
   return (
-    <div className="bg-secondary/30 rounded-lg border border-border overflow-hidden">
+    <div
+      className="bg-secondary/30 rounded-lg border border-border overflow-hidden cursor-pointer hover:bg-secondary/50 transition-colors"
+      onClick={() => onMatchClick(matchKey)}
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
         <span className="text-xs font-semibold text-foreground">{formatMatchKey(matchKey)}</span>
         <span className="text-[10px] text-muted-foreground">{formatTime(tba.est_time)}</span>
@@ -152,9 +159,16 @@ function UpcomingMatchCard({ matchKey, tba, tbaTeams, homeTeamKey }: UpcomingMat
 
 export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps) {
   const { homeTeam, setHomeTeam } = useDesktopEvent();
+  const { addTab } = useTabContext();
+  const navigate = useNavigate();
   const [showEditTeam, setShowEditTeam] = useState(false);
   const [editTeamInput, setEditTeamInput] = useState("");
   const [savingTeam, setSavingTeam] = useState(false);
+
+  const handleMatchClick = (matchKey: string) => {
+    addTab("/matches", getMatchLabel(matchKey), { match: matchKey }, `match-${matchKey}`);
+    navigate({ to: "/matches", search: { match: matchKey } });
+  };
 
   const homeTeamKey = `frc${homeTeam}`;
   const homeTeamData = tbaTeams.find((t) => t.team === homeTeam);
@@ -263,7 +277,10 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
 
         {/* Last Match */}
         {homeTeamData?.lastMatch && (
-          <div className="bg-card rounded-lg border border-border p-3">
+          <div
+            className="bg-card rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/30 transition-colors"
+            onClick={() => handleMatchClick(homeTeamData.lastMatch!)}
+          >
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Last Match</span>
               <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
@@ -277,7 +294,10 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
 
         {/* Next Match */}
         {homeTeamData?.nextMatch && (
-          <div className="bg-card rounded-lg border border-border p-3">
+          <div
+            className="bg-card rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/30 transition-colors"
+            onClick={() => handleMatchClick(homeTeamData.nextMatch!)}
+          >
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Next Match</span>
               <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
@@ -310,6 +330,7 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
                     tba={tba}
                     tbaTeams={tbaTeams}
                     homeTeamKey={homeTeamKey}
+                    onMatchClick={handleMatchClick}
                   />
                 );
               })}

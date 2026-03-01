@@ -796,6 +796,44 @@ impl SupabaseService {
         Ok(())
     }
 
+    /// Patch a subset of shift assignments without clearing the rest (from sync queue).
+    /// Unlike bulk_assign_shifts, this does NOT clear existing assignments first.
+    /// Only the rows in `assignments` are updated; all others are left untouched.
+    pub async fn patch_assign_shifts(
+        &self,
+        event: &str,
+        assignments: &[Value],
+    ) -> Result<()> {
+        for assignment in assignments {
+            let match_key = assignment.get("match").and_then(|v| v.as_str()).unwrap_or("");
+            let team = assignment.get("team").and_then(|v| v.as_str()).unwrap_or("");
+            let uid = assignment.get("uid").and_then(|v| v.as_str());
+            let name = assignment.get("name").and_then(|v| v.as_str());
+
+            let payload = json!({
+                "uid": uid,
+                "name": name,
+                "last_modified": Self::now_iso(),
+            });
+
+            self.auth_client()
+                .from("event_schedule")
+                .update(&payload.to_string())
+                .eq("event", event)
+                .eq("match", match_key)
+                .eq("team", team)
+                .execute()
+                .await
+                .context(format!(
+                    "Failed to patch shift for match {} team {}",
+                    match_key, team
+                ))?;
+        }
+
+        println!("[Supabase] ✓ Patched {} shift assignments (no clear)", assignments.len());
+        Ok(())
+    }
+
     /// Bulk assign pit scouting teams (from sync queue).
     /// Updates the `assigned` column in event_team_data for each team.
     pub async fn bulk_assign_pit_teams(

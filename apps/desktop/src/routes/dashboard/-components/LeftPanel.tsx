@@ -5,6 +5,9 @@ import { useTabContext } from "../../../contexts/TabContext";
 import { Progress } from "@shadcn/ui/components/progress.tsx";
 import type { ScheduleEntry } from "../../../contexts/DesktopCompetitionDataContext";
 import type { MatchScoutingData } from "../../../lib/db";
+import { useDesktopTeamData } from "../../../contexts/DesktopTeamDataContext";
+import { useDesktopEvent } from "../../../contexts/DesktopEventContext";
+import { getMatchLabel } from "@lib/utils/match";
 
 interface UserProfile {
   uid: string;
@@ -19,8 +22,13 @@ interface LeftPanelProps {
 }
 
 export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
-  const { tabs, setActiveTab } = useTabContext();
+  const { tabs, setActiveTab, addTab } = useTabContext();
   const navigate = useNavigate();
+  const { homeTeam } = useDesktopEvent();
+  const { tbaTeams } = useDesktopTeamData();
+
+  const homeTeamData = tbaTeams.find((t) => t.team === homeTeam);
+  const strategyTarget = homeTeamData?.nextMatch ?? homeTeamData?.lastMatch ?? null;
 
   // Match Progress: unique qual matches with actual scores / total unique qual matches
   const matchProgress = useMemo(() => {
@@ -102,8 +110,8 @@ export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
       </div>
 
       {/* Top Scouters */}
-      <div className="bg-card rounded-lg border border-border p-3 flex-1 min-h-0">
-        <div className="flex items-center justify-between mb-3">
+      <div className="bg-card rounded-lg border border-border p-3 flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center justify-between mb-3 flex-shrink-0">
           <span className="text-sm font-semibold text-foreground">Top Scouters</span>
           <Trophy className="w-3.5 h-3.5 text-muted-foreground" />
         </div>
@@ -111,7 +119,7 @@ export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
         {topScouters.length === 0 ? (
           <p className="text-xs text-muted-foreground italic">No scouting data yet</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 overflow-y-auto flex-1 min-h-0">
             {topScouters.map((scouter, idx) => (
               <div key={scouter.uid} className="flex items-center gap-2">
                 {/* Rank badge */}
@@ -148,8 +156,18 @@ export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button
-            disabled
-            className="text-xs bg-secondary/50 text-muted-foreground/50 rounded-lg p-3 text-center cursor-not-allowed border border-border/50 flex flex-col items-center gap-1.5"
+            disabled={!strategyTarget}
+            onClick={() => {
+              if (!strategyTarget) return;
+              addTab("/matches", getMatchLabel(strategyTarget), { match: strategyTarget }, `match-${strategyTarget}`);
+              navigate({ to: "/matches", search: { match: strategyTarget } });
+            }}
+            className={[
+              "text-xs rounded-lg p-3 text-center border flex flex-col items-center gap-1.5",
+              strategyTarget
+                ? "bg-secondary text-foreground hover:bg-secondary/80 transition-colors border-border cursor-pointer"
+                : "bg-secondary/50 text-muted-foreground/50 cursor-not-allowed border-border/50",
+            ].join(" ")}
           >
             <BarChart3 className="w-4 h-4" />
             Strategy

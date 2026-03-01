@@ -955,6 +955,62 @@ export async function assignShiftsFromCycle(
 }
 
 /**
+ * Apply incremental assignment changes (desktop only).
+ * Only the provided entries are updated; all other schedule rows are left untouched.
+ * Pass uid=null / name=null to clear a specific assignment.
+ * Use this instead of assignShiftsFromCycle when saving individual edits.
+ */
+export async function assignShiftsDiff(
+  eventKey: string,
+  changes: Array<{ matchKey: string; teamKey: string; uid: string | null; name: string | null }>,
+): Promise<void> {
+  if (!isTauri()) throw new Error("assignShiftsDiff is only supported on desktop");
+  if (changes.length === 0) return;
+
+  const { invoke } = await import("@tauri-apps/api/core");
+  const now = Date.now();
+
+  const changeMap = new Map(changes.map((c) => [`${c.matchKey}|${c.teamKey}`, c]));
+
+  // Read current schedule, update ONLY the dirty entries (leave all others as-is).
+  const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
+  const updated = schedule.map((s: EventScheduleEntry) => {
+    const c = changeMap.get(`${s.match}|${s.team}`);
+    if (!c) return s;
+    return { ...s, uid: c.uid, name: c.name, last_modified: now };
+  });
+
+  // 1. Cache locally (Tauri SQLite)
+  await invoke("cache_schedule", { event: eventKey, schedule: updated });
+
+  // 2. Queue only the changed entries — not the entire schedule.
+  // Use ASSIGN_SHIFTS_DIFF (not ASSIGN_SHIFTS_BULK) so Supabase does NOT
+  // clear all assignments first; it only patches the rows that changed.
+  const user_jwt = await getUserJWT();
+  await invoke("add_to_sync_queue", {
+    operation: "ASSIGN_SHIFTS_DIFF",
+    payload: {
+      event: eventKey,
+      assignments: changes.map((c) => ({
+        match: c.matchKey,
+        team: c.teamKey,
+        uid: c.uid,
+        name: c.name,
+      })),
+      user_jwt,
+      timestamp: now,
+    },
+  });
+
+  console.log(`[Writes] Desktop: Queued ASSIGN_SHIFTS_DIFF (${changes.length} change${changes.length !== 1 ? "s" : ""})`);
+
+  // 3. Trigger instant sync (fire-and-forget)
+  invoke("trigger_sync_now").catch((e) => {
+    console.warn("[Writes] Instant sync trigger failed (will sync in next cycle):", e);
+  });
+}
+
+/**
  * Bulk-assign pit scouting teams among scouters (desktop only).
  * Updates the `assigned` column in event_team_data for each team.
  * Writes to local SQLite first, then queues a single ASSIGN_PIT_TEAMS_BULK operation.
