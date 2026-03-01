@@ -79,6 +79,12 @@ export function Match() {
   const redTeamsInMatch = teamsInMatch.filter((t) => t.alliance === "red");
   const blueTeamsInMatch = teamsInMatch.filter((t) => t.alliance === "blue");
 
+  // Reactively derive alliance so the button stays gated until schedule is ready
+  const selectedTeamEntry = selectedTeam
+    ? teamsInMatch.find((item) => item.team === selectedTeam)
+    : null;
+  const selectedAlliance = selectedTeamEntry?.alliance ?? null;
+
   // Helper to get assignment badge
   const getAssignmentBadge = (teamKey: string, matchKey: string) => {
     const assignment = schedule.find(
@@ -340,12 +346,8 @@ export function Match() {
               className="h-8 w-8 shrink-0 rounded-full bg-primary hover:bg-primary/90 p-0"
               variant="default"
               size="icon"
-              disabled={!(selectedMatch && selectedTeam)}
+              disabled={!(selectedMatch && selectedTeam && selectedAlliance)}
               onClick={() => {
-                // Find the alliance for the selected team (check both red and blue)
-                const teamEntry = teamsInMatch.find((item) => item.team === selectedTeam);
-                const selectedAlliance = teamEntry?.alliance || null;
-
                 navigate({
                   to: "/match_start",
                   search: {
@@ -365,6 +367,11 @@ export function Match() {
               </svg>
             </Button>
           </div>
+          {selectedTeam && selectedMatch && !selectedAlliance && (
+            <p className="text-xs text-muted-foreground text-center">
+              {loading ? "Schedule still loading…" : "Refresh data and try again"}
+            </p>
+          )}
         </div>
 
         {/* Recommended Matches - next 3 matches assigned to current user */}

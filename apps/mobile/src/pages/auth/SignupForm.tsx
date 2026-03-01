@@ -40,6 +40,7 @@ export function SignupForm() {
       const success = await signupWithPassword(email, password, name);
       if (success) {
         toast.success("Check your email to verify your account!");
+        sessionStorage.setItem("pendingVerificationEmail", email);
 
         // <-- Clear the form after successful submission
         setEmail("");

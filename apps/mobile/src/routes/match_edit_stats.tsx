@@ -318,6 +318,7 @@ function MatchEditStats() {
     }
 
     setIsSubmitting(true);
+    const toastId = toast.loading("Uploading match data…");
 
     try {
       // Get user session and local user data
@@ -386,13 +387,13 @@ function MatchEditStats() {
       sessionStorage.removeItem(sessionKey);
       console.log("[MatchEditStats] Cleared sessionStorage key:", sessionKey);
 
-      toast.success("Match data uploaded!");
+      toast.success("Match data uploaded!", { id: toastId });
 
       // After successful submission, ALWAYS go to dashboard
       navigate({ to: "/" });
     } catch (error) {
       console.error("[MatchEditStats] Failed to upload:", error);
-      toast.error("Failed to upload match data");
+      toast.error("Failed to upload match data", { id: toastId });
     } finally {
       setIsSubmitting(false);
     }

@@ -63,6 +63,7 @@ function HomePage() {
   const [renamingUser, setRenamingUser] = useState(false);
   const [applyingCode, setApplyingCode] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -371,22 +372,29 @@ function HomePage() {
                   </Button>
                 </div>
               </div>
-              {/* Appearance: Dark / Light mode */}
-              <div className="flex flex-col gap-4">
-                <div className="flex gap-3 px-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 border border-border"
-                    onClick={() => {
-                      const isDark = document.documentElement.classList.toggle("dark");
-                      localStorage.setItem("theme", isDark ? "dark" : "light");
-                    }}
-                  >
-                    <span className="text-md text-muted-foreground">
-                      Switch to {document.documentElement.classList.contains("dark") ? "light" : "dark"} mode
-                    </span>
-                  </Button>
-                </div>
+              {/* Appearance / Cheat Sheet */}
+              <div className="flex gap-3 px-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 border border-border"
+                  onClick={() => {
+                    const isDark = document.documentElement.classList.toggle("dark");
+                    localStorage.setItem("theme", isDark ? "dark" : "light");
+                  }}
+                >
+                  <span className="text-md text-muted-foreground">
+                    Light mode
+                  </span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 border border-border"
+                  onClick={() => setCheatSheetOpen(true)}
+                >
+                  <span className="text-md text-muted-foreground">
+                    Cheat Sheet
+                  </span>
+                </Button>
               </div>
 
 
@@ -416,6 +424,29 @@ function HomePage() {
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cheat Sheet Popup */}
+      <Dialog open={cheatSheetOpen} onOpenChange={setCheatSheetOpen}>
+        <DialogContent className="w-[90vw] h-[80vh] max-w-none p-0 overflow-hidden">
+          <div className="relative w-full h-full flex items-center justify-center bg-black">
+            <button
+              type="button"
+              onClick={() => setCheatSheetOpen(false)}
+              className="absolute top-3 right-3 z-10 flex items-center justify-center size-8 rounded-full bg-black/60 text-white"
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+            <img
+              src="/cheatsheet.png"
+              alt="Game Cheat Sheet"
+              className="w-full h-full object-contain"
+            />
           </div>
         </DialogContent>
       </Dialog>

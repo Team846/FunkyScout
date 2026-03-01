@@ -11,6 +11,27 @@ export const Route = createFileRoute("/verify")({
 function VerifyPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const [pendingEmail] = useState(() => sessionStorage.getItem("pendingVerificationEmail") ?? "");
+  const [resendLoading, setResendLoading] = useState(false);
+
+  const handleResend = async () => {
+    if (!pendingEmail || resendLoading) return;
+    setResendLoading(true);
+    try {
+      const appBase = import.meta.env.VITE_REDIRECT_URL || window.location.origin;
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: pendingEmail,
+        options: { emailRedirectTo: `${appBase}/verify` },
+      });
+      if (error) throw error;
+      toast.success("Verification email resent! Check your inbox.");
+    } catch {
+      toast.error("Failed to resend — try signing up again.");
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   useEffect(() => {
     let handled = false;
@@ -20,6 +41,7 @@ function VerifyPage() {
       handled = true;
       clearTimeout(timeout);
       if (confirmed) {
+        sessionStorage.removeItem("pendingVerificationEmail");
         setStatus("success");
         toast.success("Email verified!");
       } else {
@@ -27,7 +49,7 @@ function VerifyPage() {
       }
     };
 
-    const timeout = setTimeout(() => resolve(false), 10000);
+    const timeout = setTimeout(() => resolve(false), 15000);
 
     // 1. Check immediately — Supabase may have already exchanged the confirmation
     //    token from the URL before this effect ran, firing INITIAL_SESSION instead
@@ -65,26 +87,39 @@ function VerifyPage() {
             </svg>
 
             <p className="text-muted-foreground text-lg font-medium text-center">
-              Email verified! You can now sign in.
+              Email verified!
+            </p>
+            <p className="text-muted-foreground text-sm text-center">
+              Return to the app and sign in.
             </p>
             <Button
               variant="outline"
               onClick={() => navigate({ to: "/auth" })}
               className="h-11 px-8 bg-accent text-muted-foreground"
             >
-              Sign in
+              Sign in here
             </Button>
           </>
         )}
         {status === "error" && (
           <>
-            <p className="text-destructive text-center mb-2">Verification failed</p>
+            <p className="text-destructive text-center mb-2">Verification failed or timed out</p>
+            {pendingEmail && (
+              <Button
+                variant="outline"
+                onClick={handleResend}
+                disabled={resendLoading}
+                className="h-11 w-full bg-accent text-primary px-8"
+              >
+                {resendLoading ? "Sending…" : "Resend verification email"}
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => navigate({ to: "/auth" })}
-              className="h-11 w-full bg-accent text-primary px-8"
+              className="h-11 w-full bg-accent text-muted-foreground px-8"
             >
-              Try Again
+              Back to sign in
             </Button>
           </>
         )}

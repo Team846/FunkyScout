@@ -81,6 +81,7 @@ function PitScoutImagesPage() {
 
     setSubmitting(true);
     setSyncStatus("submitting");
+    const toastId = toast.loading("Submitting pit scouting…");
 
     try {
       // Get user session and local user data
@@ -118,7 +119,7 @@ function PitScoutImagesPage() {
         }
       );
 
-      toast.success("Pit scouting submitted!");
+      toast.success("Pit scouting submitted!", { id: toastId });
       setSyncStatus("synced");
 
       // Clear form data
@@ -130,7 +131,7 @@ function PitScoutImagesPage() {
       }, 1500);
     } catch (error) {
       console.error("Submit error:", error);
-      toast.error("Failed to submit pit data");
+      toast.error("Failed to submit pit data", { id: toastId });
       setSyncStatus("idle");
     } finally {
       setSubmitting(false);

@@ -69,7 +69,7 @@ const plugins: PluginOption[] = [
       // HTML must be pre-cached so the app can launch offline on first install.
       // WASM and SQLite worker JS must also be pre-cached so SQLite can init
       // offline (they do NOT require COOP/COEP headers — only the HTML page does).
-      globPatterns: ["**/*.{js,css,woff2,ttf,svg,html,wasm}"],
+      globPatterns: ["**/*.{js,css,woff2,ttf,svg,png,html,wasm}"],
     },
   }),
 ];
