@@ -322,12 +322,12 @@ function ScoutPage() {
 
   // Auto Climb state
   const [autoClimbLevel, setAutoClimbLevel] = useState<string | null>("None");
-  const [autoClimbOrientation, setAutoClimbOrientation] = useState<string | null>(null);
+  const [autoClimbOrientation, setAutoClimbOrientation] = useState<string[]>([]);
   const [autoClimbDeclimbTime, setAutoClimbDeclimbTime] = useState<string>("");
 
   // Teleop Climb state
-  const [teleopClimbLevel, setTeleopClimbLevel] = useState<string | null>("None");
-  const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<string | null>(null);
+  const [teleopClimbLevel, setTeleopClimbLevel] = useState<string[]>([]);
+  const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<string[]>([]);
 
     /* GENERATED:END */
 
@@ -348,10 +348,10 @@ function ScoutPage() {
       setFuelBps(formData.fuel.bps || "");
       setFuelCapacity(formData.fuel.capacity || "");
       setAutoClimbLevel(formData.autoClimb.level);
-      setAutoClimbOrientation(formData.autoClimb.orientation);
+      setAutoClimbOrientation(formData.autoClimb.orientation ?? []);
       setAutoClimbDeclimbTime(formData.autoClimb.declimbTime || "");
-      setTeleopClimbLevel(formData.teleopClimb.level);
-      setTeleopClimbOrientation(formData.teleopClimb.orientation);
+      setTeleopClimbLevel(formData.teleopClimb.level ?? []);
+      setTeleopClimbOrientation(formData.teleopClimb.orientation ?? []);
     /* GENERATED:END */
       setAutoEntries(formData.autos);
     }
@@ -561,45 +561,45 @@ function ScoutPage() {
         {/* Auto Climb Section */}
         <Section title="Auto Climb">
           <div className="flex flex-col gap-3 px-2">
-            <ScoutToggle
-              pressed={autoClimbLevel === "Climb"}
-              onPressedChange={(p) => setAutoClimbLevel(p ? "Climb" : null)}
-              className="w-full"
-            >
-              Climb
-            </ScoutToggle>
-            <ScoutToggle
-              pressed={autoClimbLevel === "None"}
-              onPressedChange={(p) => setAutoClimbLevel(p ? "None" : null)}
-              className="w-full"
-            >
-              None
-            </ScoutToggle>
+            <div className="grid grid-cols-2 gap-3">
+              <ScoutToggle
+                pressed={autoClimbLevel === "Climb"}
+                onPressedChange={(p) => setAutoClimbLevel(p ? "Climb" : null)}
+                className="w-full"
+              >
+                Climb
+              </ScoutToggle>
+              <ScoutToggle
+                pressed={autoClimbLevel === "None"}
+                onPressedChange={(p) => setAutoClimbLevel(p ? "None" : null)}
+                className="w-full"
+              >
+                None
+              </ScoutToggle>
+            </div>
             {autoClimbLevel === "Climb" && (
               <div className="grid-cols-3 grid gap-3">
                 <ScoutToggle
-                  pressed={autoClimbOrientation === "Left"}
-                  onPressedChange={(p) => setAutoClimbOrientation(p ? "Left" : null)}
+                  pressed={autoClimbOrientation.includes("Left")}
+                  onPressedChange={() => setAutoClimbOrientation((prev) => prev.includes("Left") ? prev.filter((x) => x !== "Left") : [...prev, "Left"])}
                   className="w-full"
                   info="Climbs on the left of the tower"
                 >
                   Left
                 </ScoutToggle>
                 <ScoutToggle
-                  pressed={autoClimbOrientation === "Center"}
-                  onPressedChange={(p) => setAutoClimbOrientation(p ? "Center" : null)}
+                  pressed={autoClimbOrientation.includes("Center")}
+                  onPressedChange={() => setAutoClimbOrientation((prev) => prev.includes("Center") ? prev.filter((x) => x !== "Center") : [...prev, "Center"])}
                   className="w-full"
                   info="Climbs on the center of the tower"
-
                 >
                   Center
                 </ScoutToggle>
                 <ScoutToggle
-                  pressed={autoClimbOrientation === "Right"}
-                  onPressedChange={(p) => setAutoClimbOrientation(p ? "Right" : null)}
+                  pressed={autoClimbOrientation.includes("Right")}
+                  onPressedChange={() => setAutoClimbOrientation((prev) => prev.includes("Right") ? prev.filter((x) => x !== "Right") : [...prev, "Right"])}
                   className="w-full"
                   info="Climbs on the right of the tower"
-
                 >
                   Right
                 </ScoutToggle>
@@ -621,60 +621,57 @@ function ScoutPage() {
           <div className="flex flex-col gap-3 px-2">
             <div className="grid grid-cols-4 gap-3">
               <ScoutToggle
-                pressed={teleopClimbLevel === "L1"}
-                onPressedChange={(p) => setTeleopClimbLevel(p ? "L1" : null)}
+                pressed={teleopClimbLevel.includes("L1")}
+                onPressedChange={() => setTeleopClimbLevel((prev) => prev.includes("L1") ? prev.filter((x) => x !== "L1") : [...prev, "L1"])}
                 className="w-full"
               >
                 L1
               </ScoutToggle>
               <ScoutToggle
-                pressed={teleopClimbLevel === "L2"}
-                onPressedChange={(p) => setTeleopClimbLevel(p ? "L2" : null)}
+                pressed={teleopClimbLevel.includes("L2")}
+                onPressedChange={() => setTeleopClimbLevel((prev) => prev.includes("L2") ? prev.filter((x) => x !== "L2") : [...prev, "L2"])}
                 className="w-full"
               >
                 L2
               </ScoutToggle>
               <ScoutToggle
-                pressed={teleopClimbLevel === "L3"}
-                onPressedChange={(p) => setTeleopClimbLevel(p ? "L3" : null)}
+                pressed={teleopClimbLevel.includes("L3")}
+                onPressedChange={() => setTeleopClimbLevel((prev) => prev.includes("L3") ? prev.filter((x) => x !== "L3") : [...prev, "L3"])}
                 className="w-full"
               >
                 L3
               </ScoutToggle>
               <ScoutToggle
-                pressed={teleopClimbLevel === "None"}
-                onPressedChange={(p) => setTeleopClimbLevel(p ? "None" : null)}
+                pressed={teleopClimbLevel.length === 0}
+                onPressedChange={() => setTeleopClimbLevel([])}
                 className="w-full"
               >
                 None
               </ScoutToggle>
             </div>
-            {teleopClimbLevel !== "None" && (
+            {teleopClimbLevel.length > 0 && (
               <div className="grid-cols-3 grid gap-3">
                 <ScoutToggle
-                  pressed={teleopClimbOrientation === "Left"}
-                  onPressedChange={(p) => setTeleopClimbOrientation(p ? "Left" : null)}
+                  pressed={teleopClimbOrientation.includes("Left")}
+                  onPressedChange={() => setTeleopClimbOrientation((prev) => prev.includes("Left") ? prev.filter((x) => x !== "Left") : [...prev, "Left"])}
                   className="w-full"
                   info="Climbs on the left of the tower"
-
                 >
                   Left
                 </ScoutToggle>
                 <ScoutToggle
-                  pressed={teleopClimbOrientation === "Center"}
-                  onPressedChange={(p) => setTeleopClimbOrientation(p ? "Center" : null)}
+                  pressed={teleopClimbOrientation.includes("Center")}
+                  onPressedChange={() => setTeleopClimbOrientation((prev) => prev.includes("Center") ? prev.filter((x) => x !== "Center") : [...prev, "Center"])}
                   className="w-full"
                   info="Climbs on the center of the tower"
-
                 >
                   Center
                 </ScoutToggle>
                 <ScoutToggle
-                  pressed={teleopClimbOrientation === "Right"}
-                  onPressedChange={(p) => setTeleopClimbOrientation(p ? "Right" : null)}
+                  pressed={teleopClimbOrientation.includes("Right")}
+                  onPressedChange={() => setTeleopClimbOrientation((prev) => prev.includes("Right") ? prev.filter((x) => x !== "Right") : [...prev, "Right"])}
                   className="w-full"
                   info="Climbs on the right of the tower"
-
                 >
                   Right
                 </ScoutToggle>

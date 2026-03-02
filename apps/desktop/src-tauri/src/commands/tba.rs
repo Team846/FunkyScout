@@ -3,6 +3,63 @@ use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Mutex};
 use tauri::State;
 
+/// Bootstrap event from pre-parsed CSV data (fallback when TBA is unavailable).
+/// `teams` rows: { event, team, team_name, data }
+/// `schedule` rows: { event, match, team, alliance, last_modified }
+#[tauri::command]
+pub async fn bootstrap_from_csv(
+    state: State<'_, Mutex<crate::AppState>>,
+    event: String,
+    teams: Vec<Value>,
+    schedule: Vec<Value>,
+) -> Result<usize, String> {
+    let (tba_service, supabase_service) = {
+        let app_state = state.lock().unwrap();
+        (app_state.tba_service.clone(), app_state.supabase_service.clone())
+    };
+
+    println!("[Bootstrap CSV] Starting CSV bootstrap for {}", event);
+
+    // Try TBA for event alias/date; fall back to sensible defaults if unavailable
+    let (alias, date) = match tba_service.fetch_event_info(&event).await {
+        Ok(info) => info,
+        Err(e) => {
+            println!("[Bootstrap CSV] TBA unavailable ({}), using event key as alias", e);
+            (event.clone(), chrono::Utc::now().format("%Y-%m-%d").to_string())
+        }
+    };
+
+    // 1. Upsert event_list (FK parent — must exist before child rows)
+    supabase_service
+        .upsert_event(&event, &alias, &date)
+        .await
+        .map_err(|e| format!("Failed to upsert event_list: {}", e))?;
+    println!("[Bootstrap CSV] ✓ event_list: {} ({})", event, alias);
+
+    // 2. Seed event_team_data
+    let team_count = teams.len();
+    if !teams.is_empty() {
+        supabase_service
+            .bulk_upsert_team_data(&event, teams, None)
+            .await
+            .map_err(|e| format!("Failed to seed team data: {}", e))?;
+        println!("[Bootstrap CSV] ✓ event_team_data: {} teams seeded", team_count);
+    }
+
+    // 3. Seed event_schedule
+    let schedule_count = schedule.len();
+    if !schedule.is_empty() {
+        supabase_service
+            .bootstrap_schedule(schedule)
+            .await
+            .map_err(|e| format!("Failed to seed schedule: {}", e))?;
+        println!("[Bootstrap CSV] ✓ event_schedule: {} rows seeded", schedule_count);
+    }
+
+    println!("[Bootstrap CSV] ✓ Complete: {} teams, {} schedule rows for {}", team_count, schedule_count, event);
+    Ok(team_count)
+}
+
 /// Fetch event teams with rankings from TBA
 /// Makes 2 API calls - use only for bootstrap
 #[tauri::command]

@@ -18,6 +18,7 @@ import {
   Settings,
   RefreshCw,
   Sun,
+  Upload,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -85,7 +86,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { currentEvent, setCurrentEvent, useTbaClimb, setUseTbaClimb } =
     useDesktopEvent();
   const { teams, refresh: refreshTeams } = useDesktopTeamData();
-  const { refresh: refreshCompetitionData } = useDesktopCompetitionData();
+  const { refresh: refreshCompetitionData, tbaSchedule, nexusMatches } = useDesktopCompetitionData();
+  const nexusActive = nexusMatches.length > 0 &&
+    Object.values(tbaSchedule).some((m) => m.est_time > 0);
   const { forceSyncNow } = useDesktopSync();
 
   const [events, setEvents] = useState<EventListEntry[]>([]);
@@ -109,9 +112,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [bootstrapEventKey, setBootstrapEventKey] = useState("");
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
-
   const [showMatchPicker, setShowMatchPicker] = useState(false);
   const [showTeamPicker, setShowTeamPicker] = useState(false);
+  // CSV Import
+  const [showCsvDialog, setShowCsvDialog] = useState(false);
+  const [csvEventKey, setCsvEventKey] = useState("");
+  const [teamsFile, setTeamsFile] = useState<File | null>(null);
+  const [scheduleFile, setScheduleFile] = useState<File | null>(null);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvMsg, setCsvMsg] = useState<string | null>(null);
 
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem("theme") !== "light";
@@ -297,6 +306,162 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
+  const readFileText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+
+  const parseTeamsCsv = (csv: string, event: string) => {
+    const lines = csv.trim().split(/\r?\n/);
+    const records = [];
+    // Skip header if first column is non-numeric
+    const startIdx = isNaN(Number(lines[0].split(",")[0].trim())) ? 1 : 0;
+    for (let i = startIdx; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length < 2) continue;
+      const teamNum = parts[0].trim();
+      const teamName = parts[1].trim();
+      if (!teamNum || isNaN(Number(teamNum))) continue;
+      records.push({
+        event,
+        team: `frc${teamNum}`,
+        team_name: teamName,
+        data: { team_number: Number(teamNum) },
+      });
+    }
+    return records;
+  };
+
+  const parseScheduleCsv = (csv: string, event: string) => {
+    const lines = csv.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const now = new Date().toISOString();
+    const records = [];
+
+    // Parse header to locate columns by name
+    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const col = (name: string) => header.indexOf(name);
+
+    const matchKeyCol = col("match_key");
+    const matchNumCol = col("match_number");
+    const compLevelCol = col("comp_level");
+    const setNumCol = col("set_number");
+    const teamCols: { col: number; alliance: string }[] = [
+      { col: col("red1"), alliance: "red" },
+      { col: col("red2"), alliance: "red" },
+      { col: col("red3"), alliance: "red" },
+      { col: col("blue1"), alliance: "blue" },
+      { col: col("blue2"), alliance: "blue" },
+      { col: col("blue3"), alliance: "blue" },
+    ];
+
+    // Fall back to positional format (Match#, R1, R2, R3, B1, B2, B3) if no named headers
+    const usePositional = teamCols.every((t) => t.col === -1);
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const parts = line.split(",");
+
+      let matchKey: string;
+      if (!usePositional && matchKeyCol !== -1 && parts[matchKeyCol]?.trim()) {
+        // TBA format: match_key column already has the full key (e.g. "2026week0_qm1")
+        matchKey = parts[matchKeyCol].trim();
+      } else if (!usePositional && matchNumCol !== -1) {
+        // Has headers but no match_key — build from comp_level + match_number + set_number
+        const compLevel = compLevelCol !== -1 ? (parts[compLevelCol]?.trim() || "qm") : "qm";
+        const matchNum = parts[matchNumCol]?.trim() || "";
+        const setNum = setNumCol !== -1 ? (parts[setNumCol]?.trim() || "1") : "1";
+        if (!matchNum || isNaN(Number(matchNum))) continue;
+        if (compLevel === "sf") matchKey = `${event}_sf${setNum}m${matchNum}`;
+        else if (compLevel === "f") matchKey = `${event}_f${setNum}m${matchNum}`;
+        else matchKey = `${event}_qm${matchNum}`;
+      } else {
+        // Positional fallback: col 0 = match number, cols 1-6 = teams
+        if (parts.length < 7) continue;
+        const matchDigits = parts[0].trim().replace(/[^0-9]/g, "");
+        if (!matchDigits) continue;
+        matchKey = `${event}_qm${matchDigits}`;
+      }
+
+      const slots = usePositional
+        ? [
+            { raw: parts[1], alliance: "red" },
+            { raw: parts[2], alliance: "red" },
+            { raw: parts[3], alliance: "red" },
+            { raw: parts[4], alliance: "blue" },
+            { raw: parts[5], alliance: "blue" },
+            { raw: parts[6], alliance: "blue" },
+          ]
+        : teamCols.map((t) => ({ raw: parts[t.col] ?? "", alliance: t.alliance }));
+
+      for (const { raw, alliance } of slots) {
+        const teamNum = (raw ?? "").replace(/^frc/i, "").trim();
+        if (!teamNum || isNaN(Number(teamNum))) continue;
+        records.push({
+          event,
+          match: matchKey,
+          team: `frc${teamNum}`,
+          alliance,
+          last_modified: now,
+        });
+      }
+    }
+
+    // Deduplicate on (match, team) as a safety net against duplicate conflict keys
+    const seen = new Set<string>();
+    return records.filter((r) => {
+      const key = `${r.match}|${r.team}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvEventKey.trim() || (!teamsFile && !scheduleFile)) return;
+    setCsvImporting(true);
+    setCsvMsg(null);
+    try {
+      const event = csvEventKey.trim();
+      const teams = teamsFile
+        ? parseTeamsCsv(await readFileText(teamsFile), event)
+        : [];
+      const schedule = scheduleFile
+        ? parseScheduleCsv(await readFileText(scheduleFile), event)
+        : [];
+
+      if (scheduleFile && schedule.length === 0) {
+        setCsvMsg(
+          "Error: Schedule CSV parsed 0 rows — check column format (Match#, Red1, Red2, Red3, Blue1, Blue2, Blue3)"
+        );
+        return;
+      }
+
+      const count = await invoke<number>("bootstrap_from_csv", {
+        event,
+        teams,
+        schedule,
+      });
+      const matchCount = Math.round(schedule.length / 6);
+      setCsvMsg(
+        `Imported ${count} teams, ${matchCount} matches for ${event}`
+      );
+      setTeamsFile(null);
+      setScheduleFile(null);
+      setCsvEventKey("");
+      setShowCsvDialog(false);
+      fetchEvents();
+    } catch (e) {
+      setCsvMsg(`Error: ${e}`);
+    } finally {
+      setCsvImporting(false);
+    }
+  };
+
   const currentEventAlias =
     events.find((e) => e.event === currentEvent)?.alias ||
     currentEvent ||
@@ -387,6 +552,90 @@ export function AppShell({ children }: { children: ReactNode }) {
               disabled={bootstrapping || !bootstrapEventKey.trim()}
             >
               {bootstrapping ? "Bootstrapping..." : "Bootstrap"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Import Dialog */}
+      <Dialog
+        open={showCsvDialog}
+        onOpenChange={(open) => {
+          setShowCsvDialog(open);
+          if (!open) setCsvMsg(null);
+        }}
+      >
+        <DialogContent className="bg-muted border-border">
+          <DialogHeader>
+            <DialogTitle>Import from CSV</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-4">
+            <p className="text-sm text-muted-foreground">
+              Fallback import when TBA API is unavailable. Use TBA's CSV exports
+              for team list and match schedule.
+            </p>
+            <Label htmlFor="csv-event-key">Event Key</Label>
+            <Input
+              id="csv-event-key"
+              value={csvEventKey}
+              onChange={(e) => setCsvEventKey(e.target.value)}
+              placeholder="e.g. 2026nhgrs"
+            />
+            <div className="space-y-1">
+              <Label>
+                Team List CSV{" "}
+                <span className="text-muted-foreground font-normal">
+                  (team_number, team_name, …)
+                </span>
+              </Label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="w-full text-sm text-muted-foreground file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-border file:bg-secondary file:text-foreground file:text-sm file:cursor-pointer cursor-pointer"
+                onChange={(e) => setTeamsFile(e.target.files?.[0] ?? null)}
+              />
+              {teamsFile && (
+                <p className="text-xs text-chart-2">{teamsFile.name}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>
+                Schedule CSV{" "}
+                <span className="text-muted-foreground font-normal">
+                  (Match #, Red1, Red2, Red3, Blue1, Blue2, Blue3)
+                </span>
+              </Label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="w-full text-sm text-muted-foreground file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-border file:bg-secondary file:text-foreground file:text-sm file:cursor-pointer cursor-pointer"
+                onChange={(e) => setScheduleFile(e.target.files?.[0] ?? null)}
+              />
+              {scheduleFile && (
+                <p className="text-xs text-chart-2">{scheduleFile.name}</p>
+              )}
+            </div>
+            {csvMsg && (
+              <p
+                className={`text-sm ${csvMsg.startsWith("Error") ? "text-destructive" : "text-chart-2"}`}
+              >
+                {csvMsg}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCsvDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCsvImport}
+              disabled={
+                csvImporting ||
+                !csvEventKey.trim() ||
+                (!teamsFile && !scheduleFile)
+              }
+            >
+              {csvImporting ? "Importing..." : "Import"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -584,6 +833,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <h4 className="text-sm font-semibold text-foreground">
                       Data Settings
                     </h4>
+
+                    {/* Nexus / TBA timing indicator */}
+                    <div className="flex items-center gap-2 rounded-md bg-background px-3 py-2">
+                      <span className={`h-2 w-2 rounded-full flex-shrink-0 ${nexusActive ? "bg-green-500" : "bg-yellow-500"}`} />
+                      <span className="text-xs text-muted-foreground">
+                        {nexusActive ? "Match times from Nexus" : "Match times from TBA"}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">
@@ -622,6 +879,26 @@ export function AppShell({ children }: { children: ReactNode }) {
                           className="flex-shrink-0"
                         >
                           <RefreshCw className="w-3 h-3" />
+                        </Button>
+                      </div>
+
+                      {/* CSV Import */}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">
+                            Import from CSV
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            Fallback: upload TBA CSV exports manually
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowCsvDialog(true)}
+                          className="flex-shrink-0"
+                        >
+                          <Upload className="w-3 h-3" />
                         </Button>
                       </div>
                     </div>

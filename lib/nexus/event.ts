@@ -48,3 +48,42 @@ export async function getNexusEventStatus(
   const eventData = await fetchNexusData(`/event/${event}`, "GET");
   return eventData || false;
 }
+
+/**
+ * Convert a Nexus match label to a TBA-style match key suffix.
+ * "Qualification 24" → "qm24"
+ * "Playoff 3"        → "sf1m3"
+ * "Final 2"          → "f1m2"
+ *
+ * Only for identifying/timing a match — never for team composition.
+ */
+export function nexusLabelToMatchKey(label: string): string {
+  const lower = label.toLowerCase();
+  const qualMatch = lower.match(/qualification\s*(\d+)/);
+  if (qualMatch) return `qm${qualMatch[1]}`;
+  const playoffMatch = lower.match(/playoff\s*(\d+)/);
+  if (playoffMatch) return `sf1m${playoffMatch[1]}`;
+  const finalMatch = lower.match(/final\s*(\d+)/);
+  if (finalMatch) return `f1m${finalMatch[1]}`;
+  return lower.replace(/\s+/g, "");
+}
+
+/**
+ * Build a map of match key → est_time (seconds) from Nexus match data.
+ * Only timing — never use this to determine teams.
+ */
+export function buildNexusTimeMap(
+  nexusMatches: NexusMatch[],
+  event: string
+): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const m of nexusMatches) {
+    if (m.times.estimatedStartTime > 0) {
+      const suffix = nexusLabelToMatchKey(m.label);
+      if (suffix) {
+        map[`${event}_${suffix}`] = Math.floor(m.times.estimatedStartTime / 1000);
+      }
+    }
+  }
+  return map;
+}

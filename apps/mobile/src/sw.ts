@@ -10,6 +10,14 @@ declare const self: ServiceWorkerGlobalScope;
 
 cleanupOutdatedCaches();
 
+// Take over immediately on update so clients get fresh assets without needing
+// to reinstall the PWA. sessionStorage preserves in-progress match data across
+// the forced reload that VitePWA's autoUpdate registration script triggers.
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 // Inject the precache manifest (JS, CSS, SVG, HTML bundles from vite.config.ts).
 // index.html is included so offline launches work on the very first install,
 // without requiring a prior online visit.

@@ -4,6 +4,7 @@ import red_field from "/red_field.svg";
 import blue_field from "/blue_field.svg";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { getMatchLabel } from "@lib/utils/match";
+import { getLocalUserData } from "@lib/supabase/user";
 import { vibrateShake, vibrateBuzz, vibrateTap } from "@lib/utils/haptics";
 import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
@@ -21,8 +22,6 @@ import {
   pixelToNormalized,
   getActiveToggles,
 } from "@lib/types/matchScouting";
-
-
 
 type MatchType = {
   teamNum?: string | null;
@@ -52,12 +51,22 @@ export const Route = createFileRoute("/match_play")({
 function MatchPlay() {
   const { isWrongOrientation, requestFullscreenAndLock } = useOrientation("landscape");
   const navigate = useNavigate();
-  const { teamNum, matchNum, alliance, practice, startX, startY, fieldFlipped } = Route.useSearch();
+  const {
+    teamNum,
+    matchNum,
+    alliance,
+    practice,
+    startX,
+    startY,
+    fieldFlipped,
+  } = Route.useSearch();
+  const isAdmin = getLocalUserData().role === "admin";
 
   // Use match-specific sessionStorage key to prevent interference between matches
-  const sessionKey = matchNum && teamNum
-    ? `matchData_${matchNum}_${teamNum}`
-    : "currentMatchData";
+  const sessionKey =
+    matchNum && teamNum
+      ? `matchData_${matchNum}_${teamNum}`
+      : "currentMatchData";
 
   const handleBackClick = () => {
     // Clear in-progress data when leaving
@@ -73,7 +82,9 @@ function MatchPlay() {
   const [isAuto, setIsAuto] = useState(true);
 
   // Field flip: inherit from match_start if passed, else blue alliance starts rotated
-  const [isRotated, setIsRotated] = useState(fieldFlipped ?? alliance === 'blue');
+  const [isRotated, setIsRotated] = useState(
+    fieldFlipped ?? alliance === "blue"
+  );
 
   const [shake, setShake] = useState(false);
   const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
@@ -91,12 +102,16 @@ function MatchPlay() {
   // --- Auto climb state ---
   const [autoClimbActive, setAutoClimbActive] = useState(false);
   const autoClimbActiveRef = useRef(false);
-  const [autoClimbOrientation, setAutoClimbOrientation] = useState<'left' | 'right' | 'center' | null>(null);
+  const [autoClimbOrientation, setAutoClimbOrientation] = useState<
+    "left" | "right" | "center" | null
+  >(null);
 
   // --- Teleop climb state ---
   const [teleopClimbActive, setTeleopClimbActive] = useState(false);
-  const teleopClimbLevelRef = useRef<'L1' | 'L2' | 'L3' | null>(null);
-  const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<'left' | 'right' | 'center' | null>(null);
+  const teleopClimbLevelRef = useRef<"L1" | "L2" | "L3" | null>(null);
+  const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<
+    "left" | "right" | "center" | null
+  >(null);
 
   // --- Dismount state ---
   const [dismountRecorded, setDismountRecorded] = useState(false);
@@ -180,7 +195,7 @@ function MatchPlay() {
       if (autoClimbActiveRef.current) {
         dismountTimerRef.current = window.setTimeout(() => {
           if (!dismountRecordedRef.current) {
-            setMatchData(prev => ({
+            setMatchData((prev) => ({
               ...prev,
               postMatch: { ...prev.postMatch, teleopDismountTime: 11 },
             }));
@@ -216,24 +231,30 @@ function MatchPlay() {
   }, []);
 
   // Update postMatch fields in matchData
-  const updatePostMatch = useCallback((updates: Partial<NonNullable<MatchScoutingData['postMatch']>>) => {
-    setMatchData(prev => ({
-      ...prev,
-      postMatch: { ...prev.postMatch, ...updates },
-    }));
-  }, []);
+  const updatePostMatch = useCallback(
+    (updates: Partial<NonNullable<MatchScoutingData["postMatch"]>>) => {
+      setMatchData((prev) => ({
+        ...prev,
+        postMatch: { ...prev.postMatch, ...updates },
+      }));
+    },
+    []
+  );
 
   // --- Auto climb handlers ---
   const handleAutoClimbStart = useCallback(() => {
     setAutoClimbActive(true);
     autoClimbActiveRef.current = true;
     const newAction: ToggleAction = {
-      type: 'autoClimbL1',
+      type: "autoClimbL1",
       timestamp: Date.now(),
       active: true,
-      phase: 'auto',
+      phase: "auto",
     };
-    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    setMatchData((prev) => ({
+      ...prev,
+      toggleActions: [...prev.toggleActions, newAction],
+    }));
     setUndoStack([]);
     vibrateTap();
   }, []);
@@ -243,37 +264,47 @@ function MatchPlay() {
     autoClimbActiveRef.current = false;
     setAutoClimbOrientation(null);
     const newAction: ToggleAction = {
-      type: 'autoClimbL1',
+      type: "autoClimbL1",
       timestamp: Date.now(),
       active: false,
-      phase: 'auto',
+      phase: "auto",
     };
-    setMatchData(prev => ({
+    setMatchData((prev) => ({
       ...prev,
       toggleActions: [...prev.toggleActions, newAction],
-      postMatch: { ...prev.postMatch, autoClimbOrientation: undefined, autoClimbFailed: true },
+      postMatch: {
+        ...prev.postMatch,
+        autoClimbOrientation: undefined,
+        autoClimbFailed: true,
+      },
     }));
     setUndoStack([]);
     vibrateTap();
   }, []);
 
-  const handleAutoOrientationPress = useCallback((orientation: 'left' | 'right' | 'center') => {
-    setAutoClimbOrientation(orientation);
-    updatePostMatch({ autoClimbOrientation: orientation });
-    vibrateTap();
-  }, [updatePostMatch]);
+  const handleAutoOrientationPress = useCallback(
+    (orientation: "left" | "right" | "center") => {
+      setAutoClimbOrientation(orientation);
+      updatePostMatch({ autoClimbOrientation: orientation });
+      vibrateTap();
+    },
+    [updatePostMatch]
+  );
 
   // --- Teleop climb handlers ---
-  const handleTeleopClimbStart = useCallback((level: 'L1' | 'L2' | 'L3') => {
+  const handleTeleopClimbStart = useCallback((level: "L1" | "L2" | "L3") => {
     setTeleopClimbActive(true);
     teleopClimbLevelRef.current = level;
     const newAction: ToggleAction = {
       type: `teleopClimb${level}` as ToggleActionType,
       timestamp: Date.now(),
       active: true,
-      phase: 'endgame',
+      phase: "endgame",
     };
-    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    setMatchData((prev) => ({
+      ...prev,
+      toggleActions: [...prev.toggleActions, newAction],
+    }));
     setUndoStack([]);
     vibrateTap();
   }, []);
@@ -287,14 +318,15 @@ function MatchPlay() {
         type: `teleopClimb${level}` as ToggleActionType,
         timestamp: Date.now(),
         active: false,
-        phase: 'endgame',
+        phase: "endgame",
       };
-      setMatchData(prev => ({
+      setMatchData((prev) => ({
         ...prev,
         toggleActions: [...prev.toggleActions, newAction],
         postMatch: {
           ...prev.postMatch,
-          teleopFailedClimbCount: (prev.postMatch?.teleopFailedClimbCount || 0) + 1,
+          teleopFailedClimbCount:
+            (prev.postMatch?.teleopFailedClimbCount || 0) + 1,
         },
       }));
       setUndoStack([]);
@@ -303,11 +335,14 @@ function MatchPlay() {
     vibrateTap();
   }, []);
 
-  const handleTeleopOrientationPress = useCallback((orientation: 'left' | 'right' | 'center') => {
-    setTeleopClimbOrientation(orientation);
-    updatePostMatch({ teleopClimbOrientation: orientation });
-    vibrateTap();
-  }, [updatePostMatch]);
+  const handleTeleopOrientationPress = useCallback(
+    (orientation: "left" | "right" | "center") => {
+      setTeleopClimbOrientation(orientation);
+      updatePostMatch({ teleopClimbOrientation: orientation });
+      vibrateTap();
+    },
+    [updatePostMatch]
+  );
 
   // --- Block handlers (defend mode hold action) ---
   const handleBlockDown = useCallback(() => {
@@ -315,12 +350,15 @@ function MatchPlay() {
     blockHeldRef.current = true;
     setBlockHeld(true);
     const newAction: ToggleAction = {
-      type: 'block',
+      type: "block",
       timestamp: Date.now(),
       active: true,
-      phase: 'teleop',
+      phase: "teleop",
     };
-    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    setMatchData((prev) => ({
+      ...prev,
+      toggleActions: [...prev.toggleActions, newAction],
+    }));
     vibrateTap();
   }, [actionsDisabled]);
 
@@ -329,20 +367,23 @@ function MatchPlay() {
     blockHeldRef.current = false;
     setBlockHeld(false);
     const newAction: ToggleAction = {
-      type: 'block',
+      type: "block",
       timestamp: Date.now(),
       active: false,
-      phase: 'teleop',
+      phase: "teleop",
     };
-    setMatchData(prev => ({ ...prev, toggleActions: [...prev.toggleActions, newAction] }));
+    setMatchData((prev) => ({
+      ...prev,
+      toggleActions: [...prev.toggleActions, newAction],
+    }));
   }, []);
 
   // When defend is toggled off: end any in-progress block, clear defend-mode pending actions
   useEffect(() => {
     if (!isDefending) {
       if (blockHeldRef.current) handleBlockUp();
-      setPendingLocationAction(prev =>
-        prev === 'camp' || prev === 'disrupt' ? null : prev
+      setPendingLocationAction((prev) =>
+        prev === "camp" || prev === "disrupt" ? null : prev
       );
     }
   }, [isDefending, handleBlockUp]);
@@ -380,23 +421,30 @@ function MatchPlay() {
 
   // Toggle action — only used for disable and defend buttons.
   // Climb uses dedicated handlers (handleAutoClimbStart/handleTeleopClimbStart).
-  const toggleAction = (concept: 'disable' | 'defend') => {
-    if (actionsDisabled && concept !== 'disable') return;
+  const toggleAction = (concept: "disable" | "defend") => {
+    if (actionsDisabled && concept !== "disable") return;
 
     const currentlyActive = activeToggles[concept];
-    const phase: 'auto' | 'teleop' = isAuto ? 'auto' : 'teleop';
+    const phase: "auto" | "teleop" = isAuto ? "auto" : "teleop";
 
     // Derive the stored action type from the concept + current phase
     const storedType: ToggleActionType =
-      concept === 'disable'
-        ? (isAuto ? 'autoDisable' : 'teleopDisable')
-        : 'teleopDefend'; // defend is teleop-only
+      concept === "disable"
+        ? isAuto
+          ? "autoDisable"
+          : "teleopDisable"
+        : "teleopDefend"; // defend is teleop-only
 
     setMatchData((prev) => ({
       ...prev,
       toggleActions: [
         ...prev.toggleActions,
-        { type: storedType, timestamp: Date.now(), active: !currentlyActive, phase },
+        {
+          type: storedType,
+          timestamp: Date.now(),
+          active: !currentlyActive,
+          phase,
+        },
       ],
     }));
 
@@ -419,7 +467,8 @@ function MatchPlay() {
 
   // Handle field click for location actions
   const handleFieldClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!pendingLocationAction || !fieldContainerRef.current || actionsDisabled) return;
+    if (!pendingLocationAction || !fieldContainerRef.current || actionsDisabled)
+      return;
 
     const rect = fieldContainerRef.current.getBoundingClientRect();
     const pixelX = e.clientX - rect.left;
@@ -438,7 +487,7 @@ function MatchPlay() {
     // but matches canonical for blue alliance (red_field cage is on the left at 0°).
     // Rotation additionally flips both axes.
     if (isDefending) {
-      const flipX = (alliance === 'red') !== opponentIsRotated;
+      const flipX = (alliance === "red") !== opponentIsRotated;
       const flipY = opponentIsRotated;
       if (flipX) normalizedX = 1 - normalizedX;
       if (flipY) normalizedY = 1 - normalizedY;
@@ -614,10 +663,7 @@ function MatchPlay() {
       }, 137 * 1000);
     } else {
       // Skip to end
-      sessionStorage.setItem(
-        sessionKey,
-        JSON.stringify(matchDataRef.current)
-      );
+      sessionStorage.setItem(sessionKey, JSON.stringify(matchDataRef.current));
       sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
       navigate({
         to: "/match_end",
@@ -663,10 +709,7 @@ function MatchPlay() {
     // Match end at 163s total (23s auto+transition + 140s teleop)
     timer2Ref.current = window.setTimeout(() => {
       // Store matchData in sessionStorage to pass to match_end
-      sessionStorage.setItem(
-        sessionKey,
-        JSON.stringify(matchDataRef.current)
-      );
+      sessionStorage.setItem(sessionKey, JSON.stringify(matchDataRef.current));
       sessionStorage.removeItem("inProgressMatchData"); // Clear in-progress data
       navigate({
         to: "/match_end",
@@ -734,19 +777,21 @@ function MatchPlay() {
             <p>{teamNum?.substring(teamNum.indexOf("frc") + 3)}</p>
           </div>
           <div className="flex flex-col items-center gap-[30px]">
-            {/* Fast-forward button */}
-            <svg
-              width="25"
-              height="25"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              onClick={handleFastForward}
-              className="cursor-pointer"
-            >
-              <path d="M13 6L21 12L13 18V6Z" fill="#515151" />
-              <path d="M3 6L11 12L3 18V6Z" fill="#515151" />
-            </svg>
+            {/* Fast-forward button (admin only) */}
+            {isAdmin && (
+              <svg
+                width="25"
+                height="25"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                onClick={handleFastForward}
+                className="cursor-pointer"
+              >
+                <path d="M13 6L21 12L13 18V6Z" fill="#515151" />
+                <path d="M3 6L11 12L3 18V6Z" fill="#515151" />
+              </svg>
+            )}
 
             <svg
               viewBox="0 0 25 20"
@@ -867,7 +912,9 @@ function MatchPlay() {
               alt="Opponent Field"
               className="absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-300"
               style={{
-                transform: opponentIsRotated ? "rotate(180deg)" : "rotate(0deg)",
+                transform: opponentIsRotated
+                  ? "rotate(180deg)"
+                  : "rotate(0deg)",
                 opacity: isDefending ? 1 : 0,
               }}
             />
@@ -966,71 +1013,93 @@ function MatchPlay() {
                 Button order: when cage is on left, R=top/L=bottom (right end is higher on screen).
                 When cage is on right (field rotated), order flips: L=top/R=bottom. */}
             {(() => {
-              const cageOnLeft = (alliance === 'red') !== isRotated;
+              const cageOnLeft = (alliance === "red") !== isRotated;
               const edgeStyle = cageOnLeft
-                ? { left: '4px', top: '50%', transform: 'translateY(-50%)' }
-                : { right: '4px', top: '50%', transform: 'translateY(-50%)' };
+                ? { left: "4px", top: "50%", transform: "translateY(-50%)" }
+                : { right: "4px", top: "50%", transform: "translateY(-50%)" };
               const btnOrder = cageOnLeft
-                ? (['right', 'center', 'left'] as const)
-                : (['left', 'center', 'right'] as const);
+                ? (["right", "center", "left"] as const)
+                : (["left", "center", "right"] as const);
 
               return (
                 <>
                   {/* Auto climb orientation buttons */}
                   {isAuto && autoClimbActive && (
-                    <div className={`absolute flex flex-col gap-3 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`} style={edgeStyle}>
+                    <div
+                      className={`absolute flex flex-col gap-3 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
+                      style={edgeStyle}
+                    >
                       {btnOrder.map((o) => (
                         <div
                           key={o}
-                          onClick={(e) => { e.stopPropagation(); handleAutoOrientationPress(o); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAutoOrientationPress(o);
+                          }}
                           className={`flex items-center justify-center w-10 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 ${
                             autoClimbOrientation === o
-                              ? 'border-[#4ADE80] text-[#4ADE80] bg-[#4ADE80]/20'
-                              : 'border-[#4ADE80] text-[#4ADE80]'
+                              ? "border-[#4ADE80] text-[#4ADE80] bg-[#4ADE80]/20"
+                              : "border-[#4ADE80] text-[#4ADE80]"
                           }`}
                         >
-                          {o === 'left' ? 'L' : o === 'center' ? 'C' : 'R'}
+                          {o === "left" ? "L" : o === "center" ? "C" : "R"}
                         </div>
                       ))}
                     </div>
                   )}
 
                   {/* Teleop climb orientation buttons */}
-                  {!isAuto && (teleopClimbActive || teleopClimbOrientation !== null) && (
-                    <div className={`absolute flex flex-col gap-3 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`} style={edgeStyle}>
-                      {btnOrder.map((o) => (
-                        <div
-                          key={o}
-                          onClick={(e) => { e.stopPropagation(); handleTeleopOrientationPress(o); }}
-                          className={`flex items-center justify-center w-10 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 ${
-                            teleopClimbOrientation === o
-                              ? 'border-[#4ADE80] text-[#4ADE80] bg-[#4ADE80]/20'
-                              : 'border-[#4ADE80] text-[#4ADE80]'
-                          }`}
-                        >
-                          {o === 'left' ? 'L' : o === 'center' ? 'C' : 'R'}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {!isAuto &&
+                    (teleopClimbActive || teleopClimbOrientation !== null) && (
+                      <div
+                        className={`absolute flex flex-col gap-3 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
+                        style={edgeStyle}
+                      >
+                        {btnOrder.map((o) => (
+                          <div
+                            key={o}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTeleopOrientationPress(o);
+                            }}
+                            className={`flex items-center justify-center w-10 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 ${
+                              teleopClimbOrientation === o
+                                ? "border-[#4ADE80] text-[#4ADE80] bg-[#4ADE80]/20"
+                                : "border-[#4ADE80] text-[#4ADE80]"
+                            }`}
+                          >
+                            {o === "left" ? "L" : o === "center" ? "C" : "R"}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                   {/* Dismount button — centered on cage edge, first 10s of teleop */}
-                  {!isAuto && autoClimbActiveRef.current && seconds <= 10 && !dismountRecorded && (
-                    <div className={`absolute ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`} style={edgeStyle}>
+                  {!isAuto &&
+                    autoClimbActiveRef.current &&
+                    seconds <= 10 &&
+                    !dismountRecorded && (
                       <div
-                        onClick={(e) => { e.stopPropagation(); handleDismount(); }}
-                        className="flex items-center justify-center w-20 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 border-[#CDA745] text-[#CDA745]"
+                        className={`absolute ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
+                        style={edgeStyle}
                       >
-                        Dismount
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDismount();
+                          }}
+                          className="flex items-center justify-center w-20 h-10 rounded-md text-sm font-bold cursor-pointer active:scale-[0.92] transition-all duration-75 border-2 border-[#CDA745] text-[#CDA745]"
+                        >
+                          Dismount
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </>
               );
             })()}
           </div>
         </div>
-        
+
         {/* Preset action buttons (fixed location), 40% */}
         <div className="flex justify-center items-center w-[30vw] shrink-0 h-full gap-0 p-2.5 rounded-[15px]">
           {/*side bar, 5% */}
@@ -1068,227 +1137,345 @@ function MatchPlay() {
             )}
           </div>
           <div className="relative flex flex-col justify-center items-center w-[21.5vw] h-full gap-2.5 p-2.5 rounded-[15px]">
-          {/* Existing action buttons — fade out during defend */}
-          <div className={`flex flex-col justify-center items-center w-full h-full gap-2.5 transition-opacity duration-300 ${isDefending ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-
-          {/* Teleop only: Stocking + Pass same size, together = Intake row width */}
-          {!isAuto && (
-            <div className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
-              <div
-                onClick={() => addPresetAction("stationStocked")}
-                className="flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
-              >
-                <p className="text-xs text-outfit text-muted-foreground truncate">Stock</p>
-              </div>
-              <div
-                onClick={() => startLocationAction("passing")}
-                className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                  pendingLocationAction === "passing"
-                    ? "border-2 border-[#CDA745]"
-                    : "border-2 border-[#1E1E1E]"
-                }`}
-              >
-                <p
-                  className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
-                >
-                  Pass
-                </p>
-              </div>
-            </div>
-            
-            
-          )}
-
-          {/* Intake + Pass (auto) - same layout as Stocking+Pass */}
-          <div className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
+            {/* Existing action buttons — fade out during defend */}
             <div
-              onClick={() => startLocationAction("groundIntake")}
-              className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                pendingLocationAction === "groundIntake"
-                  ? "border-2 border-[#CDA745]"
-                  : "border-2 border-[#1E1E1E]"
-              }`}
+              className={`flex flex-col justify-center items-center w-full h-full gap-2.5 transition-opacity duration-300 ${isDefending ? "opacity-0 pointer-events-none" : "opacity-100"}`}
             >
-              <div className="flex items-center gap-2">
-                {!isAuto && (
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-muted-foreground">
-                  <g clipPath="url(#clip0_755_311)">
-                  <rect x="9" width="2" height="2.5" fill="currentColor"/>
-                  <rect x="8" y="1" width="4" height="2" fill="currentColor"/>
-                  <path d="M10 4H6.5L3 9.76L6.5 16" stroke="currentColor" strokeWidth="2"/>
-                  <path d="M10 4H13.5L17 9.76L13.5 16" stroke="currentColor" strokeWidth="2"/>
-                  <circle cx="10" cy="16" r="3.75" fill="currentColor"/>
-                  </g>
-                  <defs>
-                  <clipPath id="clip0_755_311">
-                  <rect width="20" height="20" fill="white"/>
-                  </clipPath>
-                  </defs>
-                  </svg>
-                )}
-                <p
-                  className={`text-xs text-outfit ${pendingLocationAction === "groundIntake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
-                >
-                  Intake
-                </p>
-              </div>
-              
-            </div>
-
-            {isAuto && (
-              <div
-                onClick={() => startLocationAction("passing")}
-                className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                  pendingLocationAction === "passing"
-                    ? "border-2 border-[#CDA745]"
-                    : "border-2 border-[#1E1E1E]"
-                }`}
-              >
-                <p
-                  className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
-                >
-                  Pass
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
-            <div
-              onClick={() => startLocationAction("shoot")}
-              className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                pendingLocationAction === "shoot"
-                  ? "border-2 border-[#CDA745]"
-                  : "border-2 border-[#1E1E1E]"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-muted-foreground">
-                <g clipPath="url(#clip0_991_314)">
-                <path d="M6.23389 13.9007C6.23389 14.5578 6.7685 15.0924 7.42567 15.0924C8.08284 15.0924 8.61739 14.5578 8.61739 13.9007C8.61739 13.2435 8.08284 12.709 7.42567 12.709C6.7685 12.709 6.23389 13.2435 6.23389 13.9007ZM7.54298 13.9007C7.54298 13.9653 7.49039 14.0179 7.42574 14.0179C7.36103 14.0179 7.30843 13.9653 7.30843 13.9007C7.30843 13.836 7.36103 13.7834 7.42574 13.7834C7.49032 13.7834 7.54298 13.836 7.54298 13.9007Z" fill="currentColor"/>
-                <path d="M19.9652 9.11853L17.4326 1.63631C17.3167 1.29396 16.9453 1.11012 16.6029 1.22621C16.2605 1.3421 16.0768 1.71355 16.1928 2.05598L16.3731 2.58857L5.52066 5.32358C5.37783 4.22763 4.58477 2.87106 2.73083 2.87106C2.36935 2.87106 2.07628 3.16419 2.07628 3.5256C2.07628 3.88702 2.36928 4.18015 2.73083 4.18015C3.36234 4.18015 3.7717 4.39833 4.01911 4.86675C4.18982 5.18991 4.22638 5.53153 4.23406 5.64783L3.43992 5.84796C3.42369 5.8522 3.40753 5.85692 3.39157 5.86217C0.791435 6.73503 -0.613885 9.56069 0.259044 12.1608C0.716283 13.5228 1.72059 14.584 2.97837 15.1351L2.76618 15.5026C2.29433 16.3198 2.23635 17.1566 2.60692 17.7985C2.9775 18.4402 3.73117 18.8084 4.6748 18.8084L10.1331 18.8083C11.0767 18.8083 11.8304 18.4402 12.2009 17.7984C12.5715 17.1566 12.5135 16.3197 12.0417 15.5026L10.6922 13.1653L18.5744 9.09187L18.7255 9.53827C18.8179 9.81113 19.0724 9.98305 19.3454 9.98305C19.4149 9.98305 19.4857 9.97187 19.5553 9.9483C19.8976 9.83241 20.0812 9.46096 19.9652 9.11853ZM11.0673 17.1439C10.9369 17.3697 10.5964 17.4992 10.1331 17.4992L4.67473 17.4993C4.21137 17.4993 3.87083 17.3697 3.74053 17.1439C3.61002 16.918 3.66814 16.5583 3.89979 16.1571L6.62894 11.4303C6.86053 11.029 7.14302 10.7989 7.40389 10.7989C7.6647 10.7989 7.94713 11.029 8.17878 11.4303L10.9079 16.1571C11.1396 16.5583 11.1976 16.918 11.0673 17.1439ZM9.31245 10.7757C8.84066 9.95853 8.14497 9.48985 7.40389 9.48985C6.66275 9.48985 5.96706 9.95853 5.49527 10.7757L3.63857 13.9916C2.64908 13.6043 1.85305 12.796 1.49999 11.7443C0.859314 9.83591 1.88389 7.76291 3.78531 7.11086L10.7089 5.36601L12.5375 10.7381L10.0369 12.0305L9.31245 10.7757ZM13.7135 10.1305L11.9825 5.04507L16.7838 3.83503L18.1308 7.84749L13.7135 10.1305Z" fill="currentColor"/>
-                </g>
-                <defs>
-                <clipPath id="clip0_991_314">
-                <rect width="20" height="20" fill="white"/>
-                </clipPath>
-                </defs>
-                </svg>
-                <p
-                  className={`text-xs text-outfit ${pendingLocationAction === "shoot" ? "text-[#CDA745]" : "text-muted-foreground"}`}
-                >
-                  Shoot
-                </p>
-              </div>
-              
-            </div>
-          </div>
-
-          {/* Climb row: auto shows Start Climb / Fail; teleop shows L1/L2/L3 or Fail Climb */}
-          <div className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}>
-            {isAuto ? (
-              autoClimbActive ? (
+              {/* Teleop only: Stocking + Pass same size, together = Intake row width */}
+              {!isAuto && (
                 <div
-                  onClick={handleAutoClimbFail}
-                  className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#4ADE80]"
+                  className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
                 >
-                  <p className="text-xs text-outfit text-[#4ADE80]">Fail</p>
-                </div>
-              ) : (
-                <div
-                  onClick={handleAutoClimbStart}
-                  className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
-                >
-                  <div className="flex items-center gap-0">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-muted-foreground w-6 h-6">
-                      <path d="M8 3V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M16 3V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M8 14H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M8 10H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M8 6H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M8 18H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    <p className="text-xs text-outfit text-muted-foreground">Start Climb</p>
-                  </div>
-                </div>
-              )
-            ) : teleopClimbActive ? (
-              <div
-                onClick={handleTeleopClimbFail}
-                className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#4ADE80]"
-              >
-                <p className="text-xs text-outfit text-[#4ADE80]">Fail Climb</p>
-              </div>
-            ) : (
-              <>
-                {(['L1', 'L2', 'L3'] as const).map((level) => (
                   <div
-                    key={level}
-                    onClick={() => handleTeleopClimbStart(level)}
-                    className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+                    onClick={() => addPresetAction("stationStocked")}
+                    className="flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-125 cursor-pointer active:scale-[0.75] border-2 border-[#1E1E1E]"
                   >
-                    <p className="text-xs text-outfit text-muted-foreground">{level}</p>
+                    <p className="text-xs text-outfit text-muted-foreground truncate">
+                      Stock
+                    </p>
                   </div>
-                ))}
-              </>
-            )}
-          </div>
-          </div>{/* end inner wrapper */}
+                  <div
+                    onClick={() => startLocationAction("passing")}
+                    className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                      pendingLocationAction === "passing"
+                        ? "border-2 border-[#CDA745]"
+                        : "border-2 border-[#1E1E1E]"
+                    }`}
+                  >
+                    <p
+                      className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                    >
+                      Pass
+                    </p>
+                  </div>
+                </div>
+              )}
 
-          {/* Defend mode buttons — overlaid when defending */}
-          {isDefending && (
-            <div className="absolute inset-0 flex flex-col h-full gap-2.5">
-              {/* Block — top half, full width, hold to record */}
+              {/* Intake + Pass (auto) - same layout as Stocking+Pass */}
               <div
-                className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 select-none cursor-pointer transition-all duration-100 ${
-                  blockHeld
-                    ? "border-primary"
-                    : "border-[#1E1E1E]"
-                }`}
-                onPointerDown={handleBlockDown}
-                onPointerUp={handleBlockUp}
-                onPointerCancel={handleBlockUp}
-                onPointerLeave={handleBlockUp}
+                className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
               >
-                <span className="text-2xl font-black text-foreground select-none leading-none">✕</span>
-                <span className="text-xs text-outfit text-muted-foreground mt-1">block</span>
+                <div
+                  onClick={() => startLocationAction("groundIntake")}
+                  className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                    pendingLocationAction === "groundIntake"
+                      ? "border-2 border-[#CDA745]"
+                      : "border-2 border-[#1E1E1E]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {!isAuto && (
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="text-muted-foreground"
+                      >
+                        <g clipPath="url(#clip0_755_311)">
+                          <rect
+                            x="9"
+                            width="2"
+                            height="2.5"
+                            fill="currentColor"
+                          />
+                          <rect
+                            x="8"
+                            y="1"
+                            width="4"
+                            height="2"
+                            fill="currentColor"
+                          />
+                          <path
+                            d="M10 4H6.5L3 9.76L6.5 16"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          />
+                          <path
+                            d="M10 4H13.5L17 9.76L13.5 16"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          />
+                          <circle
+                            cx="10"
+                            cy="16"
+                            r="3.75"
+                            fill="currentColor"
+                          />
+                        </g>
+                        <defs>
+                          <clipPath id="clip0_755_311">
+                            <rect width="20" height="20" fill="white" />
+                          </clipPath>
+                        </defs>
+                      </svg>
+                    )}
+                    <p
+                      className={`text-xs text-outfit ${pendingLocationAction === "groundIntake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                    >
+                      Intake
+                    </p>
+                  </div>
+                </div>
+
+                {isAuto && (
+                  <div
+                    onClick={() => startLocationAction("passing")}
+                    className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                      pendingLocationAction === "passing"
+                        ? "border-2 border-[#CDA745]"
+                        : "border-2 border-[#1E1E1E]"
+                    }`}
+                  >
+                    <p
+                      className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                    >
+                      Pass
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {/* Camp + Disrupt — bottom half */}
-              <div className="flex-1 flex gap-2.5">
+              <div
+                className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
+              >
                 <div
-                  className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
-                    pendingLocationAction === "camp" ? "border-primary" : "border-[#1E1E1E]"
+                  onClick={() => startLocationAction("shoot")}
+                  className={`flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                    pendingLocationAction === "shoot"
+                      ? "border-2 border-[#CDA745]"
+                      : "border-2 border-[#1E1E1E]"
                   }`}
-                  onClick={() => setPendingLocationAction(pendingLocationAction === "camp" ? null : "camp")}
                 >
-                  <p className={`text-xs text-outfit ${pendingLocationAction === "camp" ? "text-primary" : "text-muted-foreground"}`}>
-                    Camp
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="text-muted-foreground"
+                    >
+                      <g clipPath="url(#clip0_991_314)">
+                        <path
+                          d="M6.23389 13.9007C6.23389 14.5578 6.7685 15.0924 7.42567 15.0924C8.08284 15.0924 8.61739 14.5578 8.61739 13.9007C8.61739 13.2435 8.08284 12.709 7.42567 12.709C6.7685 12.709 6.23389 13.2435 6.23389 13.9007ZM7.54298 13.9007C7.54298 13.9653 7.49039 14.0179 7.42574 14.0179C7.36103 14.0179 7.30843 13.9653 7.30843 13.9007C7.30843 13.836 7.36103 13.7834 7.42574 13.7834C7.49032 13.7834 7.54298 13.836 7.54298 13.9007Z"
+                          fill="currentColor"
+                        />
+                        <path
+                          d="M19.9652 9.11853L17.4326 1.63631C17.3167 1.29396 16.9453 1.11012 16.6029 1.22621C16.2605 1.3421 16.0768 1.71355 16.1928 2.05598L16.3731 2.58857L5.52066 5.32358C5.37783 4.22763 4.58477 2.87106 2.73083 2.87106C2.36935 2.87106 2.07628 3.16419 2.07628 3.5256C2.07628 3.88702 2.36928 4.18015 2.73083 4.18015C3.36234 4.18015 3.7717 4.39833 4.01911 4.86675C4.18982 5.18991 4.22638 5.53153 4.23406 5.64783L3.43992 5.84796C3.42369 5.8522 3.40753 5.85692 3.39157 5.86217C0.791435 6.73503 -0.613885 9.56069 0.259044 12.1608C0.716283 13.5228 1.72059 14.584 2.97837 15.1351L2.76618 15.5026C2.29433 16.3198 2.23635 17.1566 2.60692 17.7985C2.9775 18.4402 3.73117 18.8084 4.6748 18.8084L10.1331 18.8083C11.0767 18.8083 11.8304 18.4402 12.2009 17.7984C12.5715 17.1566 12.5135 16.3197 12.0417 15.5026L10.6922 13.1653L18.5744 9.09187L18.7255 9.53827C18.8179 9.81113 19.0724 9.98305 19.3454 9.98305C19.4149 9.98305 19.4857 9.97187 19.5553 9.9483C19.8976 9.83241 20.0812 9.46096 19.9652 9.11853ZM11.0673 17.1439C10.9369 17.3697 10.5964 17.4992 10.1331 17.4992L4.67473 17.4993C4.21137 17.4993 3.87083 17.3697 3.74053 17.1439C3.61002 16.918 3.66814 16.5583 3.89979 16.1571L6.62894 11.4303C6.86053 11.029 7.14302 10.7989 7.40389 10.7989C7.6647 10.7989 7.94713 11.029 8.17878 11.4303L10.9079 16.1571C11.1396 16.5583 11.1976 16.918 11.0673 17.1439ZM9.31245 10.7757C8.84066 9.95853 8.14497 9.48985 7.40389 9.48985C6.66275 9.48985 5.96706 9.95853 5.49527 10.7757L3.63857 13.9916C2.64908 13.6043 1.85305 12.796 1.49999 11.7443C0.859314 9.83591 1.88389 7.76291 3.78531 7.11086L10.7089 5.36601L12.5375 10.7381L10.0369 12.0305L9.31245 10.7757ZM13.7135 10.1305L11.9825 5.04507L16.7838 3.83503L18.1308 7.84749L13.7135 10.1305Z"
+                          fill="currentColor"
+                        />
+                      </g>
+                      <defs>
+                        <clipPath id="clip0_991_314">
+                          <rect width="20" height="20" fill="white" />
+                        </clipPath>
+                      </defs>
+                    </svg>
+                    <p
+                      className={`text-xs text-outfit ${pendingLocationAction === "shoot" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                    >
+                      Shoot
+                    </p>
+                  </div>
                 </div>
-                <div
-                  className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
-                    pendingLocationAction === "disrupt" ? "border-primary" : "border-[#1E1E1E]"
-                  }`}
-                  onClick={() => setPendingLocationAction(pendingLocationAction === "disrupt" ? null : "disrupt")}
-                >
-                  <p className={`text-xs text-outfit ${pendingLocationAction === "disrupt" ? "text-primary" : "text-muted-foreground"}`}>
-                    Disrupt
-                  </p>
-                </div>
+              </div>
+
+              {/* Climb row: auto shows Start Climb / Fail; teleop shows L1/L2/L3 or Fail Climb */}
+              <div
+                className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
+              >
+                {isAuto ? (
+                  autoClimbActive ? (
+                    <div
+                      onClick={handleAutoClimbFail}
+                      className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#4ADE80]"
+                    >
+                      <p className="text-xs text-outfit text-[#4ADE80]">Fail</p>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={handleAutoClimbStart}
+                      className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+                    >
+                      <div className="flex items-center gap-0">
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="text-muted-foreground w-6 h-6"
+                        >
+                          <path
+                            d="M8 3V21"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M16 3V21"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M8 14H16"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M8 10H16"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M8 6H16"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M8 18H16"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <p className="text-xs text-outfit text-muted-foreground">
+                          Start Climb
+                        </p>
+                      </div>
+                    </div>
+                  )
+                ) : teleopClimbActive ? (
+                  <div
+                    onClick={handleTeleopClimbFail}
+                    className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#4ADE80]"
+                  >
+                    <p className="text-xs text-outfit text-[#4ADE80]">
+                      Fail Climb
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {(["L1", "L2", "L3"] as const).map((level) => (
+                      <div
+                        key={level}
+                        onClick={() => handleTeleopClimbStart(level)}
+                        className="flex justify-center items-center w-full h-full gap-5 p-2.5 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] border-2 border-[#1E1E1E]"
+                      >
+                        <p className="text-xs text-outfit text-muted-foreground">
+                          {level}
+                        </p>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
-          )}
-        </div>{/* end 21.5vw panel */}
+            {/* end inner wrapper */}
 
+            {/* Defend mode buttons — overlaid when defending */}
+            {isDefending && (
+              <div className="absolute inset-0 flex flex-col h-full gap-2.5">
+                {/* Block — top half, full width, hold to record */}
+                <div
+                  className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 select-none cursor-pointer transition-all duration-100 ${
+                    blockHeld ? "border-primary" : "border-[#1E1E1E]"
+                  }`}
+                  onPointerDown={handleBlockDown}
+                  onPointerUp={handleBlockUp}
+                  onPointerCancel={handleBlockUp}
+                  onPointerLeave={handleBlockUp}
+                >
+                  <span className="text-2xl font-black text-foreground select-none leading-none">
+                    ✕
+                  </span>
+                  <span className="text-xs text-outfit text-muted-foreground mt-1">
+                    block
+                  </span>
+                </div>
 
-      </div>
-      <div className="flex flex-col justify-start items-center w-[10vw] shrink-0 h-full px-6 py-2.5 rounded-[10px] gap-2.5 border-2 border-[#1E1E1E]">
+                {/* Camp + Disrupt — bottom half */}
+                <div className="flex-1 flex gap-2.5">
+                  <div
+                    className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+                      pendingLocationAction === "camp"
+                        ? "border-primary"
+                        : "border-[#1E1E1E]"
+                    }`}
+                    onClick={() =>
+                      setPendingLocationAction(
+                        pendingLocationAction === "camp" ? null : "camp"
+                      )
+                    }
+                  >
+                    <p
+                      className={`text-xs text-outfit ${pendingLocationAction === "camp" ? "text-primary" : "text-muted-foreground"}`}
+                    >
+                      Camp
+                    </p>
+                  </div>
+                  <div
+                    className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
+                      pendingLocationAction === "disrupt"
+                        ? "border-primary"
+                        : "border-[#1E1E1E]"
+                    }`}
+                    onClick={() =>
+                      setPendingLocationAction(
+                        pendingLocationAction === "disrupt" ? null : "disrupt"
+                      )
+                    }
+                  >
+                    <p
+                      className={`text-xs text-outfit ${pendingLocationAction === "disrupt" ? "text-primary" : "text-muted-foreground"}`}
+                    >
+                      Disrupt
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* end 21.5vw panel */}
+        </div>
+        <div className="flex flex-col justify-start items-center w-[10vw] shrink-0 h-full px-6 py-2.5 rounded-[10px] gap-2.5 border-2 border-[#1E1E1E]">
           {countdown !== null ? (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-6xl font-bold text-[#4ADE80] animate-pulse font-mono w-[60px] text-center">
-        {countdown}
-      </p>
+                {countdown}
+              </p>
             </div>
           ) : (
             <>
@@ -1324,8 +1511,7 @@ function MatchPlay() {
             <p className="text-sm font-medium">{toastMessage}</p>
           </div>
         )}
-    </div>
-        
+      </div>
     </>
   );
 }

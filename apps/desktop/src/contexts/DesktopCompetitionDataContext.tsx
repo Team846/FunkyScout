@@ -18,6 +18,11 @@ import {
   type EventScheduleEntry,
   type MatchScoutingData,
 } from "../lib/db";
+import {
+  getNexusEventStatus,
+  buildNexusTimeMap,
+  type NexusMatch,
+} from "@lib/nexus";
 
 export type { MatchScoutingData };
 
@@ -77,6 +82,7 @@ export interface Picklist {
 interface DesktopCompetitionDataContextType {
   schedule: ScheduleEntry[];
   tbaSchedule: Record<string, TBAMatchData>;
+  nexusMatches: NexusMatch[];
   picklists: Picklist[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   matchScoutingData: MatchScoutingData[];
@@ -99,14 +105,12 @@ export function DesktopCompetitionDataProvider({
   const { registerRefreshCallback } = useDesktopRealtime();
 
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
-  const [tbaSchedule, setTbaSchedule] = useState<Record<string, TBAMatchData>>(
-    {}
-  );
   const [picklists, setPicklists] = useState<Picklist[]>([]);
   const [tbaClimbData, setTbaClimbData] = useState<Record<string, Record<string, TbaClimbEntry>>>({});
   const [matchScoutingData, setMatchScoutingData] = useState<MatchScoutingData[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastDataRefreshAt, setLastDataRefreshAt] = useState(0);
+  const [nexusMatches, setNexusMatches] = useState<NexusMatch[]>([]);
 
   const hasLoadedDataRef = useRef(false);
   const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
@@ -129,11 +133,19 @@ export function DesktopCompetitionDataProvider({
       predicted_blue_score: s.predicted_blue_score,
     }));
     setSchedule(entries);
+  };
 
+  /**
+   * tbaSchedule: derived from schedule + Nexus timing overlay.
+   * Nexus est_time (seconds) takes priority; TBA est_time is fallback.
+   * Team composition always comes from TBA schedule — never from Nexus.
+   */
+  const tbaSchedule = useMemo(() => {
+    const nexusTimeMap = buildNexusTimeMap(nexusMatches, currentEvent ?? "");
     const matchData: Record<string, TBAMatchData> = {};
-    entries.forEach((entry) => {
+    schedule.forEach((entry) => {
       if (!matchData[entry.match]) {
-        const matchEntries = entries.filter((e) => e.match === entry.match);
+        const matchEntries = schedule.filter((e) => e.match === entry.match);
         matchData[entry.match] = {
           redTeams: matchEntries
             .filter((e) => e.alliance === "red")
@@ -141,7 +153,7 @@ export function DesktopCompetitionDataProvider({
           blueTeams: matchEntries
             .filter((e) => e.alliance === "blue")
             .map((e) => e.team),
-          est_time: entry.est_time ?? 0,
+          est_time: nexusTimeMap[entry.match] ?? entry.est_time ?? 0,
           redScore: entry.red_score ?? null,
           blueScore: entry.blue_score ?? null,
           red_win_prob: entry.red_win_prob,
@@ -150,8 +162,8 @@ export function DesktopCompetitionDataProvider({
         };
       }
     });
-    setTbaSchedule(matchData);
-  };
+    return matchData;
+  }, [schedule, nexusMatches, currentEvent]);
 
   /**
    * Read schedule, picklists, and climb data from local SQLite cache.
@@ -208,7 +220,7 @@ export function DesktopCompetitionDataProvider({
   useEffect(() => {
     if (!currentEvent) {
       setSchedule([]);
-      setTbaSchedule({});
+      setNexusMatches([]);
       setPicklists([]);
       setTbaClimbData({});
       setMatchScoutingData([]);
@@ -264,6 +276,28 @@ export function DesktopCompetitionDataProvider({
     return () => clearInterval(timer);
   }, [currentEvent]);
 
+  // Poll Nexus every 60s for live match timing.
+  // Nexus est_time overlays TBA est_time in tbaSchedule (via useMemo above).
+  // No Supabase writes — UI layer only.
+  useEffect(() => {
+    if (!currentEvent) return;
+
+    const fetchNexus = async () => {
+      try {
+        const data = await getNexusEventStatus(currentEvent);
+        if (data) {
+          setNexusMatches(data.matches);
+        }
+      } catch {
+        // Non-fatal: Nexus unavailable
+      }
+    };
+
+    fetchNexus(); // Immediate fetch on event load
+    const timer = setInterval(fetchNexus, 60_000);
+    return () => clearInterval(timer);
+  }, [currentEvent]);
+
   // Register refresh callback for realtime updates (when realtime is re-enabled)
   useEffect(() => {
     if (!currentEvent) return;
@@ -290,6 +324,7 @@ export function DesktopCompetitionDataProvider({
     () => ({
       schedule,
       tbaSchedule,
+      nexusMatches,
       picklists,
       tbaClimbData,
       matchScoutingData,
@@ -298,7 +333,7 @@ export function DesktopCompetitionDataProvider({
       refresh,
       refreshFromCache,
     }),
-    [schedule, tbaSchedule, picklists, tbaClimbData, matchScoutingData, loading, lastDataRefreshAt, refresh, refreshFromCache]
+    [schedule, tbaSchedule, nexusMatches, picklists, tbaClimbData, matchScoutingData, loading, lastDataRefreshAt, refresh, refreshFromCache]
   );
 
   return (

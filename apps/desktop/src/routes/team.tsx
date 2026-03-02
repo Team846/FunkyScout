@@ -207,8 +207,8 @@ function TeamPage() {
               const movement = d.movement as { bump?: boolean; trough?: boolean } | undefined;
               const intake = d.intake as { ground?: boolean; outpost?: boolean; stocking?: boolean } | undefined;
               const fuel = d.fuel as { shootMoving?: boolean; passing?: boolean; bps?: string; capacity?: string } | undefined;
-              const autoClimb = d.autoClimb as { level?: string | null; orientation?: string | null; declimbTime?: string } | undefined;
-              const teleopClimb = d.teleopClimb as { level?: string | null; orientation?: string | null } | undefined;
+              const autoClimb = d.autoClimb as { level?: string | null; orientation?: string[]; declimbTime?: string } | undefined;
+              const teleopClimb = d.teleopClimb as { level?: string[]; orientation?: string[] } | undefined;
               const chips: string[] = [];
               if (movement?.bump) chips.push("Bump");
               if (movement?.trough) chips.push("Trough");
@@ -217,7 +217,7 @@ function TeamPage() {
               if (intake?.stocking) chips.push("Stocking");
               if (fuel?.shootMoving) chips.push("Shoot Moving");
               if (fuel?.passing) chips.push("Passing");
-              const hasInfo = chips.length > 0 || fuel?.bps || fuel?.capacity || autoClimb?.level || teleopClimb?.level;
+              const hasInfo = chips.length > 0 || fuel?.bps || fuel?.capacity || autoClimb?.level || (teleopClimb?.level?.length ?? 0) > 0;
               if (!hasInfo) return null;
               return (
                 <div>
@@ -237,13 +237,13 @@ function TeamPage() {
                     {fuel?.bps && <span>Balls/sec: <span className="text-foreground">{fuel.bps}</span></span>}
                     {fuel?.capacity && <span>Ball capacity: <span className="text-foreground">{fuel.capacity}</span></span>}
                     {autoClimb?.level && autoClimb.level !== "None" && (
-                      <span>Auto climb: <span className="text-foreground">{autoClimb.level}{autoClimb.orientation ? ` (${autoClimb.orientation})` : ""}{autoClimb.declimbTime ? `, ${autoClimb.declimbTime}s declimb` : ""}</span></span>
+                      <span>Auto climb: <span className="text-foreground">{autoClimb.level}{(autoClimb.orientation?.length ?? 0) > 0 ? ` (${autoClimb.orientation!.join(", ")})` : ""}{autoClimb.declimbTime ? `, ${autoClimb.declimbTime}s declimb` : ""}</span></span>
                     )}
                     {autoClimb?.level === "None" && (
                       <span>Auto climb: <span className="text-foreground">None</span></span>
                     )}
-                    {teleopClimb?.level && (
-                      <span>Teleop climb: <span className="text-foreground">{teleopClimb.level}{teleopClimb.orientation ? ` (${teleopClimb.orientation})` : ""}</span></span>
+                    {(teleopClimb?.level?.length ?? 0) > 0 && (
+                      <span>Teleop climb: <span className="text-foreground">{teleopClimb!.level!.join(", ")}{(teleopClimb!.orientation?.length ?? 0) > 0 ? ` (${teleopClimb!.orientation!.join(", ")})` : ""}</span></span>
                     )}
                   </div>
                 </div>
