@@ -136,6 +136,7 @@ pub fn run() {
             commands::tba::fetch_tba_team_statuses,
             commands::tba::fetch_tba_match_schedule,
             commands::tba::bootstrap_event_schedule,
+            commands::tba::bootstrap_from_csv,
             commands::config::save_config,
             commands::config::get_config,
             commands::config::set_user_jwt,
