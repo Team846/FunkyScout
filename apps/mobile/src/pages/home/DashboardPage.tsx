@@ -14,6 +14,7 @@ import { getLocalUserData } from "@lib/supabase/user";
 import { useTeamData, type Team } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { useAnalytics } from "@lib/context/AnalyticsDataContext";
+import { nexusLabelToMatchKey } from "@lib/nexus";
 import type { NexusMatch } from "@lib/nexus";
 import { PicklistSelector } from "../../components/PicklistSelector";
 import { canCreatePicklist } from "@lib/utils/permissions";
@@ -66,25 +67,6 @@ const formatTimeAgo = (timestamp: number) => {
   return `${days}d ago`;
 };
 
-// Convert Nexus label (e.g., "Qualification 24") to Statbotics key suffix (e.g., "qm24")
-const nexusLabelToMatchKey = (label: string): string => {
-  const lower = label.toLowerCase();
-
-  // Qualification matches: "Qualification 24" -> "qm24"
-  const qualMatch = lower.match(/qualification\s*(\d+)/);
-  if (qualMatch) return `qm${qualMatch[1]}`;
-
-  // Playoff/Semifinal matches: "Playoff 1" -> "sf1m1" (simplified)
-  const playoffMatch = lower.match(/playoff\s*(\d+)/);
-  if (playoffMatch) return `sf1m${playoffMatch[1]}`;
-
-  // Finals: "Final 1" -> "f1m1"
-  const finalMatch = lower.match(/final\s*(\d+)/);
-  if (finalMatch) return `f1m${finalMatch[1]}`;
-
-  // Fallback: just remove spaces and lowercase
-  return lower.replace(/\s+/g, "");
-};
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -176,17 +158,21 @@ export function DashboardPage() {
               a.times.estimatedStartTime - b.times.estimatedStartTime
           )[0];
 
-          const isOnRed = ourMatch.redTeams.includes(ourTeamStr);
-          const redTeamNums = ourMatch.redTeams.map((t: string) =>
-            parseInt(t, 10)
-          );
-          const blueTeamNums = ourMatch.blueTeams.map((t: string) =>
-            parseInt(t, 10)
-          );
-
-          // Convert Nexus label to Statbotics key
+          // Nexus is only used for timing — get teams from TBA schedule
           const matchKeySuffix = nexusLabelToMatchKey(ourMatch.label);
           const matchKey = `${currentEvent}_${matchKeySuffix}`;
+          const tbaMatch = tbaSchedule[matchKey];
+
+          // Teams and alliance from TBA schedule; fall back to Nexus if schedule not loaded yet
+          const isOnRed = tbaMatch
+            ? tbaMatch.redTeams.includes(`frc${ourTeamStr}`)
+            : ourMatch.redTeams.includes(ourTeamStr);
+          const redTeamNums = (
+            tbaMatch ? tbaMatch.redTeams : ourMatch.redTeams
+          ).map((t: string) => parseInt(t.replace("frc", ""), 10));
+          const blueTeamNums = (
+            tbaMatch ? tbaMatch.blueTeams : ourMatch.blueTeams
+          ).map((t: string) => parseInt(t.replace("frc", ""), 10));
 
           // Use predictions from context
           let winProb: number | null = null;

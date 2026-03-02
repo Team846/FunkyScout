@@ -86,7 +86,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { currentEvent, setCurrentEvent, useTbaClimb, setUseTbaClimb } =
     useDesktopEvent();
   const { teams, refresh: refreshTeams } = useDesktopTeamData();
-  const { refresh: refreshCompetitionData } = useDesktopCompetitionData();
+  const { refresh: refreshCompetitionData, tbaSchedule, nexusMatches } = useDesktopCompetitionData();
+  const nexusActive = nexusMatches.length > 0 &&
+    Object.values(tbaSchedule).some((m) => m.est_time > 0);
   const { forceSyncNow } = useDesktopSync();
 
   const [events, setEvents] = useState<EventListEntry[]>([]);
@@ -803,6 +805,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <h4 className="text-sm font-semibold text-foreground">
                       Data Settings
                     </h4>
+
+                    {/* Nexus / TBA timing indicator */}
+                    <div className="flex items-center gap-2 rounded-md bg-background px-3 py-2">
+                      <span className={`h-2 w-2 rounded-full flex-shrink-0 ${nexusActive ? "bg-green-500" : "bg-yellow-500"}`} />
+                      <span className="text-xs text-muted-foreground">
+                        {nexusActive ? "Match times from Nexus" : "Match times from TBA"}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">

@@ -17,7 +17,7 @@ import {
   syncShiftAssignments,
 } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
-import { getNexusEventStatus, type NexusMatch } from "@lib/nexus";
+import { getNexusEventStatus, buildNexusTimeMap, type NexusMatch } from "@lib/nexus";
 import type {
   EventPicklist as SupabaseEventPicklist,
 } from "../data/schema";
@@ -588,17 +588,33 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     };
   }, [registerRefreshCallback, refresh]);
 
+  // Overlay Nexus timing onto tbaSchedule. Nexus est_time takes priority;
+  // TBA est_time is fallback. Team composition always from TBA — never Nexus.
+  const tbaScheduleWithNexus = useMemo(() => {
+    if (nexusMatches.length === 0) return tbaSchedule;
+    const nexusTimeMap = buildNexusTimeMap(nexusMatches, currentEvent ?? "");
+    if (Object.keys(nexusTimeMap).length === 0) return tbaSchedule;
+    const overlaid: Record<string, TBAMatchData> = {};
+    for (const [matchKey, matchData] of Object.entries(tbaSchedule)) {
+      overlaid[matchKey] = {
+        ...matchData,
+        est_time: nexusTimeMap[matchKey] ?? matchData.est_time,
+      };
+    }
+    return overlaid;
+  }, [tbaSchedule, nexusMatches, currentEvent]);
+
   // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
     () => ({
       schedule,
-      tbaSchedule,
+      tbaSchedule: tbaScheduleWithNexus,
       nexusMatches,
       loading,
       initialLoading,
       refresh,
     }),
-    [schedule, tbaSchedule, nexusMatches, loading, initialLoading, refresh]
+    [schedule, tbaScheduleWithNexus, nexusMatches, loading, initialLoading, refresh]
   );
 
   return (

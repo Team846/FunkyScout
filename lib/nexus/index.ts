@@ -2,7 +2,7 @@
 export { fetchNexusData } from "./fetch";
 
 // Event functions
-export { getNexusEventStatus } from "./event";
+export { getNexusEventStatus, nexusLabelToMatchKey, buildNexusTimeMap } from "./event";
 export type {
   NexusEvent,
   NexusMatch,
