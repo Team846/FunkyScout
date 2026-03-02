@@ -63,7 +63,7 @@ export const Route = createFileRoute("/match_edit_stats")({
 });
 
 function MatchEditStats() {
-  const { isWrongOrientation } = useOrientation("portrait");
+  const { isWrongOrientation, requestFullscreenAndLock } = useOrientation("portrait");
   const navigate = useNavigate();
   const { teamNum, matchNum, alliance, practice, fromView, fromMatchEnd } = Route.useSearch();
   const { currentEvent } = useEvent();
@@ -667,7 +667,10 @@ function MatchEditStats() {
   return (
     <>
       {isWrongOrientation && (
-        <RotateDevicePrompt message="Please rotate to portrait mode to edit match data" />
+        <RotateDevicePrompt
+          message="Please rotate to portrait mode to edit match data"
+          onRequestRotation={requestFullscreenAndLock}
+        />
       )}
       <div className="flex flex-col w-screen h-screen gap-5 px-5 pb-5 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]">
         {/* Header */}

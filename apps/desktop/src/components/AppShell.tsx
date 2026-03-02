@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Calendar,
   ListOrdered,
-  Play,
   GitCompare,
   CalendarClock,
   Cloud,
@@ -54,6 +53,8 @@ import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopSync } from "../contexts/DesktopSyncContext";
+import { MatchPickerDialog } from "./MatchPickerDialog";
+import { TeamPickerDialog } from "./TeamPickerDialog";
 import supabase from "@lib/supabase/supabase";
 import {
   getLocalUserData,
@@ -71,7 +72,6 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard", activePaths: ["/dashboard"] },
   { icon: Calendar, label: "Shifts", path: "/shifts", activePaths: ["/shifts"] },
   { icon: ListOrdered, label: "Picklists", path: "/picklists", activePaths: ["/picklists", "/picklist-open"] },
-  { icon: Play, label: "Matches", path: "/matches", activePaths: ["/matches"] },
   { icon: CalendarClock, label: "Scheduler", path: "/scheduler", activePaths: ["/scheduler"] },
   { icon: GitCompare, label: "Comparisons", path: "/comparison", activePaths: ["/comparison"] },
 ];
@@ -109,6 +109,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [bootstrapEventKey, setBootstrapEventKey] = useState("");
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
+
+  const [showMatchPicker, setShowMatchPicker] = useState(false);
+  const [showTeamPicker, setShowTeamPicker] = useState(false);
 
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem("theme") !== "light";
@@ -176,6 +179,30 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [tabs.length, activeTabId, closeTab]);
+
+  // Cmd+Shift+M (Mac) / Ctrl+Shift+M (Windows) to open match picker popup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "m") {
+        e.preventDefault();
+        setShowMatchPicker(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Cmd+Shift+T (Mac) / Ctrl+Shift+T (Windows) to open team picker popup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        setShowTeamPicker(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const fetchEvents = async () => {
     try {
@@ -397,6 +424,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MatchPickerDialog open={showMatchPicker} onOpenChange={setShowMatchPicker} />
+      <TeamPickerDialog open={showTeamPicker} onOpenChange={setShowTeamPicker} />
 
       <div className="h-screen flex overflow-hidden bg-background">
         {/* Left Icon Sidebar */}

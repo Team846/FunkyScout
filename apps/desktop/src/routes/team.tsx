@@ -110,6 +110,14 @@ function TeamPage() {
     () => matchScoutingData.filter((m) => m.team === teamKey).sort((a, b) => a.match.localeCompare(b.match)),
     [matchScoutingData, teamKey]
   );
+  const teamNotes = useMemo(() => {
+    const d = teamPitData?.data;
+    if (!d || typeof d !== "object") return null;
+    const notes = (d as Record<string, unknown>).description ?? (d as Record<string, unknown>).notes;
+    if (notes == null) return null;
+    const s = typeof notes === "string" ? notes : String(notes);
+    return s.trim() || null;
+  }, [teamPitData]);
 
   const handleBack = useCallback(() => {
     closeTab(`team-${teamKey}`);
@@ -241,6 +249,20 @@ function TeamPage() {
                 </div>
               );
             })()}
+
+            {/* Notes about the team (from pit scouting) */}
+            <div>
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                Notes about the team
+              </h2>
+              {teamNotes ? (
+                <p className="text-sm text-foreground whitespace-pre-wrap rounded-lg bg-muted/40 p-3 border border-border">
+                  {teamNotes}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No notes recorded</p>
+              )}
+            </div>
 
             {/* Autonomous routines */}
             {teamPitData && <div>
