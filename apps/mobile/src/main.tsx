@@ -19,6 +19,18 @@ declare module "@tanstack/react-router" {
   }
 }
 
+// When a new service worker activates via skipWaiting() + clients.claim(), reload the page
+// so the new JS bundles take effect. VitePWA's autoUpdate waits for state==='installed'
+// which skipWaiting() bypasses — this controllerchange listener is the correct hook.
+if ("serviceWorker" in navigator) {
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+}
+
 // Render the app
 const rootElement = document.getElementById("root")!;
 if (!rootElement.innerHTML) {

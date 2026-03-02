@@ -342,7 +342,7 @@ export function ScoutingPage() {
                 }
                 const matchLabel = (() => {
                   const qmMatch = nextShift.matchLabel.match(/^QM\s*(\d+)$/i);
-                  if (qmMatch) return `Qualification ${qmMatch[1]}`;
+                  if (qmMatch) return `Qual ${qmMatch[1]}`;
                   return nextShift.matchLabel;
                 })();
                 const teamInfo = teams.find(

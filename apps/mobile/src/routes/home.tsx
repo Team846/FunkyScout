@@ -392,7 +392,7 @@ function HomePage() {
                   onClick={() => setCheatSheetOpen(true)}
                 >
                   <span className="text-md text-muted-foreground">
-                    Cheat Sheet
+                    Game Info
                   </span>
                 </Button>
               </div>
