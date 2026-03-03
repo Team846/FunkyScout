@@ -10,6 +10,7 @@ import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
 import { Search, ChevronLeft, ChevronRight, CornerDownLeft, Maximize2, ExternalLink } from "lucide-react";
+import React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Input } from "@shadcn/ui/components/input.tsx";
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/matches")({
   component: MatchesPage,
   validateSearch: (search: Record<string, unknown>) => ({
     match: (search.match as string) || "",
+    mode: (search.mode as string) || undefined, // "prediction" to force prediction view
   }),
 });
 
@@ -31,28 +33,39 @@ const FIELD_WIDTH = 652;
 const FIELD_HEIGHT = 318;
 const AUTO_END_MS = 20_000;
 
+interface ClimbInfo {
+  hasAutoClimb: boolean;
+  autoClimbTime: number | null;      // seconds robot climbed in auto (20 - start time)
+  autoClimbOrientation: "left" | "right" | "center" | null;
+  level: "L1" | "L2" | "L3" | null; // final teleop climb level
+  teleopClimbTime: number | null;    // seconds robot climbed in teleop (140 - start time)
+  teleopClimbOrientation: "left" | "right" | "center" | null;
+  failedClimbCount: number;          // teleop failed climb attempts
+  dismountTime: number | null;       // seconds from teleop start (11 = timeout)
+}
+
 const ACTION_STYLE: Record<string, { fill: string; shape: "circle" | "square" | "diamond" | "triangle" | "star" }> = {
-  groundIntake:   { fill: "#22c55e", shape: "circle" },
-  passing:        { fill: "#3b82f6", shape: "square" },
-  shoot:          { fill: "#ef4444", shape: "diamond" },
-  stationIntake:  { fill: "#a855f7", shape: "square" },
+  ground_intake: { fill: "#22c55e", shape: "circle" },
+  groundIntake: { fill: "#22c55e", shape: "circle" },
+  passing: { fill: "#3b82f6", shape: "square" },
+  shoot: { fill: "#ef4444", shape: "diamond" },
+  station_intake: { fill: "#a855f7", shape: "square" },
+  stocking: { fill: "#f59e0b", shape: "diamond" },
   stationStocked: { fill: "#f59e0b", shape: "diamond" },
-  fuelScore1:     { fill: "#eab308", shape: "circle" },
-  fuelScore2:     { fill: "#eab308", shape: "circle" },
-  fuelScore5:     { fill: "#eab308", shape: "square" },
-  fuelScore8:     { fill: "#eab308", shape: "diamond" },
-  autoClimbL1:    { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL1:  { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL2:  { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL3:  { fill: "#06b6d4", shape: "triangle" },
-  autoDisable:    { fill: "#78716c", shape: "star" },
-  teleopDisable:  { fill: "#78716c", shape: "star" },
-  autoDefend:     { fill: "#f59e0b", shape: "star" },
-  teleopDefend:   { fill: "#f59e0b", shape: "star" },
-  block:          { fill: "#f59e0b", shape: "star" },
-  camp:           { fill: "#a855f7", shape: "circle" },
-  disrupt:        { fill: "#f97316", shape: "diamond" },
-  dropped:        { fill: "#78716c", shape: "circle" },
+  fuelScore1: { fill: "#eab308", shape: "circle" },
+  fuelScore2: { fill: "#eab308", shape: "circle" },
+  fuelScore5: { fill: "#eab308", shape: "square" },
+  fuelScore8: { fill: "#eab308", shape: "diamond" },
+  climb_L1: { fill: "#06b6d4", shape: "triangle" },
+  climb_L2: { fill: "#06b6d4", shape: "triangle" },
+  climb_L3: { fill: "#06b6d4", shape: "triangle" },
+  autoClimbL1: { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL1: { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL2: { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL3: { fill: "#06b6d4", shape: "triangle" },
+  disable: { fill: "#78716c", shape: "star" },
+  defend: { fill: "#f59e0b", shape: "star" },
+  dropped: { fill: "#78716c", shape: "circle" },
 };
 const DEFAULT_ACTION_STYLE = { fill: "#94a3b8", shape: "circle" as const };
 
@@ -105,7 +118,7 @@ function getActionLabel(
   actionId: string,
   schema: ReturnType<typeof getMatchActionSchema>
 ): string {
-  const def = getActionById(schema, actionId);
+  const def = getActionById(schema, actionId) ?? getActionById(schema, toCamelCase(actionId));
   return def?.label ?? actionId;
 }
 
@@ -120,9 +133,11 @@ interface Waypoint {
   y: number;
   timestamp: number;
   actionId?: string;
-  onOpponentField?: boolean;
 }
 
+function toCamelCase(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
 
 function parseStartPosition(raw: MatchDataRaw | null | undefined): { x: number; y: number } {
   let x = 0.5;
@@ -142,19 +157,8 @@ function parseStartPosition(raw: MatchDataRaw | null | undefined): { x: number; 
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
 }
 
-/**
- * Map canonical half-field coords [0,1]×[0,1] to full-field normalized coords [0,1]×[0,1].
- * fullfield.svg: red on LEFT (x=[0,0.5]), blue on RIGHT (x=[0.5,1]).
- * Canonical space is red-alliance orientation; blue actions are mirrored to appear on their half.
- */
-function toDisplayCoords(x: number, y: number, alliance: "red" | "blue") {
-  if (alliance === "red") {
-    return { x: x * 0.5, y };
-  } else {
-    // Blue canonical coords are stored in red orientation (mobile flips them);
-    // mirror x to place them on the right half.
-    return { x: 0.5 + (1 - x) * 0.5, y };
-  }
+function toDisplayCoords(x: number, y: number, _alliance: "red" | "blue") {
+  return { x, y };
 }
 
 /** Detect if timestamps are epoch ms (e.g. 1772006353418) vs match-relative ms (0-163000) */
@@ -167,100 +171,56 @@ function getActionLocation(
   schema: ReturnType<typeof getMatchActionSchema>
 ): { x: number; y: number } | null {
   if (a.location) return a.location;
-  const def = getActionById(schema, a.actionId);
+  const def = getActionById(schema, a.actionId) ?? getActionById(schema, toCamelCase(a.actionId));
   return def?.location ?? null;
 }
 
 function buildWaypoints(
   dataRaw: MatchDataRaw | null | undefined,
   schema: ReturnType<typeof getMatchActionSchema>,
-  phase: "auto" | "teleop" | "full",
-  alliance: "red" | "blue"
+  phase: "auto" | "teleop" | "full"
 ): Waypoint[] {
   if (!dataRaw) return [];
   const start = parseStartPosition(dataRaw);
-  // All waypoints are stored in full-field display coords [0,1]×[0,1] so that
-  // interpolation is seamless across own/opponent halves (no coordinate system switch mid-path).
-  const startDisp = toDisplayCoords(start.x, start.y, alliance);
   const autoActions = (dataRaw.autoActions || []).sort((a, b) => a.timestamp - b.timestamp);
   const teleopActions = (dataRaw.teleopActions || []).sort((a, b) => a.timestamp - b.timestamp);
-  const opponentAlliance: "red" | "blue" = alliance === "red" ? "blue" : "red";
 
   const isEpoch = useEpochTimestamps([...autoActions, ...teleopActions]);
 
-  // Toggle actions that anchor the robot position but do not render a blob on the field
-  const NO_BLOB_TOGGLES = new Set(["defend", "teleopDefend", "autoDefend", "disable", "teleopDisable", "autoDisable"]);
-
-  /** Orientation-based Y for climb: button order is R=top(0.25), C=mid(0.5), L=bottom(0.75) */
-  function climbDispY(isAutoAction: boolean): number {
-    const pm = (dataRaw as MatchDataRaw).postMatch;
-    const orientation = isAutoAction ? pm?.autoClimbOrientation : pm?.teleopClimbOrientation;
-    return orientation === "right" ? 0.25 : orientation === "left" ? 0.75 : 0.5;
-  }
-
-  /** Push the right waypoint(s) for a single action — coords are full-field display space */
-  function pushWaypoint(pts: Waypoint[], a: MatchAction, ts: number) {
-    if (a.actionId === "block") {
-      // Block: robot pins to center of opponent's half. Both start and end anchor there
-      // so interpolation out of block starts from opponent center (no teleport).
-      const blockDisp = toDisplayCoords(0.5, 0.5, opponentAlliance);
-      pts.push({ x: blockDisp.x, y: blockDisp.y, timestamp: ts, actionId: a.enabled !== false ? "block" : undefined });
-    } else if (a.actionId === "autoClimbL1") {
-      const disp = toDisplayCoords(0.05, climbDispY(true), alliance);
-      pts.push({ x: disp.x, y: disp.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
-    } else if (a.actionId.startsWith("teleopClimb")) {
-      const disp = toDisplayCoords(0.05, climbDispY(false), alliance);
-      pts.push({ x: disp.x, y: disp.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
-    } else if (NO_BLOB_TOGGLES.has(a.actionId)) {
-      // Defend/disable: anchor robot at last known position, no blob
-      const last = pts[pts.length - 1]!;
-      pts.push({ x: last.x, y: last.y, timestamp: ts });
-    } else {
-      const loc = getActionLocation(a, schema);
-      if (loc) {
-        const fieldAlliance = a.onOpponentField ? opponentAlliance : alliance;
-        const disp = toDisplayCoords(loc.x, loc.y, fieldAlliance);
-        pts.push({ x: disp.x, y: disp.y, timestamp: ts, actionId: a.actionId });
-      } else {
-        const last = pts[pts.length - 1]!;
-        pts.push({ x: last.x, y: last.y, timestamp: ts });
-      }
-    }
-  }
-
   if (phase === "auto") {
-    const pts: Waypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
-    // Subtract 1 from t0 so the start position occupies ts=0 and the first action is at ts≥1,
-    // ensuring the robot visibly begins at the start marker rather than snapping to the first action.
-    const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
+    const pts: Waypoint[] = [{ x: start.x, y: start.y, timestamp: 0 }];
+    const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) : 0;
     for (const a of autoActions) {
-      pushWaypoint(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
+      const loc = getActionLocation(a, schema);
+      if (loc) pts.push({ x: loc.x, y: loc.y, timestamp: isEpoch ? a.timestamp - t0 : a.timestamp, actionId: a.actionId });
     }
     return pts.sort((a, b) => a.timestamp - b.timestamp);
   }
 
   if (phase === "teleop") {
-    // Derive teleop start from the last accumulated position in auto, so it correctly
-    // handles toggle-only endings (defend, disable, climb) rather than only schema locations.
-    const autoWps: Waypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
-    const t0Auto = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
-    for (const a of autoActions) {
-      pushWaypoint(autoWps, a, isEpoch ? a.timestamp - t0Auto : a.timestamp);
-    }
-    const lastAuto = autoWps[autoWps.length - 1]!;
-    const pts: Waypoint[] = [{ x: lastAuto.x, y: lastAuto.y, timestamp: 0 }];
-    const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) - 1 : 0;
+    const teleopStart = (() => {
+      if (autoActions.length > 0) {
+        const last = autoActions[autoActions.length - 1]!;
+        const loc = getActionLocation(last, schema);
+        if (loc) return { x: loc.x, y: loc.y };
+      }
+      return start;
+    })();
+    const pts: Waypoint[] = [{ x: teleopStart.x, y: teleopStart.y, timestamp: 0 }];
+    const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) : 0;
     for (const a of teleopActions) {
-      pushWaypoint(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp - AUTO_END_MS);
+      const loc = getActionLocation(a, schema);
+      if (loc) pts.push({ x: loc.x, y: loc.y, timestamp: isEpoch ? a.timestamp - t0 : a.timestamp - AUTO_END_MS, actionId: a.actionId });
     }
     return pts.sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  const pts: Waypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
+  const pts: Waypoint[] = [{ x: start.x, y: start.y, timestamp: 0 }];
   const allActions = [...autoActions, ...teleopActions].sort((a, b) => a.timestamp - b.timestamp);
-  const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) - 1 : 0;
+  const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) : 0;
   for (const a of allActions) {
-    pushWaypoint(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
+    const loc = getActionLocation(a, schema);
+    if (loc) pts.push({ x: loc.x, y: loc.y, timestamp: isEpoch ? a.timestamp - t0 : a.timestamp, actionId: a.actionId });
   }
   return pts.sort((a, b) => a.timestamp - b.timestamp);
 }
@@ -327,21 +287,18 @@ function getTeleopClimbPct(
   return Math.round((climbed / total) * 100);
 }
 
-/** Auto climb % from TBA: (matches with auto L1/L2/L3) / matches_played */
-function getAutoClimbPct(
+/** Sum of failedClimbCount across team's matches from match scouting */
+function getFailedClimbCount(
   teamKey: string,
-  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>
-): number | null {
-  let total = 0;
-  let climbed = 0;
-  for (const matchEntries of Object.values(tbaClimbData)) {
-    const entry = matchEntries[teamKey];
-    if (!entry) continue;
-    total++;
-    if (entry.auto_climb === "L1" || entry.auto_climb === "L2" || entry.auto_climb === "L3") climbed++;
+  matchData: EventMatchData[]
+): number {
+  const teamMatches = matchData.filter((m) => m.team === teamKey && m.data_raw);
+  let sum = 0;
+  for (const m of teamMatches) {
+    const stats = calculateSingleMatchStats(m as unknown as EventMatchData);
+    if (stats?.climb?.failedClimbCount != null) sum += stats.climb.failedClimbCount;
   }
-  if (total === 0) return null;
-  return Math.round((climbed / total) * 100);
+  return sum;
 }
 
 function getMatchedAutoForTeam(
@@ -453,7 +410,6 @@ function MatchPlaybackView({
   videoCache,
   tbaClimbData,
   pitScoutingByTeam,
-  onTeamClick,
 }: {
   matchKey: string;
   currentEvent: string | null;
@@ -465,7 +421,6 @@ function MatchPlaybackView({
   videoCache: { data: { key: string; videos: { type: string; key: string }[] }[] } | null;
   tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   pitScoutingByTeam: Map<string, PitScoutingData>;
-  onTeamClick?: (teamKey: string) => void;
 }) {
   const teamsInMatch = useMemo(() => schedule.filter((s) => s.match === matchKey), [schedule, matchKey]);
   const teamsWithData = useMemo(
@@ -495,10 +450,9 @@ function MatchPlaybackView({
   const videoContainerRef = useRef<HTMLDivElement>(null);
 
   const selectedRaw = selectedTeam ? (teamDataByTeam.get(selectedTeam)?.data_raw as MatchDataRaw | undefined) : null;
-  const selAlliance = selectedTeam ? (teamsInMatch.find((t) => t.team === selectedTeam)?.alliance ?? "red") : "red";
   const waypoints = useMemo(
-    () => buildWaypoints(selectedRaw, schema, phase, selAlliance),
-    [selectedRaw, schema, phase, selAlliance]
+    () => buildWaypoints(selectedRaw, schema, phase),
+    [selectedRaw, schema, phase]
   );
 
   const totalTime = waypoints.length >= 2 ? waypoints[waypoints.length - 1]!.timestamp : 0;
@@ -548,65 +502,6 @@ function MatchPlaybackView({
 
   const canPlay = selectedTeam && waypoints.length >= 2;
 
-  // Detect if selected team is currently defending or blocking at the current playback time
-  const currentTimeMs = progress * totalTime;
-
-  // Compute the same t0 that buildWaypoints used for the active phase, so timing aligns exactly.
-  // "full" uses min(all), "auto" uses min(auto), "teleop" uses min(teleop).
-  // Non-epoch data has t0=0 and teleop actions are offset by -AUTO_END_MS in buildWaypoints,
-  // so we match that by adjusting non-epoch teleop timestamps the same way.
-  const { phaseT0, phaseIsEpoch } = useMemo(() => {
-    if (!selectedRaw) return { phaseT0: 0, phaseIsEpoch: false };
-    const autoActions = selectedRaw.autoActions ?? [];
-    const teleopActions = selectedRaw.teleopActions ?? [];
-    const allActions = [...autoActions, ...teleopActions];
-    const isEpoch = allActions.some((a) => a.timestamp > 1e12);
-    if (phase === "auto") {
-      const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
-      return { phaseT0: t0, phaseIsEpoch: isEpoch };
-    }
-    if (phase === "teleop") {
-      const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) - 1 : 0;
-      return { phaseT0: t0, phaseIsEpoch: isEpoch };
-    }
-    // "full"
-    const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) - 1 : 0;
-    return { phaseT0: t0, phaseIsEpoch: isEpoch };
-  }, [selectedRaw, phase]);
-
-  const isDefendingNow = useMemo(() => {
-    if (!selectedRaw) return false;
-    const allActions = [...(selectedRaw.autoActions ?? []), ...(selectedRaw.teleopActions ?? [])];
-    const defendActions = allActions
-      .filter((a) => a.actionId === "teleopDefend" || a.actionId === "defend")
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .map((a) => {
-        // Normalize timestamp the same way buildWaypoints does for this phase
-        let ts = phaseIsEpoch ? a.timestamp - phaseT0 : a.timestamp;
-        if (!phaseIsEpoch && phase === "teleop") ts -= AUTO_END_MS;
-        return { ...a, ts };
-      });
-    const before = defendActions.filter((a) => a.ts <= currentTimeMs);
-    if (before.length === 0) return false;
-    return before[before.length - 1]!.enabled === true;
-  }, [selectedRaw, currentTimeMs, phaseT0, phaseIsEpoch, phase]);
-
-  const isBlockingNow = useMemo(() => {
-    if (!selectedRaw) return false;
-    const allActions = [...(selectedRaw.autoActions ?? []), ...(selectedRaw.teleopActions ?? [])];
-    const blockActions = allActions
-      .filter((a) => a.actionId === "block")
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .map((a) => {
-        let ts = phaseIsEpoch ? a.timestamp - phaseT0 : a.timestamp;
-        if (!phaseIsEpoch && phase === "teleop") ts -= AUTO_END_MS;
-        return { ...a, ts };
-      });
-    const before = blockActions.filter((a) => a.ts <= currentTimeMs);
-    if (before.length === 0) return false;
-    return before[before.length - 1]!.enabled === true;
-  }, [selectedRaw, currentTimeMs, phaseT0, phaseIsEpoch, phase]);
-
   const fieldContainerWidth = Math.min(FIELD_WIDTH, 560);
   const tbaMatchKeyForClimb = matchKey.includes("_") ? matchKey : currentEvent ? `${currentEvent}_${matchKey}` : matchKey;
   const climbForMatch = tbaClimbData[tbaMatchKeyForClimb] ?? {};
@@ -655,19 +550,7 @@ function MatchPlaybackView({
                     className={`rounded-xl border-4 bg-blue-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-blue-500"}`}
                     style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
                   >
-                    <div className="flex items-center justify-between shrink-0 mb-1 gap-1">
-                      <p className="text-base font-semibold text-foreground truncate flex-1 text-center">Team {s.team.replace(/frc/i, "")}</p>
-                      {onTeamClick && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onTeamClick(s.team); }}
-                          className="p-0.5 rounded text-foreground/40 hover:text-foreground transition-colors flex-shrink-0"
-                          title="Open team page"
-                        >
-                          <Maximize2 className="size-3.5" />
-                        </button>
-                      )}
-                    </div>
+                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
                     {hasScoutedData ? (
                       <>
                         <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
@@ -738,18 +621,34 @@ function MatchPlaybackView({
                 </button>
               ))}
             </div>
+          {/* Calculate scores from TBA data */}
+          {(() => {
+            const tbaMatch = "test";
+            const blueScore = "000";
+            const redScore = "000";
+            const blueRP = "0";
+            const redRP = "0";
+            
+            return (
+              <div className="flex items-center justify-between px-10 py-2 rounded-lg bg-muted/30 border border-border">
+                <div className="flex items-center gap-12">
+                  <span className="text-xl text-foreground font-regular">{blueRP}rp</span>
+                  <span className="text-3xl font-regular text-foreground">{blueScore.toString().padStart(3, '0')}</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm text-muted-foreground">{getMatchLabel(matchKey)}</span>
+                </div>
+                <div className="flex items-center gap-12">
+                  <span className="text-3xl font-regular text-foreground">{redScore.toString().padStart(3, '0')}</span>
+                  <span className="text-xl font-regular text-foreground">{redRP}rp</span>
+                </div>
+              </div>
+            );
+          })()}
             <div className="flex items-center gap-3 rounded-lg p-3 bg-muted/50">
               <button
                 type="button"
-                onClick={() => {
-                  if (progress >= 1) {
-                    setProgress(0);
-                    lastProgressRef.current = 0;
-                    setPlaying(true);
-                  } else {
-                    setPlaying((p) => !p);
-                  }
-                }}
+                onClick={() => setPlaying((p) => !p)}
                 disabled={!canPlay}
                 className="flex items-center justify-center size-9 rounded-full bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               >
@@ -761,7 +660,7 @@ function MatchPlaybackView({
               </button>
               <div className="flex-1 relative h-2 rounded-full bg-muted overflow-visible flex items-center">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-primary"
+                  className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-75"
                   style={{ width: `${Math.min(progress * 100, 98)}%` }}
                 />
                 <div
@@ -786,7 +685,7 @@ function MatchPlaybackView({
                 onChange={(e) => setSpeed(Number(e.target.value))}
                 className="bg-background border border-border rounded px-2 py-1 text-sm shrink-0"
               >
-                {[0.25, 0.5, 1, 2, 4].map((s) => (
+                {[0.5, 1, 2, 4].map((s) => (
                   <option key={s} value={s}>{s}x</option>
                 ))}
               </select>
@@ -815,9 +714,6 @@ function MatchPlaybackView({
               viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
               preserveAspectRatio="xMidYMid meet"
             >
-              <defs>
-                <style>{`@keyframes robotBlockPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.7); opacity: 0; } }`}</style>
-              </defs>
               {/* X at selected team's start position */}
               {selectedTeam && (() => {
                 const s = teamsWithData.find((t) => t.team === selectedTeam);
@@ -838,10 +734,11 @@ function MatchPlaybackView({
               {/* Action blobs for selected team — render before team markers so numbers stay on top */}
               {selectedTeam &&
                 (() => {
+                  const selAlliance = teamsInMatch.find((t) => t.team === selectedTeam)?.alliance ?? "red";
                   return waypoints.map((wp, i) => {
                     if (i === 0 || !wp.actionId) return null;
-                    // Waypoints carry full-field display coords — use directly
-                    const { x, y } = normToSvg(wp.x, wp.y);
+                    const disp = toDisplayCoords(wp.x, wp.y, selAlliance);
+                    const { x, y } = normToSvg(disp.x, disp.y);
                     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
                     const style = getStyle(wp.actionId);
                     const label = getActionLabel(wp.actionId, schema);
@@ -865,16 +762,11 @@ function MatchPlaybackView({
                 const start = raw ? parseStartPosition(raw) : { x: 0.5, y: 0.9 };
                 const isSelected = selectedTeam === s.team;
                 const showAtCurrent = isSelected && currentPosition;
-                // Waypoints carry full-field display coords; fall back to converted start position
-                const pos = showAtCurrent ? currentPosition! : toDisplayCoords(start.x, start.y, s.alliance);
-                const defending = isSelected && isDefendingNow;
-                const blocking = isSelected && isBlockingNow;
-                const { x, y } = normToSvg(pos.x, pos.y);
+                const pos = showAtCurrent ? currentPosition : start;
+                const disp = toDisplayCoords(pos.x, pos.y, s.alliance);
+                const { x, y } = normToSvg(disp.x, disp.y);
                 const num = s.team.replace(/frc/i, "");
-                const allianceFill = s.alliance === "red" ? "#ef4444" : "#3b82f6";
-                const fill = allianceFill;
-                const stroke = defending ? "#000000" : isSelected ? "#fff" : "transparent";
-                const strokeWidth = defending ? 3 : isSelected ? 4 : 0;
+                const fill = s.alliance === "red" ? "#ef4444" : "#3b82f6";
                 const size = isSelected ? 44 : 38;
                 if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
                 return (
@@ -883,32 +775,14 @@ function MatchPlaybackView({
                     className="cursor-pointer"
                     onClick={() => setSelectedTeam(s.team)}
                   >
-                    {/* Pulsing ring on robot when actively blocking */}
-                    {blocking && (
-                      <rect
-                        x={x - size / 2}
-                        y={y - size / 2}
-                        width={size}
-                        height={size}
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth={3}
-                        rx={4}
-                        style={{
-                          animation: "robotBlockPulse 0.9s ease-out infinite",
-                          transformBox: "fill-box",
-                          transformOrigin: "center",
-                        }}
-                      />
-                    )}
                     <rect
                       x={x - size / 2}
                       y={y - size / 2}
                       width={size}
                       height={size}
                       fill={fill}
-                      stroke={stroke}
-                      strokeWidth={strokeWidth}
+                      stroke={isSelected ? "#fff" : "transparent"}
+                      strokeWidth={isSelected ? 4 : 0}
                       rx={4}
                     />
                     <text
@@ -995,8 +869,104 @@ function MatchPlaybackView({
             <ChevronRight className="size-6" />
           </button>
           </div>
-        </div>
+          {/* Team Stats Grid */}
+        <div className="mt-4 rounded-xl border-2 border-border bg-muted/20 p-4" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
+          <div className="grid grid-cols-6 gap-3">
+            {/* Headers */}
+            <div className="col-span-3 text-center">
+              <h3 className="text-sm font-semibold text-blue-500 mb-2">Blue Alliance</h3>
+            </div>
+            <div className="col-span-3 text-center">
+              <h3 className="text-sm font-semibold text-red-500 mb-2">Red Alliance</h3>
+            </div>
 
+            {/* Generate 3 rows */}
+            {[0, 1, 2].map((rowIdx) => (
+              <React.Fragment key={rowIdx}>
+                {/* Blue team in this row */}
+                {teamsInMatch
+                  .filter((s) => s.alliance === "blue")
+                  .slice(rowIdx, rowIdx + 1)
+                  .map((s) => {
+                    const teamNum = s.team.replace(/frc/i, "");
+                    const md = teamDataByTeam.get(s.team);
+                    const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
+                    const didDefend = matchStats?.didDefend ?? false;
+                    
+                    return (
+                      <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-blue-500/30 p-3">
+                        <div className="flex items-center gap-2 flex-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                            <span className="text-md font-semibold text-muted-foreground hover:text-foreground">{teamNum}</span>
+                            </TooltipTrigger>
+                            <TooltipContent>Team {teamNum} stats</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <div className="flex gap-2">
+                        {/* Defend badge */}
+                        <span className={`px-2 py-1 rounded text-xs ${matchStats?.didDefend ? "bg-chart-2 text-black" : "bg-muted text-muted-foreground"}`}>
+                          Defend
+                        </span>
+                        
+                        {/* Disable badge */}
+                        <span className={`px-2 py-1 rounded text-xs ${matchStats?.wasDisabled ? "bg-chart-2 text-black" : "bg-muted text-muted-foreground"}`}>
+                          Disable
+                        </span>
+                        
+                        {/* Climb badge */}
+                        <span className={`px-2 py-1 rounded text-xs ${matchStats?.climb? "bg-chart-2 text-black" : "bg-muted text-muted-foreground"}`}> 
+                            Climb
+                        </span>
+                      </div>
+                      </div>
+                    );
+                  })}
+                
+                {/* Red team in this row */}
+                {teamsInMatch
+                  .filter((s) => s.alliance === "red")
+                  .slice(rowIdx, rowIdx + 1)
+                  .map((s) => {
+                    const teamNum = s.team.replace(/frc/i, "");
+                    const md = teamDataByTeam.get(s.team);
+                    const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
+                    const didDefend = matchStats?.didDefend ?? false;
+                    
+                    return (
+                      <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-red-500/30 p-3">
+                        <div className="flex items-center gap-2 flex-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                            <span className="text-md font-semibold text-muted-foreground hover:text-foreground">{teamNum}</span>
+                            </TooltipTrigger>
+                            <TooltipContent>Team {teamNum} stats</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <div className="flex gap-2">
+                        {/* Defend badge */}
+                        <span className={`px-2 py-1 rounded text-xs ${matchStats?.didDefend ? "bg-chart-2 text-black" : "bg-muted text-muted-foreground"}`}>
+                          Defend
+                        </span>
+                        
+                        {/* Disable badge */}
+                        <span className={`px-2 py-1 rounded text-xs ${matchStats?.wasDisabled ? "bg-chart-2 text-black" : "bg-muted text-muted-foreground"}`}>
+                          Disable
+                        </span>
+                        
+                        {/* Climb badge */}
+                        <span className={`px-2 py-1 rounded text-xs ${matchStats?.climb? "bg-chart-2 text-black" : "bg-muted text-muted-foreground"}`}>
+                          Climb
+                        </span>
+                      </div>
+                      </div>
+                    );
+                  })}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+        </div>
           {/* Right column — full page height, team boxes centered */}
           <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
             {teamsInMatch
@@ -1021,19 +991,7 @@ function MatchPlaybackView({
                     className={`rounded-xl border-4 bg-red-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-red-500"}`}
                     style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
                   >
-                    <div className="flex items-center justify-between shrink-0 mb-1 gap-1">
-                      <p className="text-base font-semibold text-foreground truncate flex-1 text-center">Team {s.team.replace(/frc/i, "")}</p>
-                      {onTeamClick && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onTeamClick(s.team); }}
-                          className="p-0.5 rounded text-foreground/40 hover:text-foreground transition-colors flex-shrink-0"
-                          title="Open team page"
-                        >
-                          <Maximize2 className="size-3.5" />
-                        </button>
-                      )}
-                    </div>
+                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
                     {hasScoutedData ? (
                       <>
                         <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
@@ -1147,7 +1105,8 @@ function MatchPredictionView({
   pitScoutingByTeam,
   tbaTeams,
   onBack,
-  onTeamClick,
+  matchHasHappened,
+  onSwitchToPlayback,
 }: {
   matchKey: string;
   schedule: { match: string; team: string; alliance: "red" | "blue" }[];
@@ -1156,7 +1115,8 @@ function MatchPredictionView({
   pitScoutingByTeam: Map<string, PitScoutingData>;
   tbaTeams: TBATeam[];
   onBack?: () => void;
-  onTeamClick?: (teamKey: string) => void;
+  matchHasHappened?: boolean;
+  onSwitchToPlayback?: () => void;
 }) {
   const teamsInMatch = useMemo(() => schedule.filter((s) => s.match === matchKey), [schedule, matchKey]);
   const [selectedAutosForDisplay, setSelectedAutosForDisplay] = useState<Array<{ team: string; autoIndex: number }>>([]);
@@ -1189,17 +1149,28 @@ function MatchPredictionView({
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-x-hidden">
       <div className="pt-2 pb-1 px-4 flex flex-col items-center gap-1 relative">
         <h1 className="text-xl font-semibold text-primary">{getMatchLabel(matchKey)}</h1>
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-xs"
-            aria-label="Back to all matches"
-          >
-            <CornerDownLeft className="size-3.5" />
-            <span>All matches</span>
-          </button>
-        )}
+        <div className="flex items-center gap-4">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-xs"
+              aria-label="Back to all matches"
+            >
+              <CornerDownLeft className="size-3.5" />
+              <span>All matches</span>
+            </button>
+          )}
+          {matchHasHappened && onSwitchToPlayback && (
+            <button
+              type="button"
+              onClick={onSwitchToPlayback}
+              className="px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground hover:opacity-90"
+            >
+              Playback
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 min-h-0 flex">
         <div className="flex flex-1 items-stretch justify-center gap-16 w-full max-w-[min(100%,1600px)] mx-auto min-h-0">
@@ -1224,7 +1195,6 @@ function MatchPredictionView({
                   selectedAutosForDisplay={selectedAutosForDisplay}
                   onSelectAuto={toggleAutoSelection}
                   selectedBorderColor={selectedColor}
-                  onTeamClick={onTeamClick}
                 />
               );})}
           </div>
@@ -1251,8 +1221,8 @@ function MatchPredictionView({
                       <FullfieldPathOverlay drawing={auto.drawing} alliance={alliance} strokeColor={color} />
                       {auto.climbDuringAuto && (() => {
                         const [nx, ny] = PRESET_ACTION_LOCATIONS.climb;
-                        const climbDisp = toDisplayCoords(nx, ny, alliance);
-                        const { x, y } = normToSvg(climbDisp.x, climbDisp.y);
+                        const x = (alliance === "red" ? nx : 1 - nx) * FIELD_WIDTH;
+                        const y = ny * FIELD_HEIGHT;
                         return <circle key={`${sel.team}-${sel.autoIndex}-climb`} cx={x} cy={y} r={8} fill={color} opacity={0.9} />;
                       })()}
                     </g>
@@ -1283,7 +1253,6 @@ function MatchPredictionView({
                   selectedAutosForDisplay={selectedAutosForDisplay}
                   onSelectAuto={toggleAutoSelection}
                   selectedBorderColor={selectedColor}
-                  onTeamClick={onTeamClick}
                 />
               );})}
           </div>
@@ -1305,7 +1274,6 @@ function PredictionTeamBox({
   selectedAutosForDisplay,
   onSelectAuto,
   selectedBorderColor,
-  onTeamClick,
 }: {
   team: string;
   alliance: "red" | "blue";
@@ -1318,7 +1286,6 @@ function PredictionTeamBox({
   selectedAutosForDisplay: Array<{ team: string; autoIndex: number }>;
   onSelectAuto: (team: string, autoIndex: number) => void;
   selectedBorderColor?: string;
-  onTeamClick?: (teamKey: string) => void;
 }) {
   const teamAutos = getTeamAutos(pitScoutingByTeam.get(team));
   const defaultIdx = getMostSelectedAutoIndex(team, teamAutos, matchData);
@@ -1326,7 +1293,7 @@ function PredictionTeamBox({
   const setIdx = (i: number) => setAutoIndexByTeam((prev) => ({ ...prev, [team]: i }));
   const currentAuto = teamAutos[idx];
   const climbPct = getTeleopClimbPct(team, tbaClimbData);
-  const autoClimbPct = getAutoClimbPct(team, tbaClimbData);
+  const failedCount = getFailedClimbCount(team, matchData);
   const teamStats = calculateTeamStats(team, matchData);
   const autoLabelForLookup = currentAuto?.name || `Auto ${idx + 1}`;
   const autoRunCount = teamStats?.autoRunCounts
@@ -1344,22 +1311,10 @@ function PredictionTeamBox({
       style={isSelected ? { borderColor: selectedBorderColor ?? "hsl(var(--primary))" } : undefined}
       onClick={() => teamAutos.length > 0 && onSelectAuto(team, idx)}
     >
-      <div className="flex items-center justify-between shrink-0 mb-1 gap-1">
-        <p className="text-base font-semibold text-foreground truncate flex-1 text-center">
-          Team {team.replace(/frc/i, "")}
-          {epa != null && <span className="text-muted-foreground font-normal"> · {epa.toFixed(1)} EPA</span>}
-        </p>
-        {onTeamClick && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onTeamClick(team); }}
-            className="p-0.5 rounded text-foreground/40 hover:text-foreground transition-colors flex-shrink-0"
-            title="Open team page"
-          >
-            <Maximize2 className="size-3.5" />
-          </button>
-        )}
-      </div>
+      <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">
+        Team {team.replace(/frc/i, "")}
+        {epa != null && <span className="text-muted-foreground font-normal"> · {epa.toFixed(1)} EPA</span>}
+      </p>
       {teamAutos.length > 0 ? (
         <>
           <div className="flex items-center justify-center gap-1 flex-1 min-h-0">
@@ -1408,7 +1363,7 @@ function PredictionTeamBox({
           <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
             <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
-            <span className="text-foreground">Auto: {autoClimbPct != null ? `${autoClimbPct}%` : "—"}</span>
+            <span className="text-foreground">Failed: {failedCount}</span>
           </p>
         </>
       ) : (
@@ -1417,7 +1372,7 @@ function PredictionTeamBox({
           <p className="text-sm font-medium text-foreground text-center">
             <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
-            <span className="text-foreground">Auto: {autoClimbPct != null ? `${autoClimbPct}%` : "—"}</span>
+            <span className="text-foreground">Failed: {failedCount}</span>
           </p>
         </div>
       )}
@@ -1428,7 +1383,7 @@ function PredictionTeamBox({
 function MatchesPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
-  const { match: matchKey } = Route.useSearch();
+  const { match: matchKey, mode: searchMode } = Route.useSearch();
   const { currentEvent } = useDesktopEvent();
   const { schedule, tbaClimbData, tbaSchedule, matchScoutingData } = useDesktopCompetitionData();
   const { tbaTeams, pitScoutingData } = useDesktopTeamData();
@@ -1500,13 +1455,10 @@ function MatchesPage() {
   const handleSelectMatch = (key: string) => {
     const label = getMatchLabel(key);
     addTab("/matches", label, { match: key }, `match-${key}`);
-    navigate({ to: "/matches", search: { match: key } });
-  };
-
-  const handleTeamClick = (teamKey: string) => {
-    const teamNum = teamKey.replace("frc", "");
-    addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
-    navigate({ to: "/team", search: { team: teamKey } });
+    navigate({
+      to: "/matches",
+      search: { match: key, mode: searchMode ?? undefined },
+    });
   };
 
   const matchHasHappened = useMemo(() => {
@@ -1516,8 +1468,23 @@ function MatchesPage() {
     return tba.est_time < Math.floor(Date.now() / 1000);
   }, [matchKey, tbaSchedule]);
 
+  const predictionMode = useMemo(() => {
+    if (searchMode === "prediction") return true;
+    if (searchMode === "playback") return false;
+    return !matchHasHappened; // default: prediction for upcoming, playback for past
+  }, [searchMode, matchHasHappened]);
+
+  const setPredictionMode = useCallback(
+    (pred: boolean) => {
+      navigate({ to: "/matches", search: { match: matchKey, mode: pred ? "prediction" : "playback" } });
+    },
+    [navigate, matchKey]
+  );
+
   if (matchKey) {
-    if (!matchHasHappened) {
+    const showPrediction = predictionMode || !matchHasHappened;
+
+    if (showPrediction) {
       return (
         <MatchPredictionView
           key={matchKey}
@@ -1527,26 +1494,46 @@ function MatchesPage() {
           tbaClimbData={tbaClimbData}
           pitScoutingByTeam={pitScoutingByTeam}
           tbaTeams={tbaTeams}
-          onBack={() => navigate({ to: "/matches", search: { match: "" } })}
-          onTeamClick={handleTeamClick}
+          onBack={() => navigate({ to: "/matches", search: { match: "", mode: undefined } })}
+          matchHasHappened={matchHasHappened}
+          onSwitchToPlayback={matchHasHappened ? () => setPredictionMode(false) : undefined}
         />
       );
     }
 
     return (
-      <MatchPlaybackView
-        matchKey={matchKey}
-        currentEvent={currentEvent}
-        schedule={schedule}
-        matchData={matchData}
-        teamDataByTeam={teamDataByTeam}
-        schema={schema}
-        onBack={() => navigate({ to: "/matches", search: { match: "" } })}
-        videoCache={videoCache}
-        tbaClimbData={tbaClimbData}
-        pitScoutingByTeam={pitScoutingByTeam}
-        onTeamClick={handleTeamClick}
-      />
+      <div className="relative">
+        {matchHasHappened && (
+          <div className="absolute top-2 right-4 z-10 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPredictionMode(true)}
+              className="px-3 py-1.5 rounded-lg text-sm bg-muted text-muted-foreground hover:text-foreground"
+            >
+              Prediction
+            </button>
+            <button
+              type="button"
+              onClick={() => setPredictionMode(false)}
+              className="px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground"
+            >
+              Playback
+            </button>
+          </div>
+        )}
+        <MatchPlaybackView
+          matchKey={matchKey}
+          currentEvent={currentEvent}
+          schedule={schedule}
+          matchData={matchData}
+          teamDataByTeam={teamDataByTeam}
+          schema={schema}
+          onBack={() => navigate({ to: "/matches", search: { match: "", mode: undefined } })}
+          videoCache={videoCache}
+          tbaClimbData={tbaClimbData}
+          pitScoutingByTeam={pitScoutingByTeam}
+        />
+      </div>
     );
   }
 
