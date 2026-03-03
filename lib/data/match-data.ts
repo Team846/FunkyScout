@@ -10,43 +10,6 @@ const matchSyncKey = (event: string) => `lastMatchSync_${event}`;
  * Creates placeholder rows for every match-team combination.
  * Called after refreshSchedule() during event setup.
  */
-/**
- * Sync shift assignments from event_schedule to event_match_data.
- * Called when schedule assignments are updated.
- */
-export async function syncShiftAssignments(eventKey: string) {
-  // Get all schedule entries with their assignments
-  const { data: scheduleData, error: scheduleError } = await supabase
-    .from("event_schedule")
-    .select("event, match, team, alliance, name, uid")
-    .eq("event", eventKey)
-    .is("deleted_at", null);
-
-  if (scheduleError) throw scheduleError;
-  if (!scheduleData || scheduleData.length === 0) return;
-
-  // Update match data with shift assignments
-  // Include data_raw to satisfy NOT NULL constraint (in case row doesn't exist yet)
-  const updates = scheduleData.map((entry) => ({
-    event: entry.event,
-    match: entry.match,
-    team: entry.team,
-    alliance: entry.alliance as "red" | "blue",
-    name: entry.name || "",
-    uid: entry.uid || "",
-    data_raw: {},  // Empty placeholder (required for upsert)
-    data: {},      // Empty placeholder (required for upsert)
-  }));
-
-  const { error: updateError } = await supabase
-    .from("event_match_data")
-    .upsert(updates, {
-      onConflict: "event,match,team",
-      ignoreDuplicates: false // Always update
-    });
-
-  if (updateError) throw updateError;
-}
 
 export async function bootstrapMatchData(eventKey: string) {
   // Get schedule from Supabase (source of truth)
@@ -126,7 +89,6 @@ export async function getMatchData(eventKey: string) {
         team,
         alliance,
         data_raw,
-        data,
         name,
         uid,
         timestamp,
@@ -153,7 +115,6 @@ export async function getMatchData(eventKey: string) {
       team: d.team,
       alliance: (d.alliance as "red" | "blue") || undefined,
       data_raw: d.data_raw,
-      data: d.data,
       name: d.name || undefined,
       uid: d.uid || undefined,
       timestamp: d.timestamp ? new Date(d.timestamp).getTime() : undefined,

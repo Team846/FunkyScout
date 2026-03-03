@@ -1123,7 +1123,6 @@ impl SyncService {
             let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
             let alliance = record.get("alliance").and_then(|v| v.as_str());
             let data_raw_json = record.get("data_raw").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
-            let data_json = record.get("data").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
             let name = record.get("name").and_then(|v| v.as_str());
             let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -1153,12 +1152,11 @@ impl SyncService {
             };
 
             sqlx::query(
-                "INSERT INTO event_match_data (event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "INSERT INTO event_match_data (event, match, team, alliance, data_raw, name, uid, timestamp, last_modified, deleted_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(event, match, team) DO UPDATE SET
                    alliance = excluded.alliance,
                    data_raw = excluded.data_raw,
-                   data = excluded.data,
                    name = excluded.name,
                    last_modified = excluded.last_modified,
                    deleted_at = excluded.deleted_at"
@@ -1168,7 +1166,6 @@ impl SyncService {
             .bind(team)
             .bind(alliance)
             .bind(&data_raw_json)
-            .bind(&data_json)
             .bind(name)
             .bind(uid)
             .bind(timestamp)
@@ -1531,6 +1528,10 @@ impl SyncService {
     }
 
     /// Sync ASSIGN_SHIFTS_BULK operation to Supabase
+    /// The frontend computes a diff (only changed rows), so this is now identical to
+    /// ASSIGN_SHIFTS_DIFF — individual UPDATEs for each changed row, no clear-all step.
+    /// Using patch_assign_shifts avoids the INSERT path of upsert, which triggers FK
+    /// validation on event_schedule_uid_fkey even when the conflict resolves via UPDATE.
     async fn sync_assign_shifts_bulk(&self, payload: serde_json::Value) -> Result<()> {
         let event = payload.get("event").and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing event"))?;
@@ -1540,8 +1541,8 @@ impl SyncService {
             .clone();
 
         let count = assignments.len();
-        self.supabase.bulk_assign_shifts(event, &assignments).await?;
-        println!("[Sync] ✅ Bulk assigned {} shifts to Supabase", count);
+        self.supabase.patch_assign_shifts(event, &assignments).await?;
+        println!("[Sync] ✅ Bulk assigned {} shifts to Supabase (diff patch)", count);
         Ok(())
     }
 

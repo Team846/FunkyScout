@@ -63,7 +63,10 @@ export async function compressImage(
 
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Convert to blob with specified quality
+          // Convert to blob with specified quality.
+          // WebP provides 5-10x better compression than PNG for robot photos.
+          // If the browser doesn't support WebP, the Canvas API silently falls
+          // back to image/png (quality param is ignored for PNG, but resize still helps).
           canvas.toBlob(
             (blob) => {
               if (!blob) {
@@ -72,12 +75,12 @@ export async function compressImage(
               }
 
               console.log(
-                `[ImageCompression] Original: ${(file.size / 1024).toFixed(1)}KB, Compressed: ${(blob.size / 1024).toFixed(1)}KB`,
+                `[ImageCompression] Original: ${(file.size / 1024).toFixed(1)}KB, Compressed: ${(blob.size / 1024).toFixed(1)}KB (${blob.type})`,
               );
 
               resolve(blob);
             },
-            "image/png",
+            "image/webp",
             quality,
           );
         } catch (error) {

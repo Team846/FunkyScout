@@ -30,6 +30,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { TBATeam, PitScoutingData } from "../contexts/DesktopTeamDataContext";
 import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
+import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
+import { permanentlyExcludeSubmission } from "@lib/data/scouterExclusions";
 import type { MatchScoutingData } from "../lib/db";
 import {
   calculateSingleMatchStats,
@@ -621,6 +623,229 @@ function panelBuildWaypoints(
   return pts.sort((a, b) => a.timestamp - b.timestamp);
 }
 
+// ─── StatMatchGraph ─────────────────────────────────────────────────────────
+
+function StatMatchGraph({
+  pts,
+  allValues,
+  metric,
+}: {
+  pts: { matchKey: string; raw: number }[];
+  allValues: number[];
+  metric: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    obs.observe(el);
+    setContainerWidth(el.offsetWidth);
+    return () => obs.disconnect();
+  }, []);
+
+  const sorted = useMemo(() => {
+    return [...pts]
+      .filter((p) => p.matchKey !== "event")
+      .sort((a, b) => {
+        const oa = getMatchSortOrder(a.matchKey);
+        const ob = getMatchSortOrder(b.matchKey);
+        for (let i = 0; i < Math.max(oa.length, ob.length); i++) {
+          const va = oa[i] ?? 0;
+          const vb = ob[i] ?? 0;
+          if (va !== vb) return va - vb;
+        }
+        return 0;
+      });
+  }, [pts]);
+
+  const lowerIsBetter = ["disabled_time", "dismount_time", "auto_climb_time", "teleop_climb_time"].includes(metric);
+
+  const sortedByValue = useMemo(() => {
+    return [...sorted].sort((a, b) =>
+      lowerIsBetter ? a.raw - b.raw : b.raw - a.raw
+    );
+  }, [sorted, lowerIsBetter]);
+
+  const yMax = useMemo(() => {
+    return Math.max(0.001, ...allValues, ...sorted.map((p) => p.raw));
+  }, [sorted, allValues]);
+
+  const H = 160;
+  const pad = { top: 12, right: 20, bottom: 14, left: 30 };
+
+  const formatYLabel = (v: number) => {
+    if (["disabled_time", "block_time", "defend_time"].includes(metric)) {
+      return (v < 10 ? v.toFixed(1) : Math.round(v)) + "s";
+    }
+    if (v >= 10 || Number.isInteger(v)) return Math.round(v).toString();
+    return v.toFixed(1);
+  };
+
+  const formatVal = (v: number) => {
+    if (["disabled_time", "block_time", "defend_time"].includes(metric)) {
+      return (Number.isInteger(v) ? v : v.toFixed(1)) + "s";
+    }
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  };
+
+  if (sorted.length === 0) {
+    return (
+      <div ref={containerRef} className="w-full flex items-center justify-center" style={{ height: H }}>
+        <p className="text-xs text-muted-foreground">No data</p>
+      </div>
+    );
+  }
+
+  const graphW = Math.max(0, containerWidth - pad.left - pad.right);
+  const graphH = H - pad.top - pad.bottom;
+
+  const xOf = (i: number) =>
+    sorted.length === 1
+      ? pad.left + graphW / 2
+      : pad.left + (i / (sorted.length - 1)) * graphW;
+
+  const yOf = (v: number) =>
+    pad.top + graphH * (1 - Math.min(1, Math.max(0, v / yMax)));
+
+  const coords = sorted.map((p, i) => ({ x: xOf(i), y: yOf(p.raw) }));
+
+  const buildPath = (pts2: { x: number; y: number }[]) => {
+    if (pts2.length === 0) return "";
+    if (pts2.length === 1) return `M ${pts2[0].x} ${pts2[0].y}`;
+    let d = `M ${pts2[0].x} ${pts2[0].y}`;
+    for (let i = 0; i < pts2.length - 1; i++) {
+      const cp = (pts2[i].x + pts2[i + 1].x) / 2;
+      d += ` C ${cp} ${pts2[i].y} ${cp} ${pts2[i + 1].y} ${pts2[i + 1].x} ${pts2[i + 1].y}`;
+    }
+    return d;
+  };
+
+  const curvePath = buildPath(coords);
+  const maxLabels = Math.max(1, Math.floor(graphW / 26));
+  const labelStep = Math.ceil(sorted.length / maxLabels);
+
+  return (
+    <div ref={containerRef} className="w-full relative select-none" style={{ height: H }}>
+      {containerWidth > 0 && (
+        <svg width={containerWidth} height={H} className="overflow-visible">
+          {/* Gridlines + Y axis labels */}
+          {[0.25, 0.5, 0.75, 1].map((f) => {
+            const lineY = pad.top + graphH * (1 - f);
+            return (
+              <g key={f}>
+                <line
+                  x1={pad.left}
+                  y1={lineY}
+                  x2={pad.left + graphW}
+                  y2={lineY}
+                  stroke="var(--color-border)"
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  opacity={0.6}
+                />
+                <text
+                  x={pad.left - 10}
+                  y={lineY + 4}
+                  textAnchor="end"
+                  fontSize={10}
+                  fill="var(--color-muted-foreground)"
+                >
+                  {formatYLabel(yMax * f)}
+                </text>
+              </g>
+            );
+          })}
+          {/* Curve */}
+          {sorted.length > 1 && (
+            <path
+              d={curvePath}
+              fill="none"
+              stroke="#eab308"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          )}
+          {/* Points + invisible hit areas */}
+          {sorted.map((p, i) => {
+            const { x, y } = coords[i];
+            const isHover = hoverIdx === i;
+            return (
+              <g key={p.matchKey}>
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={14}
+                  fill="transparent"
+                  onMouseEnter={() => setHoverIdx(i)}
+                  onMouseLeave={() => setHoverIdx(null)}
+                  style={{ cursor: "crosshair" }}
+                />
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={isHover ? 5 : 3.5}
+                  fill={isHover ? "#fde047" : "#eab308"}
+                  stroke="#ca8a04"
+                  strokeWidth={1}
+                  style={{ pointerEvents: "none" }}
+                />
+              </g>
+            );
+          })}
+          {/* X axis labels */}
+          {sorted.map((p, i) => {
+            const show = i % labelStep === 0 || i === sorted.length - 1;
+            if (!show) return null;
+            const label = getMatchLabel(p.matchKey)
+              .replace("Qual ", "Q")
+              .replace(/^(SF\d+)M\d+$/, "$1")
+              .replace("QM", "");
+            return (
+              <text
+                key={`lbl-${p.matchKey}`}
+                x={coords[i].x}
+                y={H - 9}
+                textAnchor="middle"
+                fontSize={14}
+                fill="var(--color-foreground)"
+              >
+                {label}
+              </text>
+            );
+          })}
+        </svg>
+      )}
+      {/* Hover tooltip */}
+      {hoverIdx !== null && containerWidth > 0 && (() => {
+        const { x, y } = coords[hoverIdx];
+        const p = sorted[hoverIdx];
+        const rank = sortedByValue.findIndex((s) => s.matchKey === p.matchKey) + 1;
+        const flipX = x > containerWidth * 0.65;
+        return (
+          <div
+            className="absolute pointer-events-none bg-secondary border border-border rounded-md px-2 py-1 text-xs shadow-md z-50"
+            style={{
+              left: flipX ? x - 8 : x + 8,
+              top: Math.max(0, y - 24),
+              transform: flipX ? "translateX(-100%)" : undefined,
+            }}
+          >
+            <p className="text-muted-foreground whitespace-nowrap">
+              {formatVal(p.raw)}  (#{rank})
+            </p>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 // ─── FullTeamPanel ──────────────────────────────────────────────────────────
 
 export type FullTeamPanelVariant = "picklist" | "comparison";
@@ -772,6 +997,7 @@ export function FullTeamPanel({
   const [matchOverviewMetric, setMatchOverviewMetric] = useState("epa");
   const [showMatchOverviewMetricPicker, setShowMatchOverviewMetricPicker] = useState(false);
   // ── Match Overview video/replay ─────────────────────────────────────────────
+  const [excludingMatch, setExcludingMatch] = useState(false);
   const [matchViewMode, setMatchViewMode] = useState<"video" | "field">("video");
   const [matchVideoCache, setMatchVideoCache] = useState<{ data: Array<{ key: string; videos: Array<{ key: string; type: string }> }> } | null>(null);
   const [matchReplayPlaying, setMatchReplayPlaying] = useState(false);
@@ -784,6 +1010,7 @@ export function FullTeamPanel({
 
   // ── Contexts for match navigation + video ───────────────────────────────────
   const { currentEvent } = useDesktopEvent();
+  const { refresh: refreshCompetition } = useDesktopCompetitionData();
   const { addTab } = useTabContext();
   const navigate = useNavigate();
   const matchSchema = useMemo(() => getMatchActionSchema(currentEvent || "2026"), [currentEvent]);
@@ -1024,11 +1251,25 @@ export function FullTeamPanel({
     return { x: last.x, y: last.y };
   }, [matchWaypoints, matchReplayProgress, matchTotalTime]);
 
+  const handleExcludeMatch = useCallback(async () => {
+    if (!selectedMatch || !currentEvent || !selectedMatch.uid) return;
+    setExcludingMatch(true);
+    try {
+      await permanentlyExcludeSubmission(currentEvent, selectedMatch as any);
+      await refreshCompetition();
+      setSelectedMatchKey(null);
+    } catch (e) {
+      console.error("[TeamPanel] Failed to exclude match:", e);
+    } finally {
+      setExcludingMatch(false);
+    }
+  }, [selectedMatch, currentEvent, refreshCompetition]);
+
   const openInMatches = useCallback(() => {
     if (!effectiveMatchKey) return;
     const label = getMatchLabel(effectiveMatchKey);
     addTab("/matches", label, { match: effectiveMatchKey }, `match-${effectiveMatchKey}`);
-    navigate({ to: "/matches", search: { match: effectiveMatchKey } });
+    navigate({ to: "/matches", search: { match: effectiveMatchKey, mode: undefined } });
   }, [effectiveMatchKey, addTab, navigate]);
 
   const matchCanPlay = matchWaypoints.length >= 2;
@@ -1792,7 +2033,7 @@ export function FullTeamPanel({
                           </RadarChart>
                         </ResponsiveContainer>
                       </div>
-                    ) : (
+                    ) : statOverviewData.isTeamLevel ? (
                     <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
                       {statOverviewData.pts.length === 0 ? (
                         <p className="text-base text-muted-foreground">No data</p>
@@ -1820,6 +2061,12 @@ export function FullTeamPanel({
                           ))
                       )}
                     </div>
+                    ) : (
+                    <StatMatchGraph
+                      pts={statOverviewData.pts}
+                      allValues={statOverviewData.allValuesForPercentile}
+                      metric={statOverviewMetric}
+                    />
                     )}
                   </div>
                 </div>
@@ -2178,6 +2425,20 @@ export function FullTeamPanel({
                       )
                     )}
                   </div>
+
+                  {/* Exclude match */}
+                  {selectedMatch?.uid && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleExcludeMatch}
+                        disabled={excludingMatch}
+                        className="px-2 py-1 rounded text-xs border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40"
+                      >
+                        {excludingMatch ? "Excluding…" : "Exclude match"}
+                      </button>
+                    </div>
+                  )}
 
                   {/* Match Overview metric selector + value */}
                   <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">

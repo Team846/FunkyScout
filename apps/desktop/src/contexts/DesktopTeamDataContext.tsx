@@ -8,7 +8,6 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useDesktopEvent } from "./DesktopEventContext";
 import { useDesktopRealtime } from "./DesktopRealtimeContext";
 import {
@@ -210,7 +209,8 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     if (!currentEvent) return;
 
     const unregister = registerRefreshCallback(() => {
-      invoke("trigger_sync_now").catch(console.error);
+      // Rust sync is triggered once centrally in DesktopRealtimeContext.
+      // Re-read SQLite after sync has had time to pull new data.
       setTimeout(() => fetchTeamsRef.current?.(), 7_000);
     });
 

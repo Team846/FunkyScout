@@ -790,12 +790,14 @@ export async function putTeamDataWithImages(
   const localImageIds = await Promise.all(
     compressedBlobs.map(async (blob: Blob, idx: number) => {
       const id = crypto.randomUUID();
+      // Derive extension from actual output type (webp on modern devices, png fallback)
+      const ext = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png";
       await addToImageQueue({
         id,
         eventKey,
         teamNumber,
         blob,
-        filename: `image-${idx}-${now}.png`,
+        filename: `image-${idx}-${now}.${ext}`,
         timestamp: now,
       });
       return id;
@@ -947,37 +949,52 @@ export async function assignShiftsFromCycle(
     assignments.map((a) => [`${a.matchKey}|${a.teamKey}`, a]),
   );
 
-  // Read current schedule, replace ALL assignments atomically:
-  // entries in the new batch get the new scouter, all others are cleared to null.
-  // This prevents old assignments from compounding on top of new ones.
+  // Read current schedule, compute full new state:
+  // assigned rows get the new scouter, all others are cleared to null.
   const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
+  const scheduleMap = new Map(schedule.map((s: EventScheduleEntry) => [`${s.match}|${s.team}`, s]));
   const updated = schedule.map((s: EventScheduleEntry) => {
     const a = assignmentMap.get(`${s.match}|${s.team}`);
     return { ...s, uid: a?.uid ?? null, name: a?.name ?? null, last_modified: now };
+  });
+
+  // Diff: only send rows where uid or name actually changed.
+  // This avoids firing realtime events for rows that haven't changed,
+  // and eliminates the separate clear-all step on the Supabase side.
+  const changed = updated.filter((s) => {
+    const orig = scheduleMap.get(`${s.match}|${s.team}`);
+    if (!orig) return true;
+    return (orig.uid ?? null) !== (s.uid ?? null) || (orig.name ?? null) !== (s.name ?? null);
   });
 
   // 1. Cache locally (Tauri SQLite)
   await invoke("cache_schedule", { event: eventKey, schedule: updated });
   globalDesktopCompetitionRefresh?.();
 
-  // 2. Queue a single bulk operation for Rust sync
+  if (changed.length === 0) {
+    console.log("[Writes] ASSIGN_SHIFTS_BULK: no changes detected, skipping sync");
+    return;
+  }
+
+  // 2. Queue only changed rows — Rust does a single batch upsert (no clear-all step)
   const user_jwt = await getUserJWT();
   await invoke("add_to_sync_queue", {
     operation: "ASSIGN_SHIFTS_BULK",
     payload: {
       event: eventKey,
-      assignments: assignments.map((a) => ({
-        match: a.matchKey,
-        team: a.teamKey,
-        uid: a.uid,
-        name: a.name ?? null,
+      assignments: changed.map((s) => ({
+        match: s.match,
+        team: s.team,
+        alliance: s.alliance, // Required: NOT NULL on INSERT path of upsert
+        uid: s.uid ?? null,
+        name: s.name ?? null,
       })),
       user_jwt,
       timestamp: now,
     },
   });
 
-  console.log(`[Writes] Desktop: Queued ASSIGN_SHIFTS_BULK (${assignments.length} assignments)`);
+  console.log(`[Writes] Desktop: Queued ASSIGN_SHIFTS_BULK (${changed.length} changed rows, ${assignments.length} total assignments)`);
 
   // 3. Trigger instant sync (fire-and-forget)
   invoke("trigger_sync_now").catch((e) => {

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTabContext } from "../contexts/TabContext";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import {
   X,
   Search,
@@ -481,10 +481,9 @@ function ComparisonPage() {
   const [searchTeam, setSearchTeam] = useState("");
   const [sortKey, setSortKey] = useState("rank");
   const [sortOpen, setSortOpen] = useState(false);
-  // Persist UI state across tab navigation
-  useEffect(() => {
-    _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics };
-  }, [displayTeams, graphTeams, compMetrics, graphMetrics]);
+  // Persist UI state synchronously on every render so a tab switch mid-flight
+  // never reads stale data (useEffect fires after paint, too late if unmounting).
+  _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics };
 
   // ── Sorted + filtered team list ──
   const sortedTeams = useMemo(() => {

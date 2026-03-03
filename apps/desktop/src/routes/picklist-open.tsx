@@ -698,10 +698,9 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
 
-  // Persist selected teams + metrics for this picklist across navigation
-  useEffect(() => {
-    _picklistUIState.set(picklistId, { selectedTeams, activeMetrics });
-  }, [picklistId, selectedTeams, activeMetrics]);
+  // Persist UI state synchronously on every render (useEffect fires after paint,
+  // too late if the component unmounts before it runs).
+  _picklistUIState.set(picklistId, { selectedTeams, activeMetrics });
 
   // ── Selected picklist ──
   const selectedPicklist = picklists.find((p) => p.id === picklistId);

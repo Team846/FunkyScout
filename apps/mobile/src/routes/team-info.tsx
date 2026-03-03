@@ -158,7 +158,7 @@ function PitImageWithRetry({
     let activeController: AbortController | null = null;
 
     const doFetch = async (attempt = 0) => {
-      // Serve from session cache if already fetched this session — no network request
+      // 1. Session cache (Map): fastest, no async overhead
       const cached = imageCache.get(path);
       if (cached) {
         if (!cancelled) setBlobUrl(cached);
@@ -166,6 +166,26 @@ function PitImageWithRetry({
       }
 
       const url = getImageUrl(path);
+
+      // 2. Cache API: persists across page refreshes and app restarts.
+      //    Images use UUID paths so they're immutable — safe to cache indefinitely.
+      if ("caches" in window) {
+        try {
+          const cache = await caches.open("team-images-v1");
+          const cachedResponse = await cache.match(url);
+          if (cachedResponse) {
+            const blob = await cachedResponse.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            imageCache.set(path, objectUrl);
+            if (!cancelled) setBlobUrl(objectUrl);
+            return;
+          }
+        } catch {
+          // Cache API unavailable — fall through to network
+        }
+      }
+
+      // 3. Network fetch
       activeController = new AbortController();
       // 15s timeout — covers slow event-day WiFi without hanging forever
       const timeout = setTimeout(() => activeController!.abort(), 15000);
@@ -175,7 +195,15 @@ function PitImageWithRetry({
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const blob = await r.blob();
         const objectUrl = URL.createObjectURL(blob);
-        imageCache.set(path, objectUrl); // store for session reuse
+        imageCache.set(path, objectUrl);
+
+        // Store in Cache API for future sessions (fire-and-forget)
+        if ("caches" in window) {
+          caches.open("team-images-v1").then((cache) =>
+            cache.put(url, new Response(blob, { headers: { "Content-Type": blob.type } }))
+          ).catch(() => {});
+        }
+
         if (!cancelled) setBlobUrl(objectUrl);
       } catch {
         clearTimeout(timeout);

@@ -39,7 +39,7 @@ export async function uploadTeamImage(
   const { data, error } = await supabase.storage
     .from("team-images")
     .upload(storagePath, imageBlob, {
-      contentType: "image/png",
+      contentType: imageBlob.type || "image/webp",
       upsert: false, // Don't overwrite existing files
     });
 

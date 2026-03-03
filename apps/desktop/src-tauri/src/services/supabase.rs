@@ -678,49 +678,39 @@ impl SupabaseService {
         event: &str,
         assignments: &[Value],
     ) -> Result<()> {
-        // Step 1: Clear all existing shift assignments for this event in one call.
-        // This ensures a full replacement rather than an additive update.
-        let clear_payload = json!({
-            "uid": null,
-            "name": null,
-            "last_modified": Self::now_iso(),
-        });
-        self.auth_client()
+        // Single batch upsert of only the rows that changed (diff computed on frontend).
+        // PostgREST only touches columns present in the payload, so alliance/est_time/etc.
+        // are left untouched. No separate clear-all step needed — rows that should be
+        // cleared are included with uid/name=null by the frontend diff.
+        let now = Self::now_iso();
+        let rows: Vec<Value> = assignments.iter().map(|a| {
+            json!({
+                "event": event,
+                "match": a.get("match").and_then(|v| v.as_str()).unwrap_or(""),
+                "team": a.get("team").and_then(|v| v.as_str()).unwrap_or(""),
+                // alliance is NOT NULL — must be present for the INSERT path of upsert
+                "alliance": a.get("alliance").and_then(|v| v.as_str()).unwrap_or(""),
+                "uid": a.get("uid"),
+                "name": a.get("name"),
+                "last_modified": now,
+            })
+        }).collect();
+
+        let body = serde_json::to_string(&rows).context("Failed to serialize assignments")?;
+        let response = self.auth_client()
             .from("event_schedule")
-            .update(&clear_payload.to_string())
-            .eq("event", event)
+            .upsert(&body)
             .execute()
             .await
-            .context("Failed to clear existing shift assignments")?;
+            .context("Failed to bulk upsert shift assignments")?;
 
-        // Step 2: Apply the new assignments.
-        for assignment in assignments {
-            let match_key = assignment.get("match").and_then(|v| v.as_str()).unwrap_or("");
-            let team = assignment.get("team").and_then(|v| v.as_str()).unwrap_or("");
-            let uid = assignment.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-            let name = assignment.get("name").and_then(|v| v.as_str());
-
-            let payload = json!({
-                "uid": uid,
-                "name": name,
-                "last_modified": Self::now_iso(),
-            });
-
-            self.auth_client()
-                .from("event_schedule")
-                .update(&payload.to_string())
-                .eq("event", event)
-                .eq("match", match_key)
-                .eq("team", team)
-                .execute()
-                .await
-                .context(format!(
-                    "Failed to assign shift for match {} team {}",
-                    match_key, team
-                ))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            anyhow::bail!("[Supabase] bulk_assign_shifts failed (HTTP {}): {}", status, text);
         }
 
-        println!("[Supabase] ✓ Bulk assigned {} shifts (cleared first)", assignments.len());
+        println!("[Supabase] ✓ Bulk assigned {} shifts (diff-only batch upsert)", assignments.len());
         Ok(())
     }
 
@@ -859,7 +849,7 @@ impl SupabaseService {
     pub async fn fetch_event_match_data(&self, event: &str, since: Option<&str>) -> Result<Vec<Value>> {
         let mut query = self.auth_client()
             .from("event_match_data")
-            .select("event, match, team, alliance, data_raw, data, name, uid, timestamp, last_modified, deleted_at")
+            .select("event, match, team, alliance, data_raw, name, uid, timestamp, last_modified, deleted_at")
             .eq("event", event);
 
         query = if let Some(ts) = since {

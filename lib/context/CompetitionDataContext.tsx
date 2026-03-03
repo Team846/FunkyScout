@@ -14,7 +14,6 @@ import {
   getSchedule,
   getMatchData,
   getPicklists,
-  syncShiftAssignments,
 } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
 import { getNexusEventStatus, buildNexusTimeMap, type NexusMatch } from "@lib/nexus";
@@ -537,8 +536,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
               `[Competition] Realtime: Batched ${updateCount} schedule updates`
             );
             updateCount = 0;
-            fetchSchedule();
-            await syncShiftAssignments(currentEvent);
+            fetchScheduleRef.current?.();
           }, 2000);
         }
       )
@@ -559,7 +557,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       channel.unsubscribe();
       supabase.removeChannel(channel);
     };
-  }, [currentEvent, dbInitialized, isOnline, fetchSchedule]);
+  }, [currentEvent, dbInitialized, isOnline]);
 
   const refresh = useCallback(async () => {
     console.log("[CompetitionDataContext] Refresh callback triggered");

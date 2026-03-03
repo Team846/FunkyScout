@@ -7,6 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useDesktopEvent } from "./DesktopEventContext";
 import supabase from "@lib/supabase/supabase";
 
@@ -50,6 +51,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     // Set new timer to batch updates
     debounceTimerRef.current = setTimeout(() => {
       updateCountRef.current = 0;
+
+      // Trigger one Rust sync cycle for the whole batch — called here so each
+      // consumer context doesn't need to independently invoke it.
+      invoke("trigger_sync_now").catch(console.error);
 
       callbacksRef.current.forEach((cb) => {
         try {

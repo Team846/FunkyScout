@@ -81,6 +81,13 @@ export class PollingController {
   }
 
   private async runTask() {
+    // Skip network fetch when the tab is hidden — no one is looking at the data.
+    // The next scheduled tick will run normally once the tab becomes visible again.
+    // SyncContext's visibilitychange handler triggers an immediate refresh on un-hide.
+    if (typeof document !== "undefined" && document.hidden) {
+      this.scheduleNext();
+      return;
+    }
     try {
       await this.task();
       // Success: reset to base interval
