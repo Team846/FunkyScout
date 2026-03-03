@@ -1141,19 +1141,11 @@ function MatchPlay() {
             <div
               className={`flex flex-col justify-center items-center w-full h-full gap-2.5 transition-opacity duration-300 ${isDefending ? "opacity-0 pointer-events-none" : "opacity-100"}`}
             >
-              {/* Teleop only: Stocking + Pass same size, together = Intake row width */}
+              {/* Teleop only: Pass full width */}
               {!isAuto && (
                 <div
                   className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
                 >
-                  <div
-                    onClick={() => addPresetAction("stationStocked")}
-                    className="flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-125 cursor-pointer active:scale-[0.75] border-2 border-[#1E1E1E]"
-                  >
-                    <p className="text-xs text-outfit text-muted-foreground truncate">
-                      Stock
-                    </p>
-                  </div>
                   <div
                     onClick={() => startLocationAction("passing")}
                     className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
@@ -1426,7 +1418,7 @@ function MatchPlay() {
                   </span>
                 </div>
 
-                {/* Camp + Disrupt — bottom half */}
+                {/* Camp — bottom half, full width */}
                 <div className="flex-1 flex gap-2.5">
                   <div
                     className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
@@ -1444,24 +1436,6 @@ function MatchPlay() {
                       className={`text-xs text-outfit ${pendingLocationAction === "camp" ? "text-primary" : "text-muted-foreground"}`}
                     >
                       Camp
-                    </p>
-                  </div>
-                  <div
-                    className={`flex-1 flex flex-col items-center justify-center rounded-[15px] border-2 cursor-pointer transition-all duration-75 active:scale-[0.92] ${
-                      pendingLocationAction === "disrupt"
-                        ? "border-primary"
-                        : "border-[#1E1E1E]"
-                    }`}
-                    onClick={() =>
-                      setPendingLocationAction(
-                        pendingLocationAction === "disrupt" ? null : "disrupt"
-                      )
-                    }
-                  >
-                    <p
-                      className={`text-xs text-outfit ${pendingLocationAction === "disrupt" ? "text-primary" : "text-muted-foreground"}`}
-                    >
-                      Disrupt
                     </p>
                   </div>
                 </div>

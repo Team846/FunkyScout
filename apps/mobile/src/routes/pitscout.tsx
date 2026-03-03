@@ -312,18 +312,14 @@ function ScoutPage() {
   // Intake state
   const [intakeGround, setIntakeGround] = useState(false);
   const [intakeOutpost, setIntakeOutpost] = useState(false);
-  const [intakeStocking, setIntakeStocking] = useState(false);
 
   // Fuel state
-  const [fuelShootMoving, setFuelShootMoving] = useState(false);
   const [fuelPassing, setFuelPassing] = useState(false);
-  const [fuelBps, setFuelBps] = useState<string>("");
   const [fuelCapacity, setFuelCapacity] = useState<string>("");
 
   // Auto Climb state
   const [autoClimbLevel, setAutoClimbLevel] = useState<string | null>("None");
   const [autoClimbOrientation, setAutoClimbOrientation] = useState<string[]>([]);
-  const [autoClimbDeclimbTime, setAutoClimbDeclimbTime] = useState<string>("");
 
   // Teleop Climb state
   const [teleopClimbLevel, setTeleopClimbLevel] = useState<string[]>([]);
@@ -342,14 +338,10 @@ function ScoutPage() {
       setMovementTrough(formData.movement.trough);
       setIntakeGround(formData.intake.ground);
       setIntakeOutpost(formData.intake.outpost);
-      setIntakeStocking(formData.intake.stocking);
-      setFuelShootMoving(formData.fuel.shootMoving);
       setFuelPassing(formData.fuel.passing);
-      setFuelBps(formData.fuel.bps || "");
       setFuelCapacity(formData.fuel.capacity || "");
       setAutoClimbLevel(formData.autoClimb.level);
       setAutoClimbOrientation(formData.autoClimb.orientation ?? []);
-      setAutoClimbDeclimbTime(formData.autoClimb.declimbTime || "");
       setTeleopClimbLevel(formData.teleopClimb.level ?? []);
       setTeleopClimbOrientation(formData.teleopClimb.orientation ?? []);
     /* GENERATED:END */
@@ -375,18 +367,14 @@ function ScoutPage() {
       intake: {
         ground: intakeGround,
         outpost: intakeOutpost,
-        stocking: intakeStocking,
       },
       fuel: {
-        shootMoving: fuelShootMoving,
         passing: fuelPassing,
-        bps: fuelBps,
         capacity: fuelCapacity,
       },
       autoClimb: {
         level: autoClimbLevel,
         orientation: autoClimbOrientation,
-        declimbTime: autoClimbDeclimbTime,
       },
       teleopClimb: {
         level: teleopClimbLevel,
@@ -499,26 +487,13 @@ function ScoutPage() {
               </ScoutToggle>
               <ScoutToggle
                 pressed={intakeOutpost}
-                onPressedChange={(p) => {
-                  setIntakeOutpost(p);
-                  if (!p) setIntakeStocking(false);
-                }}
+                onPressedChange={setIntakeOutpost}
                 className="w-full"
                 info="Can the robot intake from the outpost?"
               >
                 Outpost
               </ScoutToggle>
             </div>
-            {intakeOutpost && (
-              <ScoutToggle
-                pressed={intakeStocking}
-                onPressedChange={setIntakeStocking}
-                className="w-full"
-                info="Can the robot feed the outpost with balls?"
-              >
-                Stocking
-              </ScoutToggle>
-            )}
           </div>
         </Section>
 
@@ -527,14 +502,6 @@ function ScoutPage() {
           <div className="flex flex-col gap-3 px-2">
             <div className="grid grid-cols-2 gap-3">
               <ScoutToggle
-                pressed={fuelShootMoving}
-                onPressedChange={setFuelShootMoving}
-                className="w-full"
-                info="Can the robot shoot game pieces while moving?"
-              >
-                Shoot Moving
-              </ScoutToggle>
-              <ScoutToggle
                 pressed={fuelPassing}
                 onPressedChange={setFuelPassing}
                 className="w-full"
@@ -542,12 +509,6 @@ function ScoutPage() {
               >
                 Passing
               </ScoutToggle>
-              <Input
-                value={fuelBps}
-                onChange={(e) => setFuelBps(e.target.value)}
-                className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-                placeholder="Balls Per Sec"
-              />
               <Input
                 value={fuelCapacity}
                 onChange={(e) => setFuelCapacity(e.target.value)}
@@ -604,14 +565,6 @@ function ScoutPage() {
                   Right
                 </ScoutToggle>
               </div>
-            )}
-            {autoClimbLevel !== "None" && (
-              <Input
-                value={autoClimbDeclimbTime}
-                onChange={(e) => setAutoClimbDeclimbTime(e.target.value)}
-                className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-                placeholder="Declimb Time (s)"
-              />
             )}
           </div>
         </Section>

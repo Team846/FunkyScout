@@ -353,6 +353,8 @@ impl SupabaseService {
     /// Only updates teams where data actually changed (reduces postgres_changes events by 90%).
     /// `snapshot` is the team data last pulled from Supabase (passed from SyncService).
     /// When Some, skips the redundant full SELECT — only fetches on cold start (None).
+    /// Teams not found in existing Supabase data are inserted with TBA-only data (seed row).
+    /// This handles both bootstrap and mid-event b-team additions correctly.
     pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>, snapshot: Option<&[Value]>) -> Result<()> {
         if teams.is_empty() {
             return Ok(());
@@ -387,15 +389,23 @@ impl SupabaseService {
             }
         };
 
-        // 2. Build lookup map of existing data
+        // 2. Build lookup map of existing data (treat missing/null data as {} so we never wipe pit)
         let mut existing_map: std::collections::HashMap<String, Value> = existing_data
             .into_iter()
             .filter_map(|v| {
                 let team = v.get("team")?.as_str()?.to_string();
-                let data = v.get("data")?.clone();
+                let data = v.get("data").cloned().unwrap_or(json!({}));
                 Some((team, data))
             })
             .collect();
+
+        if existing_map.is_empty() {
+            println!(
+                "[Supabase] No existing team data found for event {} — treating all {} teams as new (first bootstrap or empty event)",
+                event,
+                teams.len()
+            );
+        }
 
         // 3. Merge TBA stats with existing pit scouting data + filter for changes
         let total_teams = teams.len();
@@ -407,22 +417,29 @@ impl SupabaseService {
 
                 // If existing data found, merge (pit data + TBA stats)
                 let (merged_data, has_changed) = if let Some(existing) = existing_map.remove(team) {
-                    // Merge: keep existing pit fields, overwrite with new TBA stats
-                    let merged = if let (Some(existing_obj), Some(new_obj)) = (existing.as_object(), new_data.as_object()) {
-                        let mut merged = existing_obj.clone();
-                        for (key, value) in new_obj {
-                            merged.insert(key.clone(), value.clone());
-                        }
-                        json!(merged)
-                    } else {
-                        new_data.clone() // Fallback if not objects
-                    };
+                    // Normalize existing: null or malformed -> empty object so we never wipe pit
+                    let existing_obj = existing
+                        .as_object()
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::Map::new());
+                    let new_obj = new_data.as_object().cloned().unwrap_or_default();
 
-                    // Check if merged data differs from existing
-                    let changed = merged != existing;
+                    // Snapshot before move so we can diff afterward
+                    let existing_normalized = json!(existing_obj);
+
+                    // Merge: existing pit + TBA stats overlay
+                    let mut merged = existing_obj;
+                    for (key, value) in new_obj {
+                        merged.insert(key.clone(), value.clone());
+                    }
+                    let merged = json!(merged);
+
+                    // Check if merged data differs from existing (compare to normalized)
+                    let changed = merged != existing_normalized;
                     (merged, changed)
                 } else {
-                    // No existing data, this is a new team - always include
+                    // Team not in existing Supabase data — insert with TBA-only data as seed row.
+                    // This covers both initial bootstrap and mid-event b-team additions.
                     (new_data, true)
                 };
 
@@ -445,13 +462,23 @@ impl SupabaseService {
         println!("[Supabase] Upserting {} changed teams (out of {} total)",
             changed_teams.len(), total_teams);
 
-        self.auth_client()
+        let resp = self.auth_client()
             .from("event_team_data")
             .upsert(&serde_json::to_string(&changed_teams)?)
             .on_conflict("event,team")
             .execute()
             .await
             .context("Failed to bulk upsert team data")?;
+
+        let upsert_status = resp.status();
+        if !upsert_status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "[Supabase] bulk_upsert_team_data upsert failed (HTTP {}): {}",
+                upsert_status,
+                if body.len() > 300 { format!("{}...", &body[..300]) } else { body }
+            );
+        }
 
         Ok(())
     }
@@ -581,23 +608,6 @@ impl SupabaseService {
         Ok(())
     }
 
-    /// Bulk upsert match data (scores, timings from TBA)
-    pub async fn bulk_upsert_match_data(&self, matches: Vec<Value>) -> Result<()> {
-        if matches.is_empty() {
-            return Ok(());
-        }
-
-        self.auth_client()
-            .from("event_match_data")
-            .upsert(&serde_json::to_string(&matches)?)
-            .on_conflict("event,match,team")
-            .execute()
-            .await
-            .context("Failed to bulk upsert match data")?;
-
-        Ok(())
-    }
-
     // ============================================================================
     // Sync Queue Operation Wrappers
     // These methods match the sync_queue payload structure
@@ -679,7 +689,20 @@ impl SupabaseService {
                     let existing = row.get("data").cloned().unwrap_or(json!({}));
                     Self::merge_json(existing, new_data)
                 } else {
-                    new_data
+                    // Row not found in Supabase. Possible causes:
+                    // 1. Row doesn't exist yet (team never bootstrapped)
+                    // 2. RLS visibility issue — row exists but current auth token can't see it
+                    //
+                    // Writing partial data (e.g. {priority:3}) onto a row that exists-but-is-
+                    // invisible would wipe existing pit scouting. Bail out; the sync queue will
+                    // retry. For genuine new teams, run bootstrap first to create the row.
+                    anyhow::bail!(
+                        "[Supabase] put_team_data: no row visible for {}/{} in Supabase. \
+                         Aborting write to prevent partial-data overwrite. \
+                         If this is a new team, run bootstrap first. \
+                         If rows exist, check that the RLS SELECT policy allows the desktop to read all event_team_data rows.",
+                        event, team
+                    );
                 }
             }
             Ok(resp) => {

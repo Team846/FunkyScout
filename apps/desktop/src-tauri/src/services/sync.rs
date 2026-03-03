@@ -789,7 +789,11 @@ impl SyncService {
             let uid = record.get("uid").and_then(|v| v.as_str());
             let assigned = record.get("assigned").and_then(|v| v.as_str());
             let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
-            let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+            // deleted_at from Supabase is an ISO string — convert to ms; None if not deleted
+            let deleted_at = record.get("deleted_at").and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())))
+            });
 
             // Strip null values from incoming data so json_patch doesn't erase existing keys
             let data_json = match record.get("data").and_then(|v| v.as_object()) {

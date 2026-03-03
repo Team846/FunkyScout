@@ -50,18 +50,14 @@ export interface PitScoutFormData {
   intake: {
     ground: boolean;
     outpost: boolean;
-    stocking: boolean;
   };
   fuel: {
-    shootMoving: boolean;
     passing: boolean;
-    bps?: string;
     capacity?: string;
   };
   autoClimb: {
     level: string | null;
     orientation: string[];
-    declimbTime?: string;
   };
   teleopClimb: {
     level: string[];

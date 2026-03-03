@@ -362,13 +362,11 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
   const autoScore =
     matchStats.auto.intakes +
     matchStats.auto.passes +
-    matchStats.auto.shoots +
-    matchStats.auto.stocking;
+    matchStats.auto.shoots;
   const teleopScore =
     matchStats.teleop.intakes +
     matchStats.teleop.passes +
-    matchStats.teleop.shoots +
-    matchStats.teleop.stocking;
+    matchStats.teleop.shoots;
   const climbLevel = matchStats.climb.level || "None";
 
   const handleEdit = () => {

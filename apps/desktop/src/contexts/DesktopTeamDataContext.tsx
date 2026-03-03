@@ -17,6 +17,7 @@ import {
   type EventTeamData,
   type PitScoutingData,
 } from "../lib/db";
+import { setDesktopTeamRefresh } from "@lib/data/writes";
 
 export type { PitScoutingData };
 
@@ -52,6 +53,7 @@ interface DesktopTeamDataContextType {
   tbaTeams: TBATeam[];
   pitScoutingData: PitScoutingData[];
   loading: boolean;
+  lastDataRefreshAt: number; // Bumped each time SQLite is re-read; watch this to react to syncs
   refresh: () => Promise<void>;
 }
 
@@ -67,6 +69,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
   const [pitScoutingData, setPitScoutingData] = useState<PitScoutingData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastDataRefreshAt, setLastDataRefreshAt] = useState(0);
 
   const hasLoadedDataRef = useRef(false);
   const fetchTeamsRef = useRef<(() => Promise<void>) | null>(null);
@@ -96,6 +99,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
       console.error("[DesktopTeamData] Failed to read from SQLite:", error);
     } finally {
       setLoading(false);
+      setLastDataRefreshAt(Date.now());
     }
   }, [currentEvent]);
 
@@ -213,6 +217,14 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     return unregister;
   }, [currentEvent, registerRefreshCallback]);
 
+  // Register global callback so writes.ts can trigger an immediate SQLite re-read
+  // after local writes (putTeamData, setTeamPriority, assignPitTeams, etc.) without
+  // waiting for the realtime postgres_changes event (~7-15s delay).
+  useEffect(() => {
+    setDesktopTeamRefresh(() => fetchTeamsRef.current?.());
+    return () => setDesktopTeamRefresh(null);
+  }, []);
+
   const refresh = useCallback(async () => {
     if (fetchTeamsRef.current) {
       await fetchTeamsRef.current();
@@ -220,8 +232,8 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const contextValue = useMemo(
-    () => ({ teams, tbaTeams, pitScoutingData, loading, refresh }),
-    [teams, tbaTeams, pitScoutingData, loading, refresh]
+    () => ({ teams, tbaTeams, pitScoutingData, loading, lastDataRefreshAt, refresh }),
+    [teams, tbaTeams, pitScoutingData, loading, lastDataRefreshAt, refresh]
   );
 
   return (

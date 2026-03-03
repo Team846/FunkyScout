@@ -671,7 +671,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   const { addTab } = useTabContext();
   const { currentEvent, useTbaClimb } = useDesktopEvent();
   const { picklists, tbaClimbData, matchScoutingData, refresh } = useDesktopCompetitionData();
-  const { tbaTeams } = useDesktopTeamData();
+  const { tbaTeams, pitScoutingData } = useDesktopTeamData();
 
   // ── State ──
   const [selectedTeams, setSelectedTeams] = useState<string[]>(
@@ -684,6 +684,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     Record<string, boolean>
   >({});
   const [showMetricPicker, setShowMetricPicker] = useState(false);
+  const [statOverviewMetric, setStatOverviewMetric] = useState("overview");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [searchTeam, setSearchTeam] = useState("");
@@ -1197,6 +1198,9 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                         entry={entries.find((e) => e.team === teamKey)}
                         tbaTeam={tbaTeams.find((t) => t.key === teamKey)}
                         matchData={matchScoutingData}
+                        allMatchData={matchScoutingData}
+                        allTbaTeams={tbaTeams}
+                        pitScouting={pitScoutingData.find((p) => p.team === teamKey)}
                         tbaClimbData={tbaClimbData}
                         useTbaClimb={useTbaClimb}
                         onMoveUp={() => moveRank(teamKey, "up")}
@@ -1206,6 +1210,8 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                             prev.filter((t) => t !== teamKey)
                           )
                         }
+                        statOverviewMetric={statOverviewMetric}
+                        onStatOverviewMetricChange={setStatOverviewMetric}
                         onTeamExpand={() => {
                           const teamNum = teamKey.replace("frc", "");
                           addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);

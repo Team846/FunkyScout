@@ -552,7 +552,9 @@ pub async fn get_pit_scouting_data(
         .collect())
 }
 
-/// Cache pit scouting data to SQLite (called by frontend after Supabase fetch)
+/// Cache pit scouting data to SQLite (called by frontend after Supabase fetch).
+/// Merges incoming data with existing (json_patch) so TBA stats and pit scouting
+/// are preserved — never replaces one with the other.
 #[tauri::command]
 pub async fn cache_pit_scouting_data(
     state: State<'_, Mutex<AppState>>,
@@ -571,8 +573,19 @@ pub async fn cache_pit_scouting_data(
     for record in data {
         let event = record.get("event").and_then(|v| v.as_str()).unwrap_or("");
         let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
-        let data_json = record.get("data").cloned();
-        let data_str = data_json.map(|d| d.to_string());
+        // Strip nulls so json_patch doesn't erase existing keys (RFC 7396: null = delete)
+        let data_json = match record.get("data") {
+            Some(serde_json::Value::Object(obj)) => {
+                let non_null: serde_json::Map<String, serde_json::Value> = obj
+                    .iter()
+                    .filter(|(_, v)| !v.is_null())
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                serde_json::Value::Object(non_null).to_string()
+            }
+            Some(v) if !v.is_null() => v.to_string(),
+            _ => "{}".to_string(),
+        };
         let team_name = record.get("team_name").and_then(|v| v.as_str());
         let name = record.get("name").and_then(|v| v.as_str());
         let uid = record.get("uid").and_then(|v| v.as_str());
@@ -580,24 +593,28 @@ pub async fn cache_pit_scouting_data(
         let timestamp = record.get("timestamp").and_then(|v| v.as_i64());
         let last_modified = record.get("last_modified").and_then(|v| v.as_i64())
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-        let deleted_at = record.get("deleted_at").and_then(|v| v.as_i64());
+        // deleted_at from Supabase is an ISO string — convert to ms; None if not deleted
+        let deleted_at = record.get("deleted_at").and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())))
+        });
 
         sqlx::query(
             "INSERT INTO event_team_data (event, team, data, team_name, name, uid, assigned, timestamp, last_modified, deleted_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, json(?), ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(event, team) DO UPDATE SET
-               data = excluded.data,
-               team_name = excluded.team_name,
-               name = excluded.name,
-               uid = excluded.uid,
-               assigned = excluded.assigned,
-               timestamp = excluded.timestamp,
+               data = json_patch(COALESCE(event_team_data.data, '{}'), excluded.data),
+               team_name = COALESCE(excluded.team_name, event_team_data.team_name),
+               name = COALESCE(excluded.name, event_team_data.name),
+               uid = COALESCE(excluded.uid, event_team_data.uid),
+               assigned = COALESCE(excluded.assigned, event_team_data.assigned),
+               timestamp = COALESCE(excluded.timestamp, event_team_data.timestamp),
                last_modified = excluded.last_modified,
                deleted_at = excluded.deleted_at"
         )
         .bind(event)
         .bind(team)
-        .bind(data_str)
+        .bind(&data_json)
         .bind(team_name)
         .bind(name)
         .bind(uid)

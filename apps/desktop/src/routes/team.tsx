@@ -5,6 +5,7 @@ import { useDesktopTeamData, type PitScoutingData } from "../contexts/DesktopTea
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useTabContext } from "../contexts/TabContext";
 import { getMatchLabel } from "@lib/utils/match";
+import { AutoPathPreview, type DrawingData } from "../components/TeamPanelShared";
 
 export const Route = createFileRoute("/team")({
   component: TeamPage,
@@ -13,73 +14,12 @@ export const Route = createFileRoute("/team")({
   }),
 });
 
-// ─── Drawing types (mirrored from matches.tsx) ────────────────────────────────
-type PathPoint = { x: number; y: number };
-type PathSegment = { points: PathPoint[]; color?: string; lineWidth?: number };
-type DrawingData = {
-  paths: PathSegment[];
-  canvasWidth: number;
-  canvasHeight: number;
-};
-
 type TeamAutoDisplay = {
   name?: string;
   description?: string;
   drawing?: DrawingData | null;
   climbDuringAuto?: boolean;
 };
-
-const FIELD_IMG_WIDTH = 326;
-const FIELD_IMG_HEIGHT = 318;
-
-function AutoPathPreview({
-  drawing,
-  className,
-}: {
-  drawing: DrawingData;
-  className?: string;
-}) {
-  const { paths, canvasWidth, canvasHeight } = drawing;
-  const cropH = FIELD_IMG_WIDTH * (2 / 3);
-  const cropY = (FIELD_IMG_HEIGHT - cropH) / 2;
-  const scaleX = FIELD_IMG_WIDTH / canvasWidth;
-  const scaleY = cropH / canvasHeight;
-  return (
-    <div className={`relative w-full overflow-hidden rounded-lg ${className || ""}`}>
-      <img src="/red_field.svg" alt="Field" className="block w-full h-auto max-w-full max-h-full" />
-      <svg
-        viewBox={`0 0 ${FIELD_IMG_WIDTH} ${FIELD_IMG_HEIGHT}`}
-        className="absolute inset-0 w-full h-full"
-        preserveAspectRatio="xMidYMid meet"
-        style={{ pointerEvents: "none" }}
-      >
-        <g transform={`translate(0, ${cropY}) scale(${scaleX}, ${scaleY})`}>
-          {paths.map((path, pathIndex) => {
-            if (!path.points || path.points.length < 2) return null;
-            const actualPoints = path.points.map((p) => ({
-              x: p.x * canvasWidth,
-              y: p.y * canvasHeight,
-            }));
-            const pathData = actualPoints
-              .map((point, i) => (i === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`))
-              .join(" ");
-            return (
-              <path
-                key={pathIndex}
-                d={pathData}
-                stroke={path.color || "#ef4444"}
-                strokeWidth={(path.lineWidth ?? 3) * Math.max(scaleX, scaleY)}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            );
-          })}
-        </g>
-      </svg>
-    </div>
-  );
-}
 
 function getTeamAutos(pitData: PitScoutingData | undefined): TeamAutoDisplay[] {
   const raw = (pitData?.data as { autos?: unknown[] })?.autos ?? [];

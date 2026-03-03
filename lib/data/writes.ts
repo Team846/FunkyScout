@@ -61,6 +61,24 @@ export function setGlobalSyncTrigger(trigger: () => Promise<void>) {
 }
 
 /**
+ * Desktop-only global refresh callbacks
+ * Set by the desktop data contexts so that local SQLite writes (deleteMatchData,
+ * putTeamData, setTeamPriority, assignShiftsFromCycle, etc.) immediately reflect
+ * in the UI without waiting for the realtime callback (~7s) or 120s sync cycle.
+ *
+ * Each callback re-reads the corresponding SQLite tables and updates React state.
+ */
+let globalDesktopCompetitionRefresh: (() => void) | null = null;
+let globalDesktopTeamRefresh: (() => void) | null = null;
+
+export function setDesktopCompetitionRefresh(cb: (() => void) | null) {
+  globalDesktopCompetitionRefresh = cb;
+}
+export function setDesktopTeamRefresh(cb: (() => void) | null) {
+  globalDesktopTeamRefresh = cb;
+}
+
+/**
  * Trigger instant sync if online
  * Fire-and-forget - errors are logged but don't block the write
  */
@@ -120,6 +138,7 @@ export async function putTeamData(
 
     // 1. Cache locally (Tauri SQLite) — upsert one row, preserves other teams
     await invoke("cache_pit_scouting_data", { data: [teamData] });
+    globalDesktopTeamRefresh?.();
 
     // 2. Add to sync queue
     await invoke("add_to_sync_queue", {
@@ -224,6 +243,7 @@ export async function putMatchData(
 
     // 1. Cache locally (Tauri SQLite)
     await invoke("cache_match_scouting_data", { data: [matchData] });
+    globalDesktopCompetitionRefresh?.();
 
     // 2. Add to sync queue (include user JWT so Rust can write to Supabase with auth)
     const user_jwt = await getUserJWT();
@@ -328,6 +348,7 @@ export async function deleteMatchData(
     matchData.deleted_at = now;
     matchData.last_modified = now;
     await invoke("cache_match_scouting_data", { data: [matchData] });
+    globalDesktopCompetitionRefresh?.();
 
     // 3. Queue for sync (will push to Supabase when online)
     // CRITICAL: Use original timestamp for Supabase query to match the record
@@ -405,6 +426,7 @@ export async function assignShift(
 
     // 1. Cache locally (Tauri SQLite)
     await invoke("cache_schedule", { event: eventKey, schedule: updated });
+    globalDesktopCompetitionRefresh?.();
 
     // 2. Add to sync queue
     await invoke("add_to_sync_queue", {
@@ -486,6 +508,7 @@ export async function createPicklist(
 
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
+      globalDesktopCompetitionRefresh?.();
 
       // Get user JWT for proper authentication
       const user_jwt = await getUserJWT();
@@ -590,6 +613,7 @@ export async function updatePicklist(
 
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
+      globalDesktopCompetitionRefresh?.();
       console.log("[Writes] Desktop: ✓ Cached picklist with entries");
 
       // Get user JWT for proper authentication
@@ -676,6 +700,7 @@ export async function deletePicklist(
 
       // Cache locally (Tauri SQLite) - invoke commands directly
       await invoke("cache_picklists", { picklists: [picklist] });
+      globalDesktopCompetitionRefresh?.();
 
       // Get user JWT for proper authentication
       const user_jwt = await getUserJWT();
@@ -839,7 +864,7 @@ export async function setTeamPriority(
   const { invoke } = await import("@tauri-apps/api/core");
   const now = Date.now();
 
-  // 1. Read the current full row from local SQLite (preserves TBA stats + pit data)
+  // 1. Read the current full row from local SQLite for the local cache update only.
   const allPitData = await invoke<any[]>("get_pit_scouting_data", { event: eventKey });
   const existing = allPitData.find(
     (r: any) =>
@@ -848,7 +873,7 @@ export async function setTeamPriority(
   );
   const existingData = existing?.data ?? {};
 
-  // 2. Merge priority into existing data (null keeps the field but clears the value)
+  // 2. Merge priority into existing local data for immediate UI update.
   const mergedData =
     priority !== null
       ? { ...existingData, priority }
@@ -870,14 +895,19 @@ export async function setTeamPriority(
 
   // 4. Cache locally so the UI reflects the change immediately
   await invoke("cache_pit_scouting_data", { data: [updatedRow] });
+  globalDesktopTeamRefresh?.();
 
-  // 5. Queue a PUT_TEAM_DATA sync so Supabase gets the merged data
+  // 5. Queue only the priority delta to Supabase.
+  //    Rust's put_team_data fetches the current Supabase row and merges this on top,
+  //    so we only send {priority} — never the full local data. Sending the full local
+  //    data risks overwriting fresher pit scouting submitted from mobile between syncs.
+  const priorityDelta = { priority: priority ?? null };
   await invoke("add_to_sync_queue", {
     operation: "PUT_TEAM_DATA",
     payload: {
       event: eventKey,
       team: teamKey,
-      data: mergedData,
+      data: priorityDelta,
       teamName: existing?.team_name,
       name: existing?.name,
       uid: existing?.uid,
@@ -928,6 +958,7 @@ export async function assignShiftsFromCycle(
 
   // 1. Cache locally (Tauri SQLite)
   await invoke("cache_schedule", { event: eventKey, schedule: updated });
+  globalDesktopCompetitionRefresh?.();
 
   // 2. Queue a single bulk operation for Rust sync
   const user_jwt = await getUserJWT();
@@ -982,6 +1013,7 @@ export async function assignShiftsDiff(
 
   // 1. Cache locally (Tauri SQLite)
   await invoke("cache_schedule", { event: eventKey, schedule: updated });
+  globalDesktopCompetitionRefresh?.();
 
   // 2. Queue only the changed entries — not the entire schedule.
   // Use ASSIGN_SHIFTS_DIFF (not ASSIGN_SHIFTS_BULK) so Supabase does NOT
@@ -1041,13 +1073,14 @@ export async function assignPitTeams(
       updatedRows.push({ ...row, assigned: a.uid, last_modified: now });
     }
   }
-  // Create skeleton rows for teams not yet in pit data
+  // Create skeleton rows for teams not yet in pit data.
+  // Use data: {} so cache merges (preserves TBA stats) instead of wiping.
   for (const a of assignments) {
     if (!existingTeams.has(norm(a.teamKey))) {
       updatedRows.push({
         event: eventKey,
         team: a.teamKey,
-        data: null,
+        data: {},
         team_name: null,
         name: null,
         uid: null,
@@ -1062,6 +1095,7 @@ export async function assignPitTeams(
   // 1. Cache locally (Tauri SQLite)
   if (updatedRows.length > 0) {
     await invoke("cache_pit_scouting_data", { data: updatedRows });
+    globalDesktopTeamRefresh?.();
   }
 
   // 2. Queue a single bulk operation for Rust sync

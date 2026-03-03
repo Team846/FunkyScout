@@ -40,18 +40,14 @@ interface PitData {
   intake: {
     ground: boolean;
     outpost: boolean;
-    stocking: boolean;
   };
   fuel: {
-    shootMoving: boolean;
     passing: boolean;
-    bps?: string;
     capacity?: string;
   };
   autoClimb: {
     level: string | null;
     orientation?: string[];
-    declimbTime?: string;
   };
   teleopClimb: {
     level: string[];
@@ -90,10 +86,8 @@ interface Verifications {
   intake: {
     ground: VerificationItem;
     outpost: VerificationItem;
-    stocking: VerificationItem;
   };
   fuel: {
-    shootMoving: VerificationItem;
     passing: VerificationItem;
   };
   autoClimb: {
@@ -351,13 +345,11 @@ function TeamInfoPage() {
 ): Verifications => {
   // Aggregate match observations across all scouted matches
   const observed = {
-    bump:         matches.some(m => m.data_raw?.postMatch?.bump),
-    trough:       matches.some(m => m.data_raw?.postMatch?.trough),
-    ground:       matches.some(m => m.data_raw?.postMatch?.canGround),
-    outpost:      matches.some(m => m.data_raw?.postMatch?.canStation),
-    stocking:     matches.some(m => m.data_raw?.postMatch?.canStocking),
-    shootMoving:  matches.some(m => m.data_raw?.postMatch?.shootMoving),
-    passing:      matches.some(m => m.data_raw?.postMatch?.canPass),
+    bump:    matches.some(m => m.data_raw?.postMatch?.bump),
+    trough:  matches.some(m => m.data_raw?.postMatch?.trough),
+    ground:  matches.some(m => m.data_raw?.postMatch?.canGround),
+    outpost: matches.some(m => m.data_raw?.postMatch?.canStation),
+    passing: matches.some(m => m.data_raw?.postMatch?.canPass),
     autoClimbObserved: matches.some(m => !!calculateSingleMatchStats(m)?.climb?.hasAutoClimb),
     autoClimbOrientations: new Set(
       matches
@@ -392,13 +384,11 @@ function TeamInfoPage() {
       trough: boolItem(pit.movement?.trough ?? false, observed.trough),
     },
     intake: {
-      ground:   boolItem(pit.intake?.ground ?? false, observed.ground),
-      outpost:  boolItem(pit.intake?.outpost ?? false, observed.outpost),
-      stocking: boolItem(pit.intake?.stocking ?? false, observed.stocking),
+      ground:  boolItem(pit.intake?.ground ?? false, observed.ground),
+      outpost: boolItem(pit.intake?.outpost ?? false, observed.outpost),
     },
     fuel: {
-      shootMoving: boolItem(pit.fuel?.shootMoving ?? false, observed.shootMoving),
-      passing:     boolItem(pit.fuel?.passing ?? false, observed.passing),
+      passing: boolItem(pit.fuel?.passing ?? false, observed.passing),
     },
     autoClimb: {
       observed: observed.autoClimbObserved,
@@ -834,20 +824,6 @@ function TeamInfoPage() {
                       {verifications && <VerificationBadge item={verifications.intake.outpost} />}
                     </div>
                   </div>
-                  {pitData.intake?.outpost && (
-                    <>
-                      <div className="h-px bg-border my-2" />
-                      <div className="flex items-center justify-between py-2">
-                        <p className="text-foreground">Stocking</p>
-                        <div className="flex items-center gap-2">
-                          <p className={`font-semibold ${pitData.intake?.stocking ? "text-chart-2" : "text-destructive"}`}>
-                            {pitData.intake?.stocking ? "Yes" : "No"}
-                          </p>
-                          {verifications && <VerificationBadge item={verifications.intake.stocking} />}
-                        </div>
-                      </div>
-                    </>
-                  )}
                 </div>
               </div>
 
@@ -856,41 +832,20 @@ function TeamInfoPage() {
                 <p className="text-base text-primary font-semibold mb-3">FUEL</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Shoot Moving</p>
-                    <div className="flex items-center gap-2">
-                      <p className={`font-semibold ${pitData.fuel?.shootMoving ? "text-chart-2" : "text-destructive"}`}>
-                        {pitData.fuel?.shootMoving ? "Yes" : "No"}
-                      </p>
-                      {verifications && <VerificationBadge item={verifications.fuel.shootMoving} />}
-                    </div>
-                  </div>
-                  <div className="h-px bg-border my-2" />
-                  <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Passing</p>
                     <div className="flex items-center gap-2">
                       <p className={`font-semibold ${pitData.fuel?.passing ? "text-chart-2" : "text-destructive"}`}>
                         {pitData.fuel?.passing ? "Yes" : "No"}
-                        
                       </p>
                       {verifications && <VerificationBadge item={verifications.fuel.passing} />}
                     </div>
                   </div>
-                  {(pitData.fuel?.bps || pitData.fuel?.capacity) && (
+                  {pitData.fuel?.capacity && (
                     <>
                       <div className="h-px bg-border my-2" />
-                      <div className="grid grid-cols-2 gap-4 py-2">
-                        {pitData.fuel?.bps && (
-                          <div>
-                            <p className="text-foreground text-sm mb-1">Balls Per Sec</p>
-                            <p className="font-semibold text-foreground">{pitData.fuel.bps}</p>
-                          </div>
-                        )}
-                        {pitData.fuel?.capacity && (
-                          <div>
-                            <p className="text-foreground text-sm mb-1">Ball Capacity</p>
-                            <p className="font-semibold text-foreground">{pitData.fuel.capacity}</p>
-                          </div>
-                        )}
+                      <div className="py-2">
+                        <p className="text-foreground text-sm mb-1">Ball Capacity</p>
+                        <p className="font-semibold text-foreground">{pitData.fuel.capacity}</p>
                       </div>
                     </>
                   )}
@@ -901,17 +856,6 @@ function TeamInfoPage() {
               <div>
                 <p className="text-base text-primary font-semibold mb-3">AUTO CLIMB</p>
                 <div className="rounded-2xl bg-muted px-6 py-4">
-                  {pitData.autoClimb?.declimbTime && (
-                    <>
-                      <div className="h-px bg-border my-2" />
-                      <div className="grid grid-cols-2 gap-4 py-2">
-                        <div>
-                          <p className="text-foreground text-sm mb-1">Declimb Time (s)</p>
-                          <p className="font-semibold text-foreground">{pitData.autoClimb.declimbTime}</p>
-                        </div>
-                      </div>
-                    </>
-                  )}
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Auto Climb</p>
                     <p className={`font-semibold ${verifications?.autoClimb.observed && pitData.autoClimb?.level === "Climb" ? "text-chart-2" : "text-foreground"}`}>

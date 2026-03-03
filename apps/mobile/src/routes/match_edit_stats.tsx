@@ -507,10 +507,6 @@ function MatchEditStats() {
   };
 
   // Calculate stats
-  const teleopStocking =
-    matchData?.presetActions.filter(
-      (a) => a.type === "stationStocked" && a.phase === "teleop"
-    ).length || 0;
   const autoIntakes =
     matchData?.locationActions.filter(
       (a) => a.type === "groundIntake" && a.phase === "auto"
@@ -558,19 +554,6 @@ function MatchEditStats() {
   const climbLevel = lastL3 ? "3" : lastL2 ? "2" : lastL1 ? "1" : null;
 
   // Direct value setters for preset actions
-  const setTeleopStocking = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.presetActions.filter(
-      (a) => !(a.type === "stationStocked" && a.phase === "teleop")
-    );
-    const baseTs = endOfPhase("teleop", undefined, filtered);
-    const newActions: PresetAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({ type: "stationStocked", timestamp: baseTs + i * 100, phase: "teleop" });
-    }
-    setMatchData({ ...matchData, presetActions: [...filtered, ...newActions] });
-  };
-
   const setAutoIntakes = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.locationActions.filter(
@@ -733,56 +716,6 @@ function MatchEditStats() {
                   </div>
                   <div className="text-sm font-semibold text-[#CDA745] text-center">
                     Teleop
-                  </div>
-                </div>
-
-                {/* Stocking Row (teleop only) */}
-                <div className="grid grid-cols-3 gap-4 items-center">
-                  <div className="text-sm text-foreground">Stocking</div>
-                  <div className="flex items-center justify-center">
-                    <span className="text-sm text-muted-foreground">—</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Input
-                      type="number"
-                      value={teleopStocking}
-                      onChange={(e) =>
-                        setTeleopStocking(parseInt(e.target.value) || 0)
-                      }
-                      className="h-8 w-16 text-center bg-background border-border"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeleopStocking(teleopStocking + 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 3L9 7H3L6 3Z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeleopStocking(teleopStocking - 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 9L3 5H9L6 9Z" />
-                        </svg>
-                      </Button>
-                    </div>
                   </div>
                 </div>
 

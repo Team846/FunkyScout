@@ -12,6 +12,7 @@
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "^3.41.2",
     "@shadcn/ui": "workspace:*",
+    "recharts": "2.15.4",
     "@tanstack/react-router": "^1.136.4",
     "@tanstack/react-router-devtools": "^1.136.4",
     "@tauri-apps/api": "^2",

@@ -23,6 +23,7 @@ import {
   buildNexusTimeMap,
   type NexusMatch,
 } from "@lib/nexus";
+import { setDesktopCompetitionRefresh } from "@lib/data/writes";
 
 export type { MatchScoutingData };
 
@@ -215,6 +216,14 @@ export function DesktopCompetitionDataProvider({
   useEffect(() => {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
+
+  // Register global callback so writes.ts can trigger an immediate SQLite re-read
+  // after local writes (deleteMatchData, assignShiftsFromCycle, etc.) without
+  // waiting for the realtime postgres_changes event (~7-15s delay).
+  useEffect(() => {
+    setDesktopCompetitionRefresh(() => fetchDataRef.current?.());
+    return () => setDesktopCompetitionRefresh(null);
+  }, []);
 
   // Handle event changes
   useEffect(() => {

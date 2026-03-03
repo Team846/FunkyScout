@@ -37,6 +37,7 @@ import {
   getStatDataPoints,
   getTbaStatDataPoints,
 } from "@lib/data/matchStats";
+import { MetricPicker, ALL_GRAPH_METRICS } from "../components/MetricPicker";
 import {
   getTeamNum,
   FullTeamPanel,
@@ -67,18 +68,8 @@ const TBA_SORT_OPTIONS = [
   { key: "opr", label: "OPR", group: "TBA" },
 ];
 
-const EXTRA_GRAPH_METRICS = [
-  { key: "epa", label: "EPA", group: "TBA" },
-  { key: "opr", label: "OPR", group: "TBA" },
-];
-
 const ALL_SORT_OPTIONS = [
   ...TBA_SORT_OPTIONS,
-  ...GRAPHABLE_STATS.map((s) => ({ key: s.key, label: s.label, group: s.group })),
-];
-
-const ALL_GRAPH_METRICS = [
-  ...EXTRA_GRAPH_METRICS,
   ...GRAPHABLE_STATS.map((s) => ({ key: s.key, label: s.label, group: s.group })),
 ];
 
@@ -453,96 +444,6 @@ function GraphCard({
   );
 }
 
-// ─── MetricPicker ─────────────────────────────────────────────────────────────
-
-interface MetricPickerProps {
-  activeMetrics: string[];
-  onSelect: (key: string) => void;
-  onClose: () => void;
-}
-
-function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
-  const [search, setSearch] = useState("");
-
-  const filteredMetrics = useMemo(() => {
-    if (!search.trim()) return ALL_GRAPH_METRICS;
-    const q = search.toLowerCase();
-    return ALL_GRAPH_METRICS.filter(
-      (m) => m.label.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)
-    );
-  }, [search]);
-
-  const filteredGroups = [...new Set(filteredMetrics.map((m) => m.group))];
-
-  return (
-    <>
-      <div
-        className="fixed inset-0 bg-black/50 z-40"
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-      />
-      <div
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 bg-muted border border-border rounded-lg shadow-xl z-50 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <span className="text-sm font-semibold text-foreground">Select Metric</span>
-          <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="text-muted-foreground hover:text-foreground transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="px-3 py-2 border-b border-border">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search metrics..."
-              className="w-full pl-8 pr-3 py-1.5 text-sm bg-card border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
-              autoFocus
-            />
-          </div>
-        </div>
-        <div className="max-h-64 overflow-y-auto py-2">
-          {filteredGroups.length === 0 ? (
-            <div className="px-4 py-4 text-sm text-muted-foreground text-center">
-              No metrics found
-            </div>
-          ) : (
-            filteredGroups.map((group) => (
-              <div key={group}>
-                <div className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  {group}
-                </div>
-                {filteredMetrics
-                  .filter((m) => m.group === group)
-                  .map((metric) => {
-                    const isActive = activeMetrics.includes(metric.key);
-                    return (
-                      <button
-                        key={metric.key}
-                        onClick={() => !isActive && onSelect(metric.key)}
-                        className={[
-                          "w-full text-left px-5 py-2 text-sm transition-colors",
-                          isActive
-                            ? "text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground hover:bg-card cursor-pointer",
-                        ].join(" ")}
-                      >
-                        {metric.label}
-                        {isActive && " ✓"}
-                      </button>
-                    );
-                  })}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ─── ComparisonPage ───────────────────────────────────────────────────────────
 
 function ComparisonPage() {
@@ -551,7 +452,7 @@ function ComparisonPage() {
   const { tabs, setActiveTab, addTab } = useTabContext();
   const { useTbaClimb } = useDesktopEvent();
   const { tbaClimbData, matchScoutingData } = useDesktopCompetitionData();
-  const { tbaTeams } = useDesktopTeamData();
+  const { tbaTeams, pitScoutingData } = useDesktopTeamData();
 
   // ── State ──
   // If navigated here with ?teams=frcXXX,frcYYY, use those as initial display teams
@@ -573,6 +474,7 @@ function ComparisonPage() {
   );
   const [showCompPickerFor, setShowCompPickerFor] = useState<number | null>(null);
   const [showGraphPicker, setShowGraphPicker] = useState(false);
+  const [statOverviewMetric, setStatOverviewMetric] = useState("overview");
   const [showPercentiles, setShowPercentiles] = useState<Record<string, boolean>>({});
   const [searchTeam, setSearchTeam] = useState("");
   const [sortKey, setSortKey] = useState("rank");
@@ -806,6 +708,9 @@ function ComparisonPage() {
                     entry={undefined}
                     tbaTeam={tbaTeams.find((t) => t.key === displayTeams[0])}
                     matchData={matchScoutingData}
+                    allMatchData={matchScoutingData}
+                    allTbaTeams={tbaTeams}
+                    pitScouting={pitScoutingData.find((p) => p.team === displayTeams[0])}
                     tbaClimbData={tbaClimbData}
                     useTbaClimb={useTbaClimb}
                     onMoveUp={() => {}}
@@ -821,6 +726,8 @@ function ComparisonPage() {
                     isGraphed={graphTeams.includes(displayTeams[0])}
                     onGraphToggle={(e) => toggleGraphTeam(displayTeams[0], e)}
                     onTeamExpand={() => navigateToTeam(displayTeams[0])}
+                    statOverviewMetric={statOverviewMetric}
+                    onStatOverviewMetricChange={setStatOverviewMetric}
                   />
                 </div>
               )}
@@ -865,6 +772,9 @@ function ComparisonPage() {
                     entry={undefined}
                     tbaTeam={tbaTeams.find((t) => t.key === displayTeams[1])}
                     matchData={matchScoutingData}
+                    allMatchData={matchScoutingData}
+                    allTbaTeams={tbaTeams}
+                    pitScouting={pitScoutingData.find((p) => p.team === displayTeams[1])}
                     tbaClimbData={tbaClimbData}
                     useTbaClimb={useTbaClimb}
                     onMoveUp={() => {}}
@@ -880,6 +790,8 @@ function ComparisonPage() {
                     isGraphed={graphTeams.includes(displayTeams[1])}
                     onGraphToggle={(e) => toggleGraphTeam(displayTeams[1], e)}
                     onTeamExpand={() => navigateToTeam(displayTeams[1])}
+                    statOverviewMetric={statOverviewMetric}
+                    onStatOverviewMetricChange={setStatOverviewMetric}
                   />
                 </div>
               )}
