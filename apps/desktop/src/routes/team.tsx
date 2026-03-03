@@ -182,8 +182,8 @@ function TeamPage() {
                     {autoClimb?.level === "None" && (
                       <span>Auto climb: <span className="text-foreground">None</span></span>
                     )}
-                    {(teleopClimb?.level?.length ?? 0) > 0 && (
-                      <span>Teleop climb: <span className="text-foreground">{teleopClimb!.level!.join(", ")}{(teleopClimb!.orientation?.length ?? 0) > 0 ? ` (${teleopClimb!.orientation!.join(", ")})` : ""}</span></span>
+                    {(Array.isArray(teleopClimb?.level) ? teleopClimb.level.length : 0) > 0 && (
+                      <span>Teleop climb: <span className="text-foreground">{(teleopClimb!.level as string[]).join(", ")}{(teleopClimb!.orientation?.length ?? 0) > 0 ? ` (${teleopClimb!.orientation!.join(", ")})` : ""}</span></span>
                     )}
                   </div>
                 </div>

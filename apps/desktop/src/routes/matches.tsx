@@ -507,9 +507,11 @@ function MatchPlaybackView({
     if (waypoints.length === 0) return null;
     if (waypoints.length === 1 || progress >= 1) return waypoints[waypoints.length - 1]!;
     const targetProgress = progress * totalTime;
+    let lastBefore = waypoints[0]!;
     for (let i = 0; i < waypoints.length - 1; i++) {
       const a = waypoints[i]!;
       const b = waypoints[i + 1]!;
+      if (a.timestamp <= targetProgress) lastBefore = a;
       if (targetProgress >= a.timestamp && targetProgress <= b.timestamp) {
         const dt = b.timestamp - a.timestamp;
         const t = dt <= 0 ? 1 : (targetProgress - a.timestamp) / dt;
@@ -518,7 +520,8 @@ function MatchPlaybackView({
         return { x: Number.isFinite(x) ? x : a.x, y: Number.isFinite(y) ? y : a.y, timestamp: targetProgress };
       }
     }
-    return waypoints[0]!;
+    // No interval covers targetProgress (gap between phases) — hold at last known position
+    return lastBefore;
   }, [waypoints, progress, totalTime]);
 
   const tick = useCallback(() => {

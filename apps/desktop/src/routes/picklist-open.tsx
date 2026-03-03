@@ -180,6 +180,7 @@ interface SidebarTeamCardProps {
   isSelected: boolean;
   onSelect: () => void;
   onToggleExclude: () => void;
+  onTeamExpand?: () => void;
 }
 
 function SidebarTeamCard({
@@ -188,6 +189,7 @@ function SidebarTeamCard({
   isSelected,
   onSelect,
   onToggleExclude,
+  onTeamExpand,
 }: SidebarTeamCardProps) {
   const {
     attributes,
@@ -277,9 +279,9 @@ function SidebarTeamCard({
           </div>
 
           <button
-            disabled
-            onClick={(e) => e.stopPropagation()}
-            className="rounded text-muted-foreground/30 cursor-not-allowed"
+            onClick={(e) => { e.stopPropagation(); onTeamExpand?.(); }}
+            className="rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            title="Open team page"
           >
             <Maximize2 className="w-4 h-4" />
           </button>
@@ -305,6 +307,7 @@ interface TeamBarProps {
   entry: PicklistEntry | undefined;
   tbaTeam: TBATeam | undefined;
   onRemove: () => void;
+  onTeamExpand?: () => void;
   dragListeners?: Record<string, unknown>;
   dragAttributes?: Record<string, unknown>;
 }
@@ -314,6 +317,7 @@ function TeamBar({
   entry,
   tbaTeam,
   onRemove,
+  onTeamExpand,
   dragListeners,
   dragAttributes,
 }: TeamBarProps) {
@@ -366,7 +370,7 @@ function TeamBar({
         >
           <Grid2X2 className="w-5 h-5" />
         </div>
-        <button className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={onTeamExpand} className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors" title="Open team page">
           <Maximize2 className="w-5 h-5" />
         </button>
         <button
@@ -383,7 +387,7 @@ function TeamBar({
 // ─── Sortable wrappers for main view ────────────────────────────────────────
 
 function SortableTeamBar(
-  props: Omit<TeamBarProps, "dragListeners" | "dragAttributes">
+  props: Omit<TeamBarProps, "dragListeners" | "dragAttributes"> & { onTeamExpand?: () => void }
 ) {
   const {
     attributes,
@@ -837,29 +841,37 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
 
   // ── Sort ──
   const handleSort = (sortKey: string) => {
-    const sorted = [...entries].sort((a, b) => {
+    const getVal = (teamKey: string): number | null => {
       if (sortKey === "rank") {
-        const aR = tbaTeams.find((t) => t.key === a.team)?.rank ?? 9999;
-        const bR = tbaTeams.find((t) => t.key === b.team)?.rank ?? 9999;
-        return aR - bR;
+        const r = tbaTeams.find((t) => t.key === teamKey)?.rank;
+        return r != null ? r : null;
       }
       if (sortKey === "epa") {
-        const aV =
-          tbaTeams.find((t) => t.key === a.team)?.epa?.total_points?.mean ?? 0;
-        const bV =
-          tbaTeams.find((t) => t.key === b.team)?.epa?.total_points?.mean ?? 0;
-        return bV - aV;
+        return tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
       }
       if (sortKey === "opr") {
-        const aV = tbaTeams.find((t) => t.key === a.team)?.opr ?? 0;
-        const bV = tbaTeams.find((t) => t.key === b.team)?.opr ?? 0;
-        return bV - aV;
+        const opr = tbaTeams.find((t) => t.key === teamKey)?.opr;
+        return opr != null ? opr : null;
       }
-      // GRAPHABLE_STAT: descending by average
-      return (
-        getTeamStatAvg(sortKey, b.team, matchScoutingData) -
-        getTeamStatAvg(sortKey, a.team, matchScoutingData)
-      );
+      const stat = GRAPHABLE_STATS.find((s) => s.key === sortKey);
+      if (stat?.source === "tba") {
+        const epa = tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+        const pts = getTbaStatDataPoints(sortKey, teamKey, tbaClimbData, epa);
+        if (!pts.length) return null;
+        return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
+      }
+      const pts = getStatDataPoints(sortKey, matchScoutingData.filter((m) => m.team === teamKey) as any);
+      if (!pts.length) return null;
+      return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
+    };
+
+    const sorted = [...entries].sort((a, b) => {
+      const aV = getVal(a.team);
+      const bV = getVal(b.team);
+      if (aV == null && bV == null) return 0;
+      if (aV == null) return 1;
+      if (bV == null) return -1;
+      return sortKey === "rank" ? aV - bV : bV - aV;
     });
     setEntries(sorted.map((e, i) => ({ ...e, rank: i + 1 })));
   };
@@ -1081,6 +1093,11 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                     isSelected={selectedTeams.includes(entry.team)}
                     onSelect={() => toggleSelectedTeam(entry.team)}
                     onToggleExclude={() => toggleExclude(entry.team)}
+                    onTeamExpand={() => {
+                      const teamNum = entry.team.replace("frc", "");
+                      addTab("/team", `Team ${teamNum}`, { team: entry.team }, `team-${entry.team}`);
+                      navigate({ to: "/team", search: { team: entry.team } });
+                    }}
                   />
                 ))}
                 {filteredEntries.length === 0 && (
@@ -1231,6 +1248,11 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                             prev.filter((t) => t !== teamKey)
                           )
                         }
+                        onTeamExpand={() => {
+                          const teamNum = teamKey.replace("frc", "");
+                          addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+                          navigate({ to: "/team", search: { team: teamKey } });
+                        }}
                       />
                     ))}
                   </div>

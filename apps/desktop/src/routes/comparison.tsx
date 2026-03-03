@@ -141,6 +141,7 @@ interface ComparisonSidebarCardProps {
   isGraphed: boolean;
   onCardClick: () => void;
   onGraphToggle: (e: React.MouseEvent) => void;
+  onTeamExpand?: () => void;
 }
 
 function ComparisonSidebarCard({
@@ -149,6 +150,7 @@ function ComparisonSidebarCard({
   isGraphed,
   onCardClick,
   onGraphToggle,
+  onTeamExpand,
 }: ComparisonSidebarCardProps) {
   const teamNum = getTeamNum(tbaTeam.key);
   const teamName = tbaTeam.name ?? tbaTeam.key;
@@ -191,9 +193,9 @@ function ComparisonSidebarCard({
             <BarChart2 className="w-5 h-5" />
           </button>
           <button
-            disabled
-            onClick={(e) => e.stopPropagation()}
-            className="rounded text-muted-foreground/30 cursor-not-allowed flex-shrink-0 p-0.5"
+            onClick={(e) => { e.stopPropagation(); onTeamExpand?.(); }}
+            className="rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors flex-shrink-0 p-0.5"
+            title="Open team page"
           >
             <Maximize2 className="w-4 h-4" />
           </button>
@@ -486,14 +488,38 @@ function ComparisonPage() {
 
   // ── Sorted + filtered team list ──
   const sortedTeams = useMemo(() => {
-    return [...tbaTeams].sort((a, b) => {
-      if (sortKey === "rank") return (a.rank ?? 9999) - (b.rank ?? 9999);
+    const getVal = (teamKey: string): number | null => {
+      if (sortKey === "rank") {
+        const r = tbaTeams.find((t) => t.key === teamKey)?.rank;
+        return r != null ? r : null;
+      }
       if (sortKey === "epa")
-        return (b.epa?.total_points?.mean ?? 0) - (a.epa?.total_points?.mean ?? 0);
-      if (sortKey === "opr") return (b.opr ?? 0) - (a.opr ?? 0);
-      return getTeamStatAvg(sortKey, b.key, matchScoutingData) - getTeamStatAvg(sortKey, a.key, matchScoutingData);
+        return tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+      if (sortKey === "opr") {
+        const opr = tbaTeams.find((t) => t.key === teamKey)?.opr;
+        return opr != null ? opr : null;
+      }
+      const stat = GRAPHABLE_STATS.find((s) => s.key === sortKey);
+      if (stat?.source === "tba") {
+        const epa = tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+        const pts = getTbaStatDataPoints(sortKey, teamKey, tbaClimbData, epa);
+        if (!pts.length) return null;
+        return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
+      }
+      const pts = getStatDataPoints(sortKey, matchScoutingData.filter((m) => m.team === teamKey) as any);
+      if (!pts.length) return null;
+      return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
+    };
+
+    return [...tbaTeams].sort((a, b) => {
+      const aV = getVal(a.key);
+      const bV = getVal(b.key);
+      if (aV == null && bV == null) return 0;
+      if (aV == null) return 1;
+      if (bV == null) return -1;
+      return sortKey === "rank" ? aV - bV : bV - aV;
     });
-  }, [tbaTeams, sortKey, matchScoutingData]);
+  }, [tbaTeams, sortKey, matchScoutingData, tbaClimbData]);
 
   const filteredTeams = useMemo(() => {
     if (!searchTeam.trim()) return sortedTeams;
@@ -648,6 +674,7 @@ function ComparisonPage() {
               isGraphed={graphTeams.includes(team.key)}
               onCardClick={() => addDisplayTeam(team.key)}
               onGraphToggle={(e) => toggleGraphTeam(team.key, e)}
+              onTeamExpand={() => navigateToTeam(team.key)}
             />
           ))}
           {filteredTeams.length === 0 && (

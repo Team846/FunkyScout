@@ -734,7 +734,22 @@ export function FullTeamPanel({
     const max = Math.max(...rawValues);
     const min = Math.min(...rawValues);
     const sd = stdev(rawValues);
-    const delta = rawValues.length >= 2 ? max - min : 0;
+    // Delta = last match stat - first match stat (by match order), can be negative
+    const sortedPts = [...pts].sort((a, b) => {
+      if (a.matchKey === "event") return 1;
+      if (b.matchKey === "event") return -1;
+      const oa = getMatchSortOrder(a.matchKey);
+      const ob = getMatchSortOrder(b.matchKey);
+      for (let i = 0; i < Math.max(oa.length, ob.length); i++) {
+        const va = oa[i] ?? 0;
+        const vb = ob[i] ?? 0;
+        if (va !== vb) return va - vb;
+      }
+      return 0;
+    });
+    const delta = sortedPts.length >= 2
+      ? sortedPts[sortedPts.length - 1]!.raw - sortedPts[0]!.raw
+      : null;
     const all = statOverviewData.allValuesForPercentile;
     const avgP = all.length ? computePercentile(avg, all) : null;
     const maxP = all.length ? computePercentile(max, all) : null;
@@ -858,7 +873,7 @@ export function FullTeamPanel({
           </div>
 
           {/* Middle: Pit Data — boxes with primary-bordered section names, same row, no scroll */}
-          {pit ? (
+          {(pit && pitScouting?.name) ? (
             <div className="rounded-lg overflow-hidden">
               <button
                 type="button"
@@ -978,8 +993,8 @@ export function FullTeamPanel({
                   </div>
                 </div>
 
-                {/* Bottom: 3 columns — Autos | Name/Climb/Desc | Notes (fixed max height, scroll inside) */}
-                <div className="flex gap-2 min-h-[120px] max-h-[250px] p-2">
+                {/* Bottom: 3 columns — Autos | Name/Climb/Desc | Notes (fixed height, scroll inside) */}
+                <div className="flex gap-2 h-[200px] min-h-[120px] overflow-hidden p-2">
               {/* Left: Autos field/drawing — centered */}
               <div className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-hidden flex flex-col">
                 <p className="text-sm text-foreground uppercase font-semibold px-2 pt-3 pb-1 bg-card">
@@ -1054,20 +1069,20 @@ export function FullTeamPanel({
                 <div className="rounded-lg border border-border bg-card px-3 py-2 flex-1 min-h-0 flex flex-col overflow-hidden shrink">
                   <p className="text-xs font-semibold text-primary shrink-0">Description</p>
                   <div className="flex-1 min-h-0 overflow-y-auto mt-0.5 py-2">
-                    <p className="text-xs text-muted-foreground leading-snug pr-1">
+                    <p className="text-xs text-muted-foreground leading-snug pr-1 pb-2">
                       {currentAuto?.description || "—"}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Right: Notes (card style) */}
+              {/* Right: Notes (card style) — fixed height, scrolls when content overflows */}
               <div className="w-[110px] flex-shrink-0 rounded-lg border border-border bg-card overflow-hidden flex flex-col min-h-0">
                 <p className="text-sm text-primary uppercase font-semibold px-3 pt-3 pb-1 bg-card shrink-0">
                   Notes
                 </p>
-                <div className="flex-1 min-h-0 overflow-y-auto py-4 px-2">
-                  <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap pr-1">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1 px-2.5">
+                  <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap pr-1 pb-2">
                     {teamNotes || "Describe any capabilities or extra information which you were not able to input into the pit..."}
                   </p>
                 </div>
@@ -1164,10 +1179,10 @@ export function FullTeamPanel({
                         <p className="text-base font-medium text-primary px-3 py-2">
                           {matchLabel} — {scouterName}
                         </p>
-                        <div className="flex gap-1.5 px-2 pb-2 h-[170px] shrink-0 overflow-hidden">
-                          <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-3.5 flex flex-col gap-1 overflow-hidden">
-                            <p className="text-[10px] font-medium text-muted-foreground uppercase text-center">Match Stats</p>
-                            <div className="space-y-2 text-xs">
+                        <div className="flex gap-1.5 px-2 pb-2 h-[185px] shrink-0 overflow-hidden">
+                          <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col overflow-hidden">
+                            <p className="text-[10px] font-medium text-muted-foreground uppercase text-center shrink-0">Match Stats</p>
+                            <div className="flex-1 flex flex-col justify-center gap-2 text-xs">
                               <div className="flex gap-1.5 items-baseline">
                                 <span className="w-14 shrink-0 text-right text-primary">Auto:</span>
                                 <span className="text-foreground tabular-nums">
@@ -1198,17 +1213,17 @@ export function FullTeamPanel({
                               </div>
                             </div>
                           </div>
-                          <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-3.5 flex flex-col gap-2 overflow-hidden min-h-0">
+                          <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col gap-1.5 overflow-hidden min-h-0">
                             <p className="text-[10px] font-medium text-muted-foreground uppercase text-center shrink-0">Match Notes</p>
-                            <div className="h-[50px] min-w-0 w-full overflow-y-auto overflow-x-hidden shrink-0 px-2">
-                              <p className="text-xs text-foreground leading-snug whitespace-pre-wrap break-all text-center">
+                            <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-2">
+                              <p className="text-xs text-foreground leading-snug whitespace-pre-wrap break-all text-center pb-2">
                                 {stats?.notes?.trim() || "—"}
                               </p>
                             </div>
-                            <div className="shrink-0 space-y-1 text-center min-h-0 min-w-0 overflow-hidden flex flex-col">
-                              <p className="text-[10px] text-muted-foreground">Selected Auto:</p>
-                              <div className="h-[42px] min-w-0 w-full overflow-y-auto overflow-x-hidden shrink-0 px-2">
-                                <p className="text-xs text-foreground leading-snug whitespace-pre-wrap break-all">{selectedAutoInfo}</p>
+                            <div className="shrink-0 space-y-0.5 text-center min-h-0 min-w-0 overflow-hidden flex flex-col">
+                              <p className="text-[10px] text-muted-foreground shrink-0">Selected Auto:</p>
+                              <div className="h-[42px] min-w-0 w-full overflow-y-auto overflow-x-hidden px-2">
+                                <p className="text-xs text-foreground leading-snug whitespace-pre-wrap break-all pb-2">{selectedAutoInfo}</p>
                               </div>
                             </div>
                           </div>
