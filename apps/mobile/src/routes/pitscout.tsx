@@ -341,9 +341,9 @@ function ScoutPage() {
       setFuelPassing(formData.fuel.passing);
       setFuelCapacity(formData.fuel.capacity || "");
       setAutoClimbLevel(formData.autoClimb.level);
-      setAutoClimbOrientation(formData.autoClimb.orientation ?? []);
-      setTeleopClimbLevel(formData.teleopClimb.level ?? []);
-      setTeleopClimbOrientation(formData.teleopClimb.orientation ?? []);
+      setAutoClimbOrientation(Array.isArray(formData.autoClimb.orientation) ? formData.autoClimb.orientation : formData.autoClimb.orientation ? [formData.autoClimb.orientation as unknown as string] : []);
+      setTeleopClimbLevel(Array.isArray(formData.teleopClimb.level) ? formData.teleopClimb.level : formData.teleopClimb.level ? [formData.teleopClimb.level as unknown as string] : []);
+      setTeleopClimbOrientation(Array.isArray(formData.teleopClimb.orientation) ? formData.teleopClimb.orientation : formData.teleopClimb.orientation ? [formData.teleopClimb.orientation as unknown as string] : []);
     /* GENERATED:END */
       setAutoEntries(formData.autos);
     }

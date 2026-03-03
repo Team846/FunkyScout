@@ -177,13 +177,13 @@ function TeamPage() {
                     {fuel?.bps && <span>Balls/sec: <span className="text-foreground">{fuel.bps}</span></span>}
                     {fuel?.capacity && <span>Ball capacity: <span className="text-foreground">{fuel.capacity}</span></span>}
                     {autoClimb?.level && autoClimb.level !== "None" && (
-                      <span>Auto climb: <span className="text-foreground">{autoClimb.level}{(autoClimb.orientation?.length ?? 0) > 0 ? ` (${autoClimb.orientation!.join(", ")})` : ""}{autoClimb.declimbTime ? `, ${autoClimb.declimbTime}s declimb` : ""}</span></span>
+                      <span>Auto climb: <span className="text-foreground">{autoClimb.level}{Array.isArray(autoClimb.orientation) && autoClimb.orientation.length > 0 ? ` (${autoClimb.orientation.join(", ")})` : ""}{autoClimb.declimbTime ? `, ${autoClimb.declimbTime}s declimb` : ""}</span></span>
                     )}
                     {autoClimb?.level === "None" && (
                       <span>Auto climb: <span className="text-foreground">None</span></span>
                     )}
                     {(Array.isArray(teleopClimb?.level) ? teleopClimb.level.length : 0) > 0 && (
-                      <span>Teleop climb: <span className="text-foreground">{(teleopClimb!.level as string[]).join(", ")}{(teleopClimb!.orientation?.length ?? 0) > 0 ? ` (${teleopClimb!.orientation!.join(", ")})` : ""}</span></span>
+                      <span>Teleop climb: <span className="text-foreground">{(teleopClimb!.level as string[]).join(", ")}{Array.isArray(teleopClimb!.orientation) && teleopClimb!.orientation.length > 0 ? ` (${teleopClimb!.orientation.join(", ")})` : ""}</span></span>
                     )}
                   </div>
                 </div>

@@ -352,130 +352,35 @@ impl SupabaseService {
     /// Bulk upsert team data from TBA with merge logic and change detection.
     /// Only updates teams where data actually changed (reduces postgres_changes events by 90%).
     /// `snapshot` is the team data last pulled from Supabase (passed from SyncService).
-    /// When Some, skips the redundant full SELECT — only fetches on cold start (None).
-    /// Teams not found in existing Supabase data are inserted with TBA-only data (seed row).
-    /// This handles both bootstrap and mid-event b-team additions correctly.
-    pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>, snapshot: Option<&[Value]>) -> Result<()> {
+    /// Merges TBA/Statbotics data into event_team_data via a database-level JSONB merge.
+    ///
+    /// Uses the `merge_team_data_batch` SQL function (JSONB `||` operator) so that
+    /// pit scouting keys already in `data` are ALWAYS preserved — even if the Rust
+    /// caller only sends TBA/EPA keys. The old fetch-merge-upsert pattern in Rust
+    /// was unsafe: if the SELECT returned empty for any reason the entire `data`
+    /// column was silently overwritten with TBA-only data.
+    pub async fn bulk_upsert_team_data(&self, event: &str, teams: Vec<Value>) -> Result<()> {
         if teams.is_empty() {
             return Ok(());
         }
 
-        // 1. Get existing team data — use snapshot if warm, fetch from Supabase if cold start.
-        let existing_data: Vec<Value> = if let Some(snap) = snapshot {
-            println!("[Supabase] team_data snapshot hit ({} rows) — skipping SELECT", snap.len());
-            snap.to_vec()
-        } else {
-            println!("[Supabase] team_data snapshot cold — fetching from Supabase");
-            let response = self.auth_client()
-                .from("event_team_data")
-                .select("event,team,data")
-                .eq("event", event)
-                .execute()
-                .await
-                .context("Failed to fetch existing team data for merge")?;
+        println!("[Supabase] merge_team_data_batch: {} teams for event {}", teams.len(), event);
 
-            let status = response.status();
-            if status.is_success() {
-                let body = response.text().await?;
-                serde_json::from_str(&body).unwrap_or_default()
-            } else {
-                let body = response.text().await.unwrap_or_default();
-                anyhow::bail!(
-                    "[Supabase] Cannot push team data: fetch returned {} (auth/RLS/server error). \
-                     Skipping to avoid overwriting pit scouting. Body: {}",
-                    status,
-                    if body.len() > 200 { format!("{}...", &body[..200]) } else { body }
-                );
-            }
-        };
-
-        // 2. Build lookup map of existing data (treat missing/null data as {} so we never wipe pit)
-        let mut existing_map: std::collections::HashMap<String, Value> = existing_data
-            .into_iter()
-            .filter_map(|v| {
-                let team = v.get("team")?.as_str()?.to_string();
-                let data = v.get("data").cloned().unwrap_or(json!({}));
-                Some((team, data))
-            })
-            .collect();
-
-        if existing_map.is_empty() {
-            println!(
-                "[Supabase] No existing team data found for event {} — treating all {} teams as new (first bootstrap or empty event)",
-                event,
-                teams.len()
-            );
-        }
-
-        // 3. Merge TBA stats with existing pit scouting data + filter for changes
-        let total_teams = teams.len();
-        let changed_teams: Vec<Value> = teams
-            .into_iter()
-            .filter_map(|mut new_record| {
-                let team = new_record.get("team").and_then(|v| v.as_str()).unwrap_or("");
-                let new_data = new_record.get("data").cloned().unwrap_or(json!({}));
-
-                // If existing data found, merge (pit data + TBA stats)
-                let (merged_data, has_changed) = if let Some(existing) = existing_map.remove(team) {
-                    // Normalize existing: null or malformed -> empty object so we never wipe pit
-                    let existing_obj = existing
-                        .as_object()
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::Map::new());
-                    let new_obj = new_data.as_object().cloned().unwrap_or_default();
-
-                    // Snapshot before move so we can diff afterward
-                    let existing_normalized = json!(existing_obj);
-
-                    // Merge: existing pit + TBA stats overlay
-                    let mut merged = existing_obj;
-                    for (key, value) in new_obj {
-                        merged.insert(key.clone(), value.clone());
-                    }
-                    let merged = json!(merged);
-
-                    // Check if merged data differs from existing (compare to normalized)
-                    let changed = merged != existing_normalized;
-                    (merged, changed)
-                } else {
-                    // Team not in existing Supabase data — insert with TBA-only data as seed row.
-                    // This covers both initial bootstrap and mid-event b-team additions.
-                    (new_data, true)
-                };
-
-                // Only include if data changed
-                if has_changed {
-                    new_record["data"] = merged_data;
-                    Some(new_record)
-                } else {
-                    None // Skip unchanged teams
-                }
-            })
-            .collect();
-
-        // 4. Only upsert if there are changes
-        if changed_teams.is_empty() {
-            println!("[Supabase] No team data changes detected, skipping upsert (saves postgres_changes events)");
-            return Ok(());
-        }
-
-        println!("[Supabase] Upserting {} changed teams (out of {} total)",
-            changed_teams.len(), total_teams);
+        let payload = serde_json::to_string(&json!({ "records": teams }))
+            .context("Failed to serialize team data for merge_team_data_batch")?;
 
         let resp = self.auth_client()
-            .from("event_team_data")
-            .upsert(&serde_json::to_string(&changed_teams)?)
-            .on_conflict("event,team")
+            .rpc("merge_team_data_batch", &payload)
             .execute()
             .await
-            .context("Failed to bulk upsert team data")?;
+            .context("Failed to call merge_team_data_batch RPC")?;
 
-        let upsert_status = resp.status();
-        if !upsert_status.is_success() {
+        let status = resp.status();
+        if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!(
-                "[Supabase] bulk_upsert_team_data upsert failed (HTTP {}): {}",
-                upsert_status,
+                "[Supabase] merge_team_data_batch failed (HTTP {}): {}",
+                status,
                 if body.len() > 300 { format!("{}...", &body[..300]) } else { body }
             );
         }

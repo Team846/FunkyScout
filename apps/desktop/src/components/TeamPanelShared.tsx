@@ -2,6 +2,8 @@ import {
   useState,
   useEffect,
   useMemo,
+  useRef,
+  useCallback,
 } from "react";
 import {
   ArrowUp,
@@ -13,6 +15,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  ArrowUpRight,
 } from "lucide-react";
 import {
   Tooltip,
@@ -35,6 +39,13 @@ import {
 } from "@lib/data/matchStats";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { getMatchSortOrder, getMatchLabel } from "@lib/utils/match";
+import { fetchEventVideo } from "@lib/tba/video";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
+import { useNavigate } from "@tanstack/react-router";
+import { useTabContext } from "../contexts/TabContext";
+import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { MetricPicker, ALL_GRAPH_METRICS } from "./MetricPicker";
 import {
   RadarChart,
@@ -182,13 +193,13 @@ export function AutoPathPreview({
   const scaleX = FIELD_IMG_WIDTH / canvasWidth;
   const scaleY = cropH / canvasHeight;
   return (
-    <div className={`relative w-full overflow-hidden rounded-lg ${className || ""}`}>
-      <img src="/red_field.svg" alt="Field" className="block w-full h-auto max-w-full max-h-full" />
+    <div className={`relative w-full rounded-lg ${className || ""}`}>
+      <img src="/red_field.svg" alt="Field" className="block w-full h-auto max-w-full max-h-full rounded-lg overflow-hidden" />
       <svg
         viewBox={`0 0 ${FIELD_IMG_WIDTH} ${FIELD_IMG_HEIGHT}`}
         className="absolute inset-0 w-full h-full"
         preserveAspectRatio="xMidYMid meet"
-        style={{ pointerEvents: "none" }}
+        style={{ pointerEvents: "none", overflow: "visible" }}
       >
         <g transform={`translate(0, ${cropY}) scale(${scaleX}, ${scaleY})`}>
           {paths.map((path, pathIndex) => {
@@ -258,14 +269,14 @@ function PitImageCarousel({ imagePaths }: { imagePaths: string[] }) {
 
   if (imagePaths.length === 0) {
     return (
-      <div className="w-full aspect-square rounded-lg bg-muted/30 flex items-center justify-center">
+      <div className="w-full aspect-square rounded-lg border border-border bg-muted/30 flex items-center justify-center">
         <span className="text-xs text-muted-foreground">No images</span>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-muted/30 select-none">
+    <div className={`relative w-full aspect-square rounded-lg overflow-hidden bg-muted/30 select-none ${!blobUrl ? "border border-border" : ""}`}>
       {loadingImg && (
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="text-xs text-muted-foreground">Loading…</span>
@@ -448,6 +459,168 @@ export function ClimbLevelChip({ label, count, n }: { label: string; count: numb
   );
 }
 
+// ─── Match Replay helpers (mirrors matches.tsx, panel-scaled) ────────────────
+
+const PANEL_FIELD_W = 652;
+const PANEL_FIELD_H = 318;
+
+const PANEL_ACTION_STYLE: Record<string, { fill: string; shape: string }> = {
+  groundIntake:   { fill: "#22c55e", shape: "circle" },
+  passing:        { fill: "#3b82f6", shape: "square" },
+  stationIntake:  { fill: "#a855f7", shape: "square" },
+  stationStocked: { fill: "#f59e0b", shape: "diamond" },
+  fuelScore1:     { fill: "#eab308", shape: "circle" },
+  fuelScore2:     { fill: "#eab308", shape: "circle" },
+  fuelScore5:     { fill: "#eab308", shape: "square" },
+  fuelScore8:     { fill: "#eab308", shape: "diamond" },
+  autoClimbL1:    { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL1:  { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL2:  { fill: "#06b6d4", shape: "triangle" },
+  teleopClimbL3:  { fill: "#06b6d4", shape: "triangle" },
+  autoDisable:    { fill: "#78716c", shape: "star" },
+  teleopDisable:  { fill: "#78716c", shape: "star" },
+  autoDefend:     { fill: "#f59e0b", shape: "star" },
+  teleopDefend:   { fill: "#f59e0b", shape: "star" },
+  block:          { fill: "#f59e0b", shape: "star" },
+  camp:           { fill: "#a855f7", shape: "circle" },
+  disrupt:        { fill: "#f97316", shape: "diamond" },
+  dropped:        { fill: "#78716c", shape: "circle" },
+};
+const PANEL_DEFAULT_STYLE = { fill: "#94a3b8", shape: "circle" };
+
+function panelGetStyle(actionId: string) {
+  return PANEL_ACTION_STYLE[actionId] ?? PANEL_DEFAULT_STYLE;
+}
+
+function PanelActionBlob({ x, y, style }: { x: number; y: number; style: { fill: string; shape: string } }) {
+  const r = 18;
+  const { fill } = style;
+  const op = 0.9;
+  if (style.shape === "triangle") {
+    const h = r * 1.2;
+    return <polygon points={`${x},${y - h} ${x - r},${y + h * 0.6} ${x + r},${y + h * 0.6}`} fill={fill} opacity={op} />;
+  }
+  if (style.shape === "star") {
+    const outer = r; const inner = r * 0.4;
+    const pts: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const a1 = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+      pts.push(`${x + outer * Math.cos(a1)},${y + outer * Math.sin(a1)}`);
+      const a2 = ((i + 0.5) * 2 * Math.PI) / 5 - Math.PI / 2;
+      pts.push(`${x + inner * Math.cos(a2)},${y + inner * Math.sin(a2)}`);
+    }
+    return <polygon points={pts.join(" ")} fill={fill} opacity={op} />;
+  }
+  if (style.shape === "square") return <rect x={x - r} y={y - r} width={r * 2} height={r * 2} fill={fill} opacity={op} />;
+  if (style.shape === "diamond") {
+    const d = r * 1.2;
+    return <polygon points={`${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`} fill={fill} opacity={op} />;
+  }
+  return <circle cx={x} cy={y} r={r} fill={fill} opacity={op} />;
+}
+
+function panelNormToSvg(x: number, y: number) {
+  const ax = Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0.5;
+  const ay = Number.isFinite(y) ? Math.max(0, Math.min(1, y)) : 0.5;
+  return { x: ax * PANEL_FIELD_W, y: ay * PANEL_FIELD_H };
+}
+
+function panelParseStartPos(raw: import("@lib/config/match-action-schemas/actions.types").MatchDataRaw | null | undefined) {
+  let x = 0.5; let y = 0.9;
+  if (raw?.startPosition) {
+    const sp = raw.startPosition;
+    if (Array.isArray(sp)) { x = Number(sp[0]); y = Number(sp[1]); }
+    else { x = Number((sp as { x: number; y: number }).x); y = Number((sp as { x: number; y: number }).y); }
+  }
+  if (!Number.isFinite(x)) x = 0.5;
+  if (!Number.isFinite(y)) y = 0.9;
+  return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+}
+
+function panelToDisplayCoords(x: number, y: number, alliance: "red" | "blue") {
+  return alliance === "red" ? { x: x * 0.5, y } : { x: 0.5 + (1 - x) * 0.5, y };
+}
+
+interface PanelWaypoint { x: number; y: number; timestamp: number; actionId?: string; }
+
+function panelBuildWaypoints(
+  dataRaw: import("@lib/config/match-action-schemas/actions.types").MatchDataRaw | null | undefined,
+  schema: ReturnType<typeof getMatchActionSchema>,
+  phase: "auto" | "teleop" | "full",
+  alliance: "red" | "blue",
+): PanelWaypoint[] {
+  if (!dataRaw) return [];
+  const start = panelParseStartPos(dataRaw);
+  const startDisp = panelToDisplayCoords(start.x, start.y, alliance);
+  const opponentAlliance: "red" | "blue" = alliance === "red" ? "blue" : "red";
+  const autoActions = ([...(dataRaw.autoActions ?? [])]).sort((a, b) => a.timestamp - b.timestamp);
+  const teleopActions = ([...(dataRaw.teleopActions ?? [])]).sort((a, b) => a.timestamp - b.timestamp);
+  const isEpoch = [...autoActions, ...teleopActions].some((a) => a.timestamp > 1e12);
+  const NO_BLOB = new Set(["defend", "teleopDefend", "autoDefend", "disable", "teleopDisable", "autoDisable"]);
+
+  function getActionLocation(a: import("@lib/config/match-action-schemas/actions.types").MatchAction) {
+    if (a.location) return a.location;
+    const def = getActionById(schema, a.actionId);
+    return def?.location ?? null;
+  }
+
+  function climbDispY(isAuto: boolean): number {
+    const pm = dataRaw!.postMatch;
+    const ori = isAuto ? pm?.autoClimbOrientation : pm?.teleopClimbOrientation;
+    return ori === "right" ? 0.25 : ori === "left" ? 0.75 : 0.5;
+  }
+
+  function push(pts: PanelWaypoint[], a: import("@lib/config/match-action-schemas/actions.types").MatchAction, ts: number) {
+    if (a.actionId === "block") {
+      const d = panelToDisplayCoords(0.5, 0.5, opponentAlliance);
+      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.enabled !== false ? "block" : undefined });
+    } else if (a.actionId === "autoClimbL1") {
+      const d = panelToDisplayCoords(0.05, climbDispY(true), alliance);
+      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
+    } else if (a.actionId.startsWith("teleopClimb")) {
+      const d = panelToDisplayCoords(0.05, climbDispY(false), alliance);
+      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
+    } else if (NO_BLOB.has(a.actionId)) {
+      const last = pts[pts.length - 1]!;
+      pts.push({ x: last.x, y: last.y, timestamp: ts });
+    } else {
+      const loc = getActionLocation(a);
+      if (loc) {
+        const fa = (a as { onOpponentField?: boolean }).onOpponentField ? opponentAlliance : alliance;
+        const d = panelToDisplayCoords(loc.x, loc.y, fa);
+        pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.actionId });
+      } else {
+        const last = pts[pts.length - 1]!;
+        pts.push({ x: last.x, y: last.y, timestamp: ts });
+      }
+    }
+  }
+
+  if (phase === "auto") {
+    const pts: PanelWaypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
+    const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
+    for (const a of autoActions) push(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
+    return pts.sort((a, b) => a.timestamp - b.timestamp);
+  }
+  if (phase === "teleop") {
+    const autoWps: PanelWaypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
+    const t0Auto = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
+    for (const a of autoActions) push(autoWps, a, isEpoch ? a.timestamp - t0Auto : a.timestamp);
+    const teleopStart = autoWps[autoWps.length - 1] ?? { x: startDisp.x, y: startDisp.y };
+    const pts: PanelWaypoint[] = [{ x: teleopStart.x, y: teleopStart.y, timestamp: 0 }];
+    const t0Tel = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) - 1 : 0;
+    for (const a of teleopActions) push(pts, a, isEpoch ? a.timestamp - t0Tel : a.timestamp - 20_000);
+    return pts.sort((a, b) => a.timestamp - b.timestamp);
+  }
+  // full
+  const pts: PanelWaypoint[] = [{ x: startDisp.x, y: startDisp.y, timestamp: 0 }];
+  const allActions = [...autoActions, ...teleopActions];
+  const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) - 1 : 0;
+  for (const a of autoActions) push(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
+  for (const a of teleopActions) push(pts, a, isEpoch ? a.timestamp - t0 : a.timestamp);
+  return pts.sort((a, b) => a.timestamp - b.timestamp);
+}
+
 // ─── FullTeamPanel ──────────────────────────────────────────────────────────
 
 export type FullTeamPanelVariant = "picklist" | "comparison";
@@ -574,7 +747,7 @@ export function FullTeamPanel({
   const imagePaths = useMemo(() => {
     const files = pit?.images?.files ?? [];
     return files
-      .filter(f => f.uploaded && !f.path.startsWith("pending-"))
+      .filter(f => f.uploaded && !f.path.startsWith("pending-") && f.path.includes("/"))
       .map(f => f.path);
   }, [pit]);
 
@@ -593,6 +766,36 @@ export function FullTeamPanel({
   const [matchRecapOpen, setMatchRecapOpen] = useState(true);
   const [statOverviewOpen, setStatOverviewOpen] = useState(true);
   const [showStatOverviewPicker, setShowStatOverviewPicker] = useState(false);
+  const [matchOverviewOpen, setMatchOverviewOpen] = useState(false);
+  const [showMatchPicker, setShowMatchPicker] = useState(false);
+  const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
+  const [matchOverviewMetric, setMatchOverviewMetric] = useState("epa");
+  const [showMatchOverviewMetricPicker, setShowMatchOverviewMetricPicker] = useState(false);
+  // ── Match Overview video/replay ─────────────────────────────────────────────
+  const [matchViewMode, setMatchViewMode] = useState<"video" | "field">("video");
+  const [matchVideoCache, setMatchVideoCache] = useState<{ data: Array<{ key: string; videos: Array<{ key: string; type: string }> }> } | null>(null);
+  const [matchReplayPlaying, setMatchReplayPlaying] = useState(false);
+  const [matchReplayProgress, setMatchReplayProgress] = useState(0);
+  const [matchReplaySpeed, setMatchReplaySpeed] = useState(1);
+  const [matchReplayPhase, setMatchReplayPhase] = useState<"auto" | "teleop" | "full">("full");
+  const matchRafRef = useRef<number | undefined>(undefined);
+  const matchStartTimeRef = useRef<number>(0);
+  const matchLastProgressRef = useRef(0);
+
+  // ── Contexts for match navigation + video ───────────────────────────────────
+  const { currentEvent } = useDesktopEvent();
+  const { addTab } = useTabContext();
+  const navigate = useNavigate();
+  const matchSchema = useMemo(() => getMatchActionSchema(currentEvent || "2026"), [currentEvent]);
+
+  // ── Match video cache (lazy: only fetch when section is open) ───────────────
+  useEffect(() => {
+    if (!currentEvent || !matchOverviewOpen) return;
+    fetchEventVideo(currentEvent).then((data: unknown) => {
+      setMatchVideoCache(data && typeof data === "object" ? data as typeof matchVideoCache : null);
+    }).catch(() => {});
+  }, [currentEvent, matchOverviewOpen]);
+
   const [statOverviewMetricUncontrolled, setStatOverviewMetricUncontrolled] = useState(() => _statOverviewMetricKey);
   const statOverviewMetric = statOverviewMetricProp ?? statOverviewMetricUncontrolled;
   const setStatOverviewMetric = (key: string) => {
@@ -605,10 +808,10 @@ export function FullTeamPanel({
   // ── Overview radar data (climb pts, fuel pts, rank, epa, disable time) ───────
   const overviewRadarData = useMemo(() => {
     const labels = [
-      { key: "climbPts", label: "Climb Pts" },
-      { key: "fuelPts", label: "Fuel Pts" },
       { key: "rank", label: "Rank" },
       { key: "epa", label: "EPA" },
+      { key: "climbPts", label: "Climb Pts" },
+      { key: "fuelPts", label: "Fuel Pts" },
       { key: "disableTime", label: "Disable" },
     ] as const;
     const allClimb: number[] = [];
@@ -762,6 +965,199 @@ export function FullTeamPanel({
   // ── Notes ──────────────────────────────────────────────────────────────────
   const teamNotes = pit?.images?.description?.trim() || null;
 
+  // ── Match Overview ─────────────────────────────────────────────────────────
+  const sortedTeamMatchData = useMemo(() => {
+    return teamMatchData
+      .filter(m => m.data_raw && Object.keys(m.data_raw).length > 0)
+      .sort((a, b) => {
+        const oa = getMatchSortOrder(a.match);
+        const ob = getMatchSortOrder(b.match);
+        for (let i = 0; i < Math.max(oa.length, ob.length); i++) {
+          const va = oa[i] ?? 0;
+          const vb = ob[i] ?? 0;
+          if (va !== vb) return va - vb;
+        }
+        return 0;
+      });
+  }, [teamMatchData]);
+  const effectiveMatchKey = selectedMatchKey ?? sortedTeamMatchData[sortedTeamMatchData.length - 1]?.match ?? null;
+  const selectedMatch = sortedTeamMatchData.find(m => m.match === effectiveMatchKey) ?? null;
+
+  // ── Match video/replay derived values ────────────────────────────────────────
+  const tbaMatchKeyFull = useMemo(() => {
+    if (!effectiveMatchKey) return null;
+    return effectiveMatchKey.includes("_") ? effectiveMatchKey : currentEvent ? `${currentEvent}_${effectiveMatchKey}` : effectiveMatchKey;
+  }, [effectiveMatchKey, currentEvent]);
+
+  const matchYoutubeId = useMemo(() => {
+    if (!tbaMatchKeyFull || !matchVideoCache) return null;
+    const entry = matchVideoCache.data?.find((m) => m.key === tbaMatchKeyFull);
+    return entry?.videos?.find((v) => v.type === "youtube")?.key ?? null;
+  }, [tbaMatchKeyFull, matchVideoCache]);
+
+  const matchAlliance = (selectedMatch?.alliance as "red" | "blue" | null) ?? null;
+  const matchRaw = (selectedMatch?.data_raw as unknown as MatchDataRaw | null) ?? null;
+
+  const matchWaypoints = useMemo(() => {
+    if (!matchRaw || !matchAlliance) return [];
+    return panelBuildWaypoints(matchRaw, matchSchema, matchReplayPhase, matchAlliance);
+  }, [matchRaw, matchSchema, matchReplayPhase, matchAlliance]);
+
+  const matchTotalTime = useMemo(() => {
+    if (matchWaypoints.length === 0) return 1;
+    return Math.max(1, matchWaypoints[matchWaypoints.length - 1]!.timestamp);
+  }, [matchWaypoints]);
+
+  const matchCurrentPos = useMemo(() => {
+    if (matchWaypoints.length === 0) return null;
+    const t = matchReplayProgress * matchTotalTime;
+    for (let i = 1; i < matchWaypoints.length; i++) {
+      const prev = matchWaypoints[i - 1]!;
+      const next = matchWaypoints[i]!;
+      if (next.timestamp >= t) {
+        const span = next.timestamp - prev.timestamp;
+        const frac = span > 0 ? (t - prev.timestamp) / span : 0;
+        return { x: prev.x + (next.x - prev.x) * frac, y: prev.y + (next.y - prev.y) * frac };
+      }
+    }
+    const last = matchWaypoints[matchWaypoints.length - 1]!;
+    return { x: last.x, y: last.y };
+  }, [matchWaypoints, matchReplayProgress, matchTotalTime]);
+
+  const openInMatches = useCallback(() => {
+    if (!effectiveMatchKey) return;
+    const label = getMatchLabel(effectiveMatchKey);
+    addTab("/matches", label, { match: effectiveMatchKey }, `match-${effectiveMatchKey}`);
+    navigate({ to: "/matches", search: { match: effectiveMatchKey } });
+  }, [effectiveMatchKey, addTab, navigate]);
+
+  const matchCanPlay = matchWaypoints.length >= 2;
+
+  const matchTick = useCallback(() => {
+    const elapsed = (performance.now() - matchStartTimeRef.current) / 1000;
+    const realDuration = matchTotalTime / 1000;
+    if (realDuration <= 0) return;
+    const advance = (elapsed * matchReplaySpeed) / realDuration;
+    const next = Math.min(1, matchLastProgressRef.current + advance);
+    matchLastProgressRef.current = next;
+    setMatchReplayProgress(next);
+    if (next >= 1) setMatchReplayPlaying(false);
+    else matchRafRef.current = requestAnimationFrame(matchTick);
+  }, [matchTotalTime, matchReplaySpeed]);
+
+  useEffect(() => {
+    if (!matchReplayPlaying || matchTotalTime <= 0) return;
+    matchStartTimeRef.current = performance.now();
+    matchLastProgressRef.current = matchReplayProgress;
+    matchRafRef.current = requestAnimationFrame(matchTick);
+    return () => { if (matchRafRef.current) cancelAnimationFrame(matchRafRef.current); };
+  }, [matchReplayPlaying, matchTotalTime, matchTick]);
+
+  useEffect(() => {
+    setMatchReplayProgress(0);
+    setMatchReplayPlaying(false);
+    matchLastProgressRef.current = 0;
+  }, [effectiveMatchKey, matchReplayPhase]);
+
+  const matchOverviewStats = useMemo(
+    () => selectedMatch ? calculateSingleMatchStats(selectedMatch as any) : null,
+    [selectedMatch],
+  );
+  const matchOverviewRaw = selectedMatch?.data_raw as unknown as MatchDataRaw | undefined;
+  const matchOverviewTbaClimb = selectedMatch ? tbaClimbData[selectedMatch.match]?.[teamKey] ?? null : null;
+  const matchOverviewOrientShort = (o: "left" | "right" | "center" | null) =>
+    o === "left" ? "(L)" : o === "right" ? "(R)" : o === "center" ? "(C)" : "";
+  const matchOverviewClimbA = useTbaClimb && matchOverviewTbaClimb?.auto_climb
+    ? `${matchOverviewTbaClimb.auto_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.autoClimbOrientation ?? null)}`.trim()
+    : matchOverviewStats?.climb?.hasAutoClimb
+      ? `Yes ${matchOverviewOrientShort(matchOverviewStats.climb.autoClimbOrientation)}`.trim()
+      : "None";
+  const matchOverviewClimbT = useTbaClimb && matchOverviewTbaClimb?.teleop_climb
+    ? `${matchOverviewTbaClimb.teleop_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+    : matchOverviewStats?.climb?.level
+      ? `${matchOverviewStats.climb.level} ${matchOverviewOrientShort(matchOverviewStats.climb.teleopClimbOrientation)}`.trim()
+      : "None";
+  const matchOverviewAvgRating = (() => {
+    const r = matchOverviewStats?.ratings;
+    if (!r) return null;
+    const vals = [r.ground, r.shooting, r.passing, r.driver].filter((v): v is number => v != null);
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  })();
+  const matchOverviewMatchedAuto = matchOverviewRaw?.selectedAuto && autos.length > 0
+    ? autos.find(a => (a.name || "").toLowerCase() === (matchOverviewRaw!.selectedAuto || "").toLowerCase()) ?? null
+    : null;
+  const matchOverviewAutoName = matchOverviewRaw?.selectedAuto || matchOverviewMatchedAuto?.name || "—";
+
+  // ── Match Overview metric value (for selected match) ─────────────────────────
+  const matchOverviewMetricValue = useMemo(() => {
+    const key = matchOverviewMetric;
+    if (key === "overview") return null;
+    const epa = tbaTeam?.epa?.total_points?.mean ?? null;
+    if (key === "epa") return epa;
+    if (key === "opr") return tbaTeam?.opr ?? null;
+    const stat = GRAPHABLE_STATS.find(s => s.key === key);
+    if (!stat) return null;
+    if (stat.source === "tba") {
+      const pts = getTbaStatDataPoints(key, teamKey, tbaClimbData, epa);
+      const pt = effectiveMatchKey ? pts.find(p => p.matchKey === effectiveMatchKey) : null;
+      return pt?.raw ?? null;
+    }
+    const teamMatches = allMatchData.filter(m => m.team === teamKey);
+    const pts = getStatDataPoints(key, teamMatches as any, { epa, tbaClimbData });
+    const pt = effectiveMatchKey ? pts.find(p => p.matchKey === effectiveMatchKey) : null;
+    return pt?.raw ?? null;
+  }, [matchOverviewMetric, teamKey, effectiveMatchKey, allMatchData, tbaClimbData, tbaTeam]);
+
+  const matchOverviewMetricLabel = ALL_GRAPH_METRICS.find(m => m.key === matchOverviewMetric)?.label ?? matchOverviewMetric;
+
+  const matchOverviewMetricValueFormatted = matchOverviewMetricValue == null ? "—" : (() => {
+    const v = matchOverviewMetricValue;
+    if (["disabled_time", "block_time", "defend_time"].includes(matchOverviewMetric)) {
+      return (Number.isInteger(v) ? v : v.toFixed(1)) + "s";
+    }
+    return typeof v === "number" && Number.isInteger(v) ? String(v) : v.toFixed(2);
+  })();
+
+  const matchOverviewMetricRankInfo = useMemo(() => {
+    const key = matchOverviewMetric;
+    if (!effectiveMatchKey) return null;
+    if (key === "overview" || key === "epa" || key === "opr") return null; // not per-match
+
+    const epa = tbaTeam?.epa?.total_points?.mean ?? null;
+    const stat = GRAPHABLE_STATS.find((s) => s.key === key);
+    if (!stat) return null;
+
+    const pts = stat.source === "tba"
+      ? getTbaStatDataPoints(key, teamKey, tbaClimbData, epa)
+      : getStatDataPoints(
+        key,
+        allMatchData.filter((m) => m.team === teamKey) as any,
+        { epa, tbaClimbData }
+      );
+    if (!pts.length) return null;
+
+    // Lower is better for penalty/time-to-do metrics.
+    // Note: block_time is "hold time" (higher is better), so it is NOT included here.
+    const lowerIsBetter = ["disabled_time", "dismount_time", "auto_climb_time", "teleop_climb_time"].includes(key);
+
+    const sorted = [...pts].sort((a, b) => {
+      if (a.raw === b.raw) {
+        const oa = getMatchSortOrder(a.matchKey);
+        const ob = getMatchSortOrder(b.matchKey);
+        for (let i = 0; i < Math.max(oa.length, ob.length); i++) {
+          const va = oa[i] ?? 0;
+          const vb = ob[i] ?? 0;
+          if (va !== vb) return va - vb;
+        }
+        return 0;
+      }
+      return lowerIsBetter ? a.raw - b.raw : b.raw - a.raw;
+    });
+
+    const idx = sorted.findIndex((p) => p.matchKey === effectiveMatchKey);
+    if (idx < 0) return null;
+    return { rank: idx + 1, total: sorted.length };
+  }, [matchOverviewMetric, effectiveMatchKey, teamKey, allMatchData, tbaClimbData, tbaTeam]);
 
   return (
     <div className="w-full h-full border border-border rounded-lg bg-card flex flex-col overflow-hidden">
@@ -846,7 +1242,7 @@ export function FullTeamPanel({
 
       {/* ── Scrollable body (design layout) ───────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="p-3 space-y-3">
+        <div className="p-3 pb-8 space-y-3">
 
           {/* Top: Robot picture (left) + 3 big stat boxes (right), image vertically centered */}
           <div className="flex gap-3 items-center">
@@ -1081,10 +1477,13 @@ export function FullTeamPanel({
                 <p className="text-sm text-primary uppercase font-semibold px-3 pt-3 pb-1 bg-card shrink-0">
                   Notes
                 </p>
-                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1 px-2.5">
-                  <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap pr-1 pb-2">
-                    {teamNotes || "Describe any capabilities or extra information which you were not able to input into the pit..."}
-                  </p>
+                <div className="relative flex-1 min-h-0">
+                  <div className="h-full overflow-y-auto overflow-x-hidden py-1 px-2.5 pb-6">
+                    <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap pr-1">
+                      {teamNotes || "Describe any capabilities or extra information which you were not able to input into the pit..."}
+                    </p>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none rounded-b-lg bg-gradient-to-t from-card to-transparent" />
                 </div>
               </div>
               </div>
@@ -1181,49 +1580,53 @@ export function FullTeamPanel({
                         </p>
                         <div className="flex gap-1.5 px-2 pb-2 h-[185px] shrink-0 overflow-hidden">
                           <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col overflow-hidden">
-                            <p className="text-[10px] font-medium text-muted-foreground uppercase text-center shrink-0">Match Stats</p>
+                            <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">Match Stats</p>
                             <div className="flex-1 flex flex-col justify-center gap-2 text-xs">
-                              <div className="flex gap-1.5 items-baseline">
-                                <span className="w-14 shrink-0 text-right text-primary">Auto:</span>
-                                <span className="text-foreground tabular-nums">
-                                  {stats?.auto?.shoots ?? "—"} shots
-                                </span>
+                              <div className="flex gap-1.5 items-baseline min-w-0 shrink-0">
+                                <span className="w-14 shrink-0 text-right text-primary whitespace-nowrap">Auto:</span>
+                                <span className="text-foreground tabular-nums truncate min-w-0">{stats?.auto?.shoots ?? "—"} shots</span>
                               </div>
-                              <div className="flex gap-1.5 items-baseline">
-                                <span className="w-14 shrink-0 text-right text-primary">Climb (A):</span>
-                                <span className="text-foreground">{climbA}</span>
+                              <div className="flex gap-1.5 items-baseline min-w-0 shrink-0">
+                                <span className="w-14 shrink-0 text-right text-primary whitespace-nowrap">Climb (A):</span>
+                                <span className="text-foreground truncate min-w-0">{climbA}</span>
                               </div>
-                              <div className="flex gap-1.5 items-baseline">
-                                <span className="w-14 shrink-0 text-right text-primary">Climb (T):</span>
-                                <span className="text-foreground">{climbT}</span>
+                              <div className="flex gap-1.5 items-baseline min-w-0 shrink-0">
+                                <span className="w-14 shrink-0 text-right text-primary whitespace-nowrap">Climb (T):</span>
+                                <span className="text-foreground truncate min-w-0">{climbT}</span>
                               </div>
-                              <div className="flex gap-1.5 items-baseline">
-                                <span className="w-14 shrink-0 text-right text-primary">Disable:</span>
-                                <span className="text-foreground tabular-nums">
+                              <div className="flex gap-1.5 items-baseline min-w-0 shrink-0">
+                                <span className="w-14 shrink-0 text-right text-primary whitespace-nowrap">Disable:</span>
+                                <span className="text-foreground tabular-nums truncate min-w-0">
                                   {stats?.durations?.disabledTime != null
                                     ? `${Math.round(stats.durations.disabledTime)}s`
                                     : "—"}
                                 </span>
                               </div>
-                              <div className="flex gap-1.5 items-baseline">
-                                <span className="w-14 shrink-0 text-right text-primary">Ratings:</span>
-                                <span className="text-foreground tabular-nums">
+                              <div className="flex gap-1.5 items-baseline min-w-0 shrink-0">
+                                <span className="w-14 shrink-0 text-right text-primary whitespace-nowrap">Ratings:</span>
+                                <span className="text-foreground tabular-nums truncate min-w-0">
                                   {avgRating != null ? avgRating.toFixed(1) : "—"}
                                 </span>
                               </div>
                             </div>
                           </div>
-                          <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col gap-1.5 overflow-hidden min-h-0">
-                            <p className="text-[10px] font-medium text-muted-foreground uppercase text-center shrink-0">Match Notes</p>
-                            <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden px-2">
-                              <p className="text-xs text-foreground leading-snug whitespace-pre-wrap break-all text-center pb-2">
-                                {stats?.notes?.trim() || "—"}
-                              </p>
+                          <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col gap-1 overflow-hidden min-h-0">
+                            <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">Match Notes</p>
+                            <div className="relative flex-1 min-h-0">
+                              <div className="h-full overflow-y-auto overflow-x-hidden px-2 pb-2">
+                                <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-all text-center">
+                                  {stats?.notes?.trim() || "—"}
+                                </p>
+                              </div>
+                              <div className="absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t from-card to-transparent rounded-b" />
                             </div>
                             <div className="shrink-0 space-y-0.5 text-center min-h-0 min-w-0 overflow-hidden flex flex-col">
-                              <p className="text-[10px] text-muted-foreground shrink-0">Selected Auto:</p>
-                              <div className="h-[42px] min-w-0 w-full overflow-y-auto overflow-x-hidden px-2">
-                                <p className="text-xs text-foreground leading-snug whitespace-pre-wrap break-all pb-2">{selectedAutoInfo}</p>
+                              <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">Selected Auto</p>
+                              <div className="relative h-[42px] min-w-0 w-full">
+                                <div className="h-full overflow-y-auto overflow-x-hidden px-2 pb-2">
+                                  <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-all">{selectedAutoInfo}</p>
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 h-5 pointer-events-none bg-gradient-to-t from-card to-transparent rounded-b" />
                               </div>
                             </div>
                           </div>
@@ -1345,7 +1748,7 @@ export function FullTeamPanel({
                       </div>
                     )}
                   </div>
-                  <div className="rounded-lg border border-border bg-card px-3 py-3 min-w-0 overflow-hidden flex flex-col">
+                  <div className="rounded-lg border border-border bg-card px-3 py-3 min-w-0 overflow-hidden flex flex-col justify-center h-[192px]">
                     {statOverviewMetric === "overview" ? (
                       <div className="flex-1 min-h-[160px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
@@ -1423,6 +1826,401 @@ export function FullTeamPanel({
               </div>
             )}
           </div>
+
+          {/* Match Overview */}
+          {sortedTeamMatchData.length > 0 && (
+            <div className="rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setMatchOverviewOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-muted/10 hover:bg-muted/20 transition-colors text-left"
+              >
+                <p className="text-base font-semibold text-primary">Match Overview</p>
+                <ChevronDown
+                  className={`w-4 h-4 text-muted-foreground transition-transform shrink-0 ${matchOverviewOpen ? "" : "-rotate-90"}`}
+                />
+              </button>
+              {matchOverviewOpen && (
+                <div className="p-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground shrink-0">Match:</p>
+                    <div className="relative flex-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowMatchPicker((o) => !o)}
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm rounded-md border border-border bg-card hover:bg-muted/30 text-left text-muted-foreground"
+                      >
+                        <span className="truncate">{effectiveMatchKey ? getMatchLabel(effectiveMatchKey) : "—"}</span>
+                        <ChevronDown className="w-3.5 h-3.5 shrink-0 ml-1" />
+                      </button>
+                      {showMatchPicker && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowMatchPicker(false)} />
+                          <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-md border border-border bg-secondary shadow-lg overflow-hidden">
+                            <div className="max-h-[180px] overflow-y-auto">
+                              {[...sortedTeamMatchData].reverse().map((m) => (
+                                <button
+                                  key={m.match}
+                                  type="button"
+                                  onClick={() => { setSelectedMatchKey(m.match); setShowMatchPicker(false); }}
+                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/40 transition-colors ${m.match === effectiveMatchKey ? "text-primary font-medium" : "text-muted-foreground"}`}
+                                >
+                                  {getMatchLabel(m.match)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      title="Open in matches view"
+                      onClick={openInMatches}
+                      disabled={!effectiveMatchKey}
+                      className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-30"
+                    >
+                      <ArrowUpRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {selectedMatch && (
+                    <div className="flex gap-2 h-[190px] overflow-hidden">
+                      {/* Match Stats */}
+                      <div className="flex-[1.2] min-w-0 rounded border border-muted-foreground/60 px-1.5 py-3 flex flex-col overflow-hidden">
+                        <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0 mb-1">Match Stats</p>
+                        <div className="flex-1 flex flex-col justify-center gap-1.5 overflow-hidden px-2 mt-0">
+                          {[
+                            { label: "Auto", value: matchOverviewStats?.auto?.shoots != null ? `${matchOverviewStats.auto.shoots} shots` : "—" },
+                            { label: "Climb (A)", value: matchOverviewClimbA },
+                            { label: "Climb (T)", value: matchOverviewClimbT },
+                            { label: "Disable", value: matchOverviewStats?.durations?.disabledTime != null ? `${Math.round(matchOverviewStats.durations.disabledTime)}s` : "—" },
+                            { label: "Ratings", value: matchOverviewAvgRating != null ? matchOverviewAvgRating.toFixed(1) : "—" },
+                            { label: "Defense", value: matchOverviewStats?.durations?.defendTime ? `${Math.round(matchOverviewStats.durations.defendTime)}s` : "—" },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="flex gap-1 items-baseline min-w-0 shrink-0">
+                              <span className="w-[50px] shrink-0 text-right text-primary text-xs whitespace-nowrap">{label}:</span>
+                              <span className="text-foreground tabular-nums truncate text-xs min-w-0">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Match Notes */}
+                      <div className="flex-[0.8] min-w-0 rounded border border-muted-foreground/60 px-1.5 py-3 flex flex-col overflow-hidden">
+                        <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0 mb-2">Match Notes</p>
+                        <div className="relative flex-1 min-h-0">
+                          <div className="h-full overflow-y-auto overflow-x-hidden px-1 pb-6">
+                            <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-words">
+                              {matchOverviewStats?.notes?.trim() || "—"}
+                            </p>
+                          </div>
+                          <div className="absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t from-card to-transparent rounded-b" />
+                        </div>
+                      </div>
+                      {/* Auto — only the elected auto for this match */}
+                      <div className="flex-[1.2] min-w-0 rounded border border-muted-foreground/60 px-2 py-2 flex flex-col overflow-hidden bg-card">
+                        <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">AUTO</p>
+                        <p className="text-xs text-muted-foreground text-center shrink-0 truncate mt-0.5">
+                          {matchOverviewAutoName && matchOverviewAutoName !== "—" ? matchOverviewAutoName : "Not selected"}
+                        </p>
+                        <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden mt-1">
+                          {matchOverviewMatchedAuto?.drawing ? (
+                            <AutoPathPreview drawing={matchOverviewMatchedAuto.drawing} className="w-full max-h-full" />
+                          ) : (
+                            <div className="relative w-full flex-1 min-h-0 flex flex-col overflow-hidden">
+                              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1 pb-4">
+                                <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-words">
+                                  {matchOverviewMatchedAuto?.description || matchOverviewRaw?.autoDescription?.trim() || "—"}
+                                </p>
+                              </div>
+                              <div className="absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t from-card to-transparent rounded-b" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Match video / field replay */}
+                  <div className="rounded-lg border border-border/60 overflow-hidden">
+                    {/* View toggle header */}
+                    <div className="flex items-center gap-1 px-1 py-1 border-b border-border/40">
+                      <button
+                        type="button"
+                        title="Field replay"
+                        onClick={() => setMatchViewMode("field")}
+                        className={`p-1 rounded transition-colors ${matchViewMode === "video" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <span className="flex-1 text-center text-xs text-muted-foreground">
+                        {matchViewMode === "video" ? "Video" : "Field Replay"}
+                      </span>
+                      <button
+                        type="button"
+                        title="Video"
+                        onClick={() => setMatchViewMode("video")}
+                        className={`p-1 rounded transition-colors ${matchViewMode === "field" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {matchViewMode === "video" ? (
+                      matchYoutubeId ? (
+                        <div className="px-2 pb-2 pt-1.5 flex flex-col gap-1.5">
+                          <div
+                            className="relative bg-black rounded-lg overflow-hidden w-full"
+                            style={{ aspectRatio: `${PANEL_FIELD_W}/${PANEL_FIELD_H}` }}
+                          >
+                            <iframe
+                              title={`Match video ${effectiveMatchKey}`}
+                              src={`https://www.youtube.com/embed/${matchYoutubeId}`}
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                              className="absolute inset-0 w-full h-full"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              title="Open in browser"
+                              onClick={() => openUrl(`https://www.youtube.com/watch?v=${matchYoutubeId}`)}
+                              className="flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors"
+                            >
+                              <ExternalLink className="size-3" />
+                              Open
+                            </button>
+                            <button
+                              type="button"
+                              title="Pop out video"
+                              onClick={() => {
+                                const winLabel = `match-video-${Date.now()}`;
+                                const url = `https://www.youtube.com/watch?v=${matchYoutubeId}`;
+                                try {
+                                  const win = new WebviewWindow(winLabel, {
+                                    url,
+                                    title: "Match Video",
+                                    width: 1280,
+                                    height: 720,
+                                    resizable: true,
+                                    center: true,
+                                  });
+                                  win.once("tauri://created", () => {});
+                                  win.once("tauri://error", () => {});
+                                } catch {}
+                              }}
+                              className="flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors"
+                            >
+                              <Maximize2 className="size-3" />
+                              Pop Out
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="flex items-center justify-center text-sm text-muted-foreground"
+                          style={{ aspectRatio: `${PANEL_FIELD_W}/${PANEL_FIELD_H}` }}
+                        >
+                          No video available
+                        </div>
+                      )
+                    ) : (
+                      selectedMatch ? (
+                        <div className="px-2 pb-2 pt-1.5 space-y-2">
+                          {/* Phase filter pills */}
+                          <div className="flex gap-1.5 justify-center">
+                            {(["auto", "teleop", "full"] as const).map((p) => (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => setMatchReplayPhase(p)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${matchReplayPhase === p ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                              >
+                                {p === "full" ? "Full" : p === "auto" ? "Auto" : "Teleop"}
+                              </button>
+                            ))}
+                          </div>
+                          {/* Playback controls */}
+                          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 bg-muted/50">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (matchReplayProgress >= 1) {
+                                  setMatchReplayProgress(0);
+                                  matchLastProgressRef.current = 0;
+                                  setMatchReplayPlaying(true);
+                                } else {
+                                  setMatchReplayPlaying((p) => !p);
+                                }
+                              }}
+                              disabled={!matchCanPlay}
+                              className="flex items-center justify-center size-7 rounded-full bg-primary text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                            >
+                              {matchReplayPlaying ? (
+                                <svg className="size-3" fill="currentColor" viewBox="0 0 24 24">
+                                  <rect x="6" y="4" width="4" height="16" />
+                                  <rect x="14" y="4" width="4" height="16" />
+                                </svg>
+                              ) : (
+                                <svg className="size-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M8 5v14l11-7z" />
+                                </svg>
+                              )}
+                            </button>
+                            <div className="flex-1 relative h-1.5 rounded-full bg-muted overflow-visible flex items-center">
+                              <div
+                                className="absolute inset-y-0 left-0 rounded-full bg-primary"
+                                style={{ width: `${Math.min(matchReplayProgress * 100, 98)}%` }}
+                              />
+                              <div
+                                className="absolute top-1/2 -translate-y-1/2 size-2.5 rounded-full bg-primary border-2 border-background shadow-sm z-20 pointer-events-none"
+                                style={{ left: `calc(${Math.min(matchReplayProgress * 100, 98)}% - 5px)` }}
+                              />
+                              <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.001}
+                                value={matchReplayProgress}
+                                onChange={(e) => {
+                                  setMatchReplayProgress(parseFloat(e.target.value));
+                                  setMatchReplayPlaying(false);
+                                }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                              />
+                            </div>
+                            <select
+                              value={matchReplaySpeed}
+                              onChange={(e) => setMatchReplaySpeed(Number(e.target.value))}
+                              className="bg-background border border-border rounded px-1.5 py-0.5 text-xs shrink-0"
+                            >
+                              {[0.25, 0.5, 1, 2, 4].map((s) => (
+                                <option key={s} value={s}>{s}x</option>
+                              ))}
+                            </select>
+                          </div>
+                          {/* Field SVG */}
+                          <div className="relative w-full">
+                            <img src="/fullfield.svg" alt="Field" className="w-full h-auto block rounded-lg" />
+                            <svg
+                              className="absolute inset-0 w-full h-full"
+                              viewBox={`0 0 ${PANEL_FIELD_W} ${PANEL_FIELD_H}`}
+                              preserveAspectRatio="xMidYMid meet"
+                            >
+                              {/* Start position X marker */}
+                              {matchRaw && matchAlliance && (() => {
+                                const start = panelParseStartPos(matchRaw);
+                                const disp = panelToDisplayCoords(start.x, start.y, matchAlliance);
+                                const { x, y } = panelNormToSvg(disp.x, disp.y);
+                                const sz = 8;
+                                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                                return (
+                                  <g stroke="#94a3b8" strokeWidth={2} strokeLinecap="round">
+                                    <line x1={x - sz} y1={y - sz} x2={x + sz} y2={y + sz} />
+                                    <line x1={x + sz} y1={y - sz} x2={x - sz} y2={y + sz} />
+                                  </g>
+                                );
+                              })()}
+                              {/* Action blobs */}
+                              {matchWaypoints.map((wp, i) => {
+                                if (i === 0 || !wp.actionId) return null;
+                                const { x, y } = panelNormToSvg(wp.x, wp.y);
+                                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                                const actionLabel = getActionById(matchSchema, wp.actionId)?.label ?? wp.actionId;
+                                return (
+                                  <TooltipProvider key={i}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <g style={{ cursor: "help" }}>
+                                          <PanelActionBlob x={x} y={y} style={panelGetStyle(wp.actionId)} />
+                                        </g>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
+                                        {actionLabel}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                );
+                              })}
+                              {/* Animated robot marker */}
+                              {matchCurrentPos && matchAlliance && (() => {
+                                const { x, y } = panelNormToSvg(matchCurrentPos.x, matchCurrentPos.y);
+                                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+                                const sz = 38;
+                                const fill = matchAlliance === "red" ? "#ef4444" : "#3b82f6";
+                                return (
+                                  <g>
+                                    <rect
+                                      x={x - sz / 2} y={y - sz / 2}
+                                      width={sz} height={sz}
+                                      fill={fill} stroke="#fff" strokeWidth={3} rx={3}
+                                    />
+                                    <text
+                                      x={x} y={y}
+                                      textAnchor="middle" dominantBaseline="central"
+                                      fill="#fff" stroke="#000" strokeWidth={1.5}
+                                      paintOrder="stroke" fontSize={9} fontWeight="bold"
+                                    >
+                                      {teamNum}
+                                    </text>
+                                  </g>
+                                );
+                              })()}
+                            </svg>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="flex items-center justify-center text-sm text-muted-foreground"
+                          style={{ aspectRatio: `${PANEL_FIELD_W}/${PANEL_FIELD_H}` }}
+                        >
+                          No match data
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {/* Match Overview metric selector + value */}
+                  <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
+                    <p className="text-xs text-muted-foreground shrink-0">Metric:</p>
+                    <div className="relative shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowMatchOverviewMetricPicker(true)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-border bg-card hover:bg-muted/30 text-left truncate text-muted-foreground max-w-[140px]"
+                      >
+                        <span className="truncate">{matchOverviewMetricLabel}</span>
+                        <ChevronDown className="w-3 h-3 shrink-0" />
+                      </button>
+                      {showMatchOverviewMetricPicker && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowMatchOverviewMetricPicker(false)} />
+                          <MetricPicker
+                            activeMetrics={[matchOverviewMetric]}
+                            onSelect={(k) => {
+                              setMatchOverviewMetric(k);
+                              setShowMatchOverviewMetricPicker(false);
+                            }}
+                            onClose={() => setShowMatchOverviewMetricPicker(false)}
+                          />
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs text-muted-foreground/50">—</span>
+                      <span className="tabular-nums text-sm text-primary">
+                        {matchOverviewMetricValueFormatted}
+                      </span>
+                      {matchOverviewMetricRankInfo && (
+                        <span className="inline-flex items-center rounded-full bg-secondary text-secondary-foreground px-2 py-0.5 text-[10px] font-medium shrink-0">
+                          #{matchOverviewMetricRankInfo.rank}/{matchOverviewMetricRankInfo.total}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
       </div>

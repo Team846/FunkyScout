@@ -303,10 +303,6 @@ impl SyncService {
                     .await
                     .context("Failed to cache team data to SQLite")?;
 
-                // Always fetch fresh data from Supabase before merging.
-                // Using a stale in-memory snapshot risks overwriting pit scouting data
-                // that was submitted between sync cycles — always pass None so
-                // bulk_upsert_team_data fetches the current state right before merging.
                 let teams_with_epa = team_data_records.iter()
                     .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
                     .count();
@@ -314,7 +310,7 @@ impl SyncService {
                     team_data_records.len(), teams_with_epa);
 
                 match self.supabase
-                    .bulk_upsert_team_data(&self.current_event, team_data_records, None)
+                    .bulk_upsert_team_data(&self.current_event, team_data_records)
                     .await
                 {
                     Ok(_) => println!("[Sync] ✓ Pushed team data to Supabase"),
@@ -1625,7 +1621,7 @@ impl SyncService {
             .collect();
 
         self.supabase
-            .bulk_upsert_team_data(&self.current_event, team_records, None)
+            .bulk_upsert_team_data(&self.current_event, team_records)
             .await
             .context("Failed to push teams to Supabase (bootstrap)")?;
 

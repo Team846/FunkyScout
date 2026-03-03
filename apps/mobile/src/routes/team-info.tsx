@@ -865,8 +865,8 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Orientation</p>
                     <div className="flex items-center gap-1.5">
-                      {(pitData.autoClimb?.orientation?.length ?? 0) > 0
-                        ? pitData.autoClimb!.orientation!.map((o, i) => (
+                      {Array.isArray(pitData.autoClimb?.orientation) && pitData.autoClimb.orientation.length > 0
+                        ? pitData.autoClimb.orientation.map((o, i) => (
                             <span key={o} className="font-semibold">
                               {i > 0 && <span className="text-foreground">, </span>}
                               <span className={verifications?.autoClimb.orientations.has(o.toLowerCase()) ? "text-chart-2" : "text-foreground"}>{o}</span>
@@ -886,8 +886,8 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Climb Level</p>
                     <div className="flex items-center gap-1.5">
-                      {(pitData.teleopClimb?.level?.length ?? 0) > 0
-                        ? pitData.teleopClimb!.level!.map((l, i) => (
+                      {Array.isArray(pitData.teleopClimb?.level) && pitData.teleopClimb.level.length > 0
+                        ? pitData.teleopClimb.level.map((l, i) => (
                             <span key={l} className="font-semibold">
                               {i > 0 && <span className="text-foreground">, </span>}
                               <span className={verifications?.teleopClimb.levels.has(l) ? "text-chart-2" : "text-foreground"}>{l}</span>
@@ -900,8 +900,8 @@ function TeamInfoPage() {
                   <div className="flex items-center justify-between py-2">
                     <p className="text-foreground">Orientation</p>
                     <div className="flex items-center gap-1.5">
-                      {(pitData.teleopClimb?.orientation?.length ?? 0) > 0
-                        ? pitData.teleopClimb!.orientation!.map((o, i) => (
+                      {Array.isArray(pitData.teleopClimb?.orientation) && pitData.teleopClimb.orientation.length > 0
+                        ? pitData.teleopClimb.orientation.map((o, i) => (
                             <span key={o} className="font-semibold">
                               {i > 0 && <span className="text-foreground">, </span>}
                               <span className={verifications?.teleopClimb.orientations.has(o.toLowerCase()) ? "text-chart-2" : "text-foreground"}>{o}</span>

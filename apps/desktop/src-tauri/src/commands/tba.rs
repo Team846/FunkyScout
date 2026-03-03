@@ -40,7 +40,7 @@ pub async fn bootstrap_from_csv(
     let team_count = teams.len();
     if !teams.is_empty() {
         supabase_service
-            .bulk_upsert_team_data(&event, teams, None)
+            .bulk_upsert_team_data(&event, teams)
             .await
             .map_err(|e| format!("Failed to seed team data: {}", e))?;
         println!("[Bootstrap CSV] ✓ event_team_data: {} teams seeded", team_count);
@@ -153,7 +153,7 @@ pub async fn bootstrap_event_schedule(
         .collect();
 
     supabase_service
-        .bulk_upsert_team_data(&event, team_records, None)
+        .bulk_upsert_team_data(&event, team_records)
         .await
         .map_err(|e| format!("Failed to seed team data: {}", e))?;
 

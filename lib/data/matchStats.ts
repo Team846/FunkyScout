@@ -415,9 +415,9 @@ function analyzeClimbActions(
       const failAfter = autoClimbActions.slice(lastStartIdx + 1).some((a) => a.enabled === false);
       if (!failAfter) {
         hasAutoClimb = true;
-        // seconds from climb press to end of auto (20s)
+        // Seconds into auto when climb was started (lower is better / faster).
         const secondsIntoAuto = (lastStart.timestamp - autoStartMs) / 1000;
-        autoClimbTime = Math.max(0, 20 - secondsIntoAuto);
+        autoClimbTime = Math.max(0, Math.min(20, secondsIntoAuto));
       }
     }
   }
@@ -443,9 +443,9 @@ function analyzeClimbActions(
     }
   }
   if (lastSuccessfulStart) {
-    // seconds from climb press to end of teleop (140s)
+    // Seconds into teleop when climb was started (lower is better / faster).
     const secondsIntoTeleop = (lastSuccessfulStart.timestamp - teleopStartMs) / 1000;
-    teleopClimbTime = Math.max(0, 140 - secondsIntoTeleop);
+    teleopClimbTime = Math.max(0, Math.min(140, secondsIntoTeleop));
   }
 
   // Count failed teleop climb attempts (enabled=true with a subsequent enabled=false)
@@ -1008,18 +1008,18 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
     normalize: absoluteNorm(0, 15),
   },
   {
-    // Time on cage in auto (20s - press time). Null when no auto climb.
-    // Higher = started earlier = better.
+    // Seconds into auto when climb started. Null when no auto climb.
+    // Lower = started earlier = better.
     key: "auto_climb_time", label: "Auto Climb Time (s)", group: "Climb",
     getValue: (s) => s.climb.autoClimbTime,
-    normalize: absoluteNorm(0, 20),
+    normalize: (value, allValues) => 1 - absoluteNorm(0, 20)(value, allValues),
   },
   {
-    // Time on cage in teleop (140s - press time). Null when no teleop climb.
-    // Higher = started earlier = better.
+    // Seconds into teleop when climb started. Null when no teleop climb.
+    // Lower = started earlier = better.
     key: "teleop_climb_time", label: "Teleop Climb Time (s)", group: "Climb",
     getValue: (s) => s.climb.teleopClimbTime,
-    normalize: absoluteNorm(0, 140),
+    normalize: (value, allValues) => 1 - absoluteNorm(0, 140)(value, allValues),
   },
   {
     // Seconds into teleop before dismount pressed. Null when no dismount.

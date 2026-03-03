@@ -674,8 +674,10 @@ function MatchPlaybackView({
                           {drawing ? (
                             <AutoPathPreview drawing={drawing} alliance="blue" className="w-full h-full max-w-full max-h-full" />
                           ) : (description || (autoLabel && autoLabel !== "No auto data")) ? (
-                            <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground line-clamp-4 w-full">
-                              <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                            <div className="w-full h-full overflow-y-auto flex items-start p-1.5">
+                              <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground w-full">
+                                <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                              </div>
                             </div>
                           ) : (
                             <p className="text-sm text-center px-1 line-clamp-3">
@@ -1038,8 +1040,10 @@ function MatchPlaybackView({
                           {drawing ? (
                             <AutoPathPreview drawing={drawing} alliance="red" className="w-full h-full max-w-full max-h-full" />
                           ) : (description || (autoLabel && autoLabel !== "No auto data")) ? (
-                            <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground line-clamp-4 w-full">
-                              <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                            <div className="w-full h-full overflow-y-auto flex items-start p-1.5">
+                              <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground w-full">
+                                <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                              </div>
                             </div>
                           ) : (
                             <p className="text-sm text-center px-1 line-clamp-3">
