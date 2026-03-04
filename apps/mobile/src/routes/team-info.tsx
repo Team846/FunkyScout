@@ -329,6 +329,8 @@ function TeamInfoPage() {
         }
       }
       setLoading(false);
+    }).catch(() => {
+      setLoading(false);
     });
   }, [currentEvent, teamKey]);
 

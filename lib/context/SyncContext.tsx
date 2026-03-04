@@ -172,15 +172,22 @@ export function SyncProvider({
       syncManagerRef.current
     ) {
       console.log("[SyncContext] Back online, triggering sync");
-      toast.info("Back online, syncing data...", { duration: 2000 });
+      const syncToastId = "back-online-sync";
+      toast.loading("Back online — syncing data. Don't close the app.", {
+        id: syncToastId,
+        duration: Infinity,
+      });
 
       forceSyncNow()
         .then(() => {
-          toast.success("Sync complete!", { duration: 2000 });
+          toast.success("Sync complete!", { id: syncToastId, duration: 3000 });
         })
         .catch((error) => {
           console.error("[SyncContext] Online sync failed:", error);
-          toast.error("Sync failed", { duration: 3000 });
+          toast.error("Sync failed — some data may not have uploaded.", {
+            id: syncToastId,
+            duration: 5000,
+          });
         });
     }
     prevOnlineRef.current = isOnline;

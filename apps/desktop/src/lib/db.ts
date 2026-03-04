@@ -241,3 +241,44 @@ export async function cacheMatchScoutingData(
 ): Promise<void> {
   return invoke<void>("cache_match_scouting_data", { data });
 }
+
+// ─── Image disk cache ────────────────────────────────────────────────────────
+
+/**
+ * Convert a Blob to a base64 string (chunked to avoid stack overflow on large images).
+ */
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Convert a base64 string back to a Blob.
+ */
+export function base64ToBlob(b64: string, type: string): Blob {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
+/**
+ * Store an image in the persistent disk cache (survives app restarts).
+ * `path` is the Supabase storage path. `data` is base64-encoded image bytes.
+ */
+export async function cacheImageToDisk(path: string, data: string): Promise<void> {
+  return invoke<void>("cache_image", { path, data });
+}
+
+/**
+ * Retrieve a cached image from disk.
+ * Returns base64-encoded bytes, or null if not cached yet.
+ */
+export async function getCachedImageFromDisk(path: string): Promise<string | null> {
+  return invoke<string | null>("get_cached_image", { path });
+}

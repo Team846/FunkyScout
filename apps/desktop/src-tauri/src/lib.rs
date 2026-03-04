@@ -158,6 +158,8 @@ pub fn run() {
             commands::sync_queue::clear_failed_sync_queue,
             commands::sync_queue::retry_failed_sync_queue,
             commands::sync_queue::trigger_sync_now,
+            commands::image_cache::cache_image,
+            commands::image_cache::get_cached_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

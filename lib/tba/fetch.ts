@@ -19,13 +19,18 @@ async function fetchTBAData(param: string, method: fetchMethod) {
       return undefined;
    }
 
+   const controller = new AbortController();
+   const timeoutId = setTimeout(() => controller.abort(), 10_000); // 10s timeout
+
    try {
       const response = await fetch(url, {
          method: method,
          headers: {
             "X-TBA-Auth-Key": tbaAuthKey,
          },
+         signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
          console.error(`[TBA] HTTP ${response.status} ${response.statusText} for ${param}`);
@@ -35,6 +40,11 @@ async function fetchTBAData(param: string, method: fetchMethod) {
       const data = await response.json();
       return data;
    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === "AbortError") {
+         console.error(`[TBA] Request timed out after 10s for ${param}`);
+         return undefined;
+      }
       console.error(`[TBA] Fetch failed for ${param}:`, error);
       handleError(error);
       return undefined; // Explicitly return undefined on error

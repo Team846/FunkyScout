@@ -48,7 +48,7 @@ export function Match() {
       if (session?.user?.id) {
         setCurrentUserUid(session.user.id);
       }
-    });
+    }).catch(() => {});
   }, []);
 
   // Get unique matches from schedule

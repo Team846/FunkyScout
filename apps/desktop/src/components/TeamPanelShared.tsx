@@ -33,6 +33,7 @@ import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { permanentlyExcludeSubmission } from "@lib/data/scouterExclusions";
 import type { MatchScoutingData } from "../lib/db";
+import { blobToBase64, base64ToBlob, cacheImageToDisk, getCachedImageFromDisk } from "../lib/db";
 import {
   calculateSingleMatchStats,
   getTbaStatDataPoints,
@@ -244,6 +245,8 @@ function PitImageCarousel({ imagePaths }: { imagePaths: string[] }) {
 
   useEffect(() => {
     if (!currentPath || currentPath.startsWith("pending-")) return;
+
+    // L1: in-memory session cache — instant
     const cached = _pitImageCache.get(currentPath);
     if (cached) { setBlobUrl(cached); return; }
 
@@ -251,12 +254,39 @@ function PitImageCarousel({ imagePaths }: { imagePaths: string[] }) {
     setLoadingImg(true);
     setBlobUrl(null);
 
+    const ext = currentPath.split(".").pop() ?? "webp";
+    const contentType = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
+
     (async () => {
       try {
-        const url = getImageUrl(currentPath);
-        const r = await fetch(url, { mode: "cors" });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const blob = await r.blob();
+        // L2: persistent disk cache — survives app restarts
+        const diskCached = await getCachedImageFromDisk(currentPath);
+        if (diskCached) {
+          const blob = base64ToBlob(diskCached, contentType);
+          const objectUrl = URL.createObjectURL(blob);
+          _pitImageCache.set(currentPath, objectUrl);
+          if (!cancelled) setBlobUrl(objectUrl);
+          return;
+        }
+
+        // L3: network fetch with 1 retry (1s delay) for CORS preflight warmup
+        const fetchImage = async (): Promise<Blob> => {
+          const url = getImageUrl(currentPath);
+          const r = await fetch(url, { mode: "cors" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.blob();
+        };
+
+        let blob: Blob;
+        try {
+          blob = await fetchImage();
+        } catch {
+          await new Promise((res) => setTimeout(res, 1000));
+          blob = await fetchImage();
+        }
+
+        // Cache to disk (fire-and-forget) and L1
+        blobToBase64(blob).then((b64) => cacheImageToDisk(currentPath, b64)).catch(() => {});
         const objectUrl = URL.createObjectURL(blob);
         _pitImageCache.set(currentPath, objectUrl);
         if (!cancelled) setBlobUrl(objectUrl);

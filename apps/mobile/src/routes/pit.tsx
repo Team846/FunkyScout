@@ -25,7 +25,7 @@ export function Pit() {
       if (session?.user?.id) {
         setCurrentUserUid(session.user.id);
       }
-    });
+    }).catch(() => {});
   }, []);
 
   const handleBackClick = () => {
