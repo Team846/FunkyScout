@@ -717,38 +717,39 @@ impl SupabaseService {
     /// Patch a subset of shift assignments without clearing the rest (from sync queue).
     /// Unlike bulk_assign_shifts, this does NOT clear existing assignments first.
     /// Only the rows in `assignments` are updated; all others are left untouched.
+    ///
+    /// Uses a single SQL RPC call (`patch_shift_assignments_batch`) so all rows are
+    /// updated atomically in one round-trip instead of N sequential HTTP PATCHes.
+    /// This fires the same number of postgres_changes events but delivers them all
+    /// at once, so mobile's realtime debounce catches them in a single batch.
     pub async fn patch_assign_shifts(
         &self,
         event: &str,
         assignments: &[Value],
     ) -> Result<()> {
-        for assignment in assignments {
-            let match_key = assignment.get("match").and_then(|v| v.as_str()).unwrap_or("");
-            let team = assignment.get("team").and_then(|v| v.as_str()).unwrap_or("");
-            let uid = assignment.get("uid").and_then(|v| v.as_str());
-            let name = assignment.get("name").and_then(|v| v.as_str());
+        let params = json!({
+            "p_event": event,
+            "p_assignments": assignments,
+        });
 
-            let payload = json!({
-                "uid": uid,
-                "name": name,
-                "last_modified": Self::now_iso(),
-            });
+        let response = self
+            .auth_client()
+            .rpc("patch_shift_assignments_batch", &params.to_string())
+            .execute()
+            .await
+            .context("Failed to call patch_shift_assignments_batch RPC")?;
 
-            self.auth_client()
-                .from("event_schedule")
-                .update(&payload.to_string())
-                .eq("event", event)
-                .eq("match", match_key)
-                .eq("team", team)
-                .execute()
-                .await
-                .context(format!(
-                    "Failed to patch shift for match {} team {}",
-                    match_key, team
-                ))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "[Supabase] patch_shift_assignments_batch failed (HTTP {}): {}",
+                status,
+                text
+            );
         }
 
-        println!("[Supabase] ✓ Patched {} shift assignments (no clear)", assignments.len());
+        println!("[Supabase] ✓ Patched {} shift assignments (single RPC)", assignments.len());
         Ok(())
     }
 

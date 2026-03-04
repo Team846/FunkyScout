@@ -1269,7 +1269,7 @@ export function FullTeamPanel({
     if (!effectiveMatchKey) return;
     const label = getMatchLabel(effectiveMatchKey);
     addTab("/matches", label, { match: effectiveMatchKey }, `match-${effectiveMatchKey}`);
-    navigate({ to: "/matches", search: { match: effectiveMatchKey, mode: undefined } });
+    navigate({ to: "/matches", search: { match: effectiveMatchKey } });
   }, [effectiveMatchKey, addTab, navigate]);
 
   const matchCanPlay = matchWaypoints.length >= 2;
@@ -1816,9 +1816,24 @@ export function FullTeamPanel({
                         key={`${m.match}-${m.team}-${m.uid ?? "n"}`}
                         className="px-1 flex-shrink-0 w-[265px] min-h-[180px] rounded-lg border border-border bg-card overflow-hidden flex flex-col"
                       >
-                        <p className="text-base font-medium text-primary px-3 py-2">
-                          {matchLabel} — {scouterName}
-                        </p>
+                        <div className="flex items-center justify-between px-3 py-2">
+                          
+                          <p className="text-base font-medium text-primary">
+                            {matchLabel} — {scouterName}
+                          </p>
+                          <button
+                            type="button"
+                            title="Open in matches view"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addTab("/matches", getMatchLabel(m.match), { match: m.match }, `match-${m.match}`);
+                              navigate({ to: "/matches", search: { match: m.match } });
+                            }}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                          >
+                            <ArrowUpRight className="w-4 h-4" />
+                          </button>
+                        </div>
                         <div className="flex gap-1.5 px-2 pb-2 h-[185px] shrink-0 overflow-hidden">
                           <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col overflow-hidden">
                             <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">Match Stats</p>
