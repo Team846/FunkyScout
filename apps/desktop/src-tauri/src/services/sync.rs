@@ -106,10 +106,10 @@ impl SyncService {
         }
     }
 
-    /// Perform one sync cycle: External APIs → Supabase + Poll Supabase → Local cache
+    /// Perform one sync cycle:
     /// 1. Processes sync queue (push local changes to Supabase)
-    /// 2. Fetches TBA/Statbotics: rankings, EPA, OPR, match predictions → pushes to Supabase
-    /// 3. Polls Supabase: picklists, match data, user profiles → caches locally
+    /// 2. Polls Supabase: picklists, match data, team data, schedule → caches locally (FIRST for realtime)
+    /// 3. Fetches TBA/Statbotics: rankings, EPA, OPR, match predictions → pushes to Supabase
     pub async fn sync_once(&mut self) -> Result<()> {
         // 0. Process sync queue (desktop offline writes)
         if let Err(e) = self.process_sync_queue().await {
@@ -117,7 +117,165 @@ impl SyncService {
             // Don't return early - continue with TBA sync
         }
 
-        // 1. Fetch ALL teams from TBA (not just statuses - we need all teams for EPA/OPR sync)
+        // Pull from Supabase FIRST so realtime-triggered syncs reflect mobile writes quickly.
+        // TBA/Statbotics push follows — it's slower (external APIs) but non-urgent for realtime.
+        let since_iso: Option<String> = {
+            let guard = self.last_sync_time.lock().unwrap();
+            guard.as_ref().map(|dt| {
+                (*dt - chrono::Duration::minutes(5)).to_rfc3339()
+            })
+        };
+        let is_first_sync = since_iso.is_none();
+        if is_first_sync {
+            println!("[Sync] First sync — performing full table fetch");
+        } else {
+            println!("[Sync] Incremental fetch since: {}", since_iso.as_deref().unwrap_or("?"));
+        }
+
+        // 1. Fetch user profiles — incremental if SQLite has rows, full if empty (auto-heal).
+        // Full fetch also propagates deletions (supabase.rs: no deleted_at filter when since=None).
+        let profile_since = if self.sqlite_has_rows_global("user_profiles").await {
+            since_iso.as_deref()
+        } else {
+            println!("[Sync] user_profiles empty — forcing full fetch to heal cache");
+            None
+        };
+        let user_profiles = match self.supabase.fetch_user_profiles(profile_since).await {
+            Ok(profiles) => {
+                println!("[Sync] User profiles fetched: {} ({})", profiles.len(),
+                    if profile_since.is_some() { "incremental" } else { "full" });
+                profiles
+            },
+            Err(e) => {
+                eprintln!("[Sync] User profiles fetch failed: {}", e);
+                vec![]
+            }
+        };
+        if !user_profiles.is_empty() {
+            self.cache_user_profiles_to_sqlite(&user_profiles)
+                .await
+                .context("Failed to cache user profiles to SQLite")?;
+        }
+
+        // 2. Fetch picklists — incremental if SQLite has rows, full if empty (auto-heal).
+        // Full fetch includes deleted rows so deletions propagate to SQLite (no deleted_at filter).
+        let picklist_since = if self.sqlite_has_rows("event_picklist", &self.current_event).await {
+            since_iso.as_deref()
+        } else {
+            println!("[Sync] event_picklist empty — forcing full fetch to heal cache");
+            None
+        };
+        let picklists = match self.supabase.fetch_event_picklists(&self.current_event, picklist_since).await {
+            Ok(data) => {
+                println!("[Sync] Picklists fetched: {} ({})", data.len(),
+                    if picklist_since.is_some() { "incremental" } else { "full" });
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Picklists fetch failed: {}", e);
+                vec![]
+            }
+        };
+        if !picklists.is_empty() {
+            self.cache_picklists_to_sqlite(&picklists)
+                .await
+                .context("Failed to cache picklists to SQLite")?;
+        }
+
+        // 3. Fetch match scouting data — incremental if SQLite has rows, full if empty.
+        // EGRESS NOTE: Each data_raw is 5-15 KB; incremental is critical for large datasets.
+        // Full fetch only happens when the table is empty (first use or after migration wipe).
+        let match_since = if self.sqlite_has_rows("event_match_data", &self.current_event).await {
+            since_iso.as_deref()
+        } else {
+            println!("[Sync] event_match_data empty — forcing full fetch to heal cache");
+            None
+        };
+        let match_data = match self.supabase.fetch_event_match_data(&self.current_event, match_since).await {
+            Ok(data) => {
+                println!("[Sync] Match data fetched: {} submissions ({})", data.len(),
+                    if match_since.is_some() { "incremental" } else { "full" });
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Match data fetch failed: {}", e);
+                vec![]
+            }
+        };
+        if !match_data.is_empty() {
+            self.cache_match_data_to_sqlite(&match_data)
+                .await
+                .context("Failed to cache match data to SQLite")?;
+        }
+
+        // Reconcile on first sync after startup: catch old mobile deletions that are outside
+        // the incremental window (their last_modified predates our sync window) or hidden by RLS.
+        // Fetches only (match, team) keys — minimal egress.
+        if is_first_sync {
+            match self.supabase.fetch_active_match_keys(&self.current_event).await {
+                Ok(active_keys) => {
+                    if let Err(e) = self.reconcile_match_deletions(&active_keys).await {
+                        eprintln!("[Sync] Match reconciliation error: {}", e);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Sync] Failed to fetch active match keys for reconciliation: {}", e);
+                }
+            }
+        }
+
+        // 4. Fetch team data — incremental if SQLite has rows, full if empty.
+        let team_since = if self.sqlite_has_rows("event_team_data", &self.current_event).await {
+            since_iso.as_deref()
+        } else {
+            println!("[Sync] event_team_data empty — forcing full fetch to heal cache");
+            None
+        };
+        let team_data = match self.supabase.fetch_event_team_data(&self.current_event, team_since).await {
+            Ok(data) => {
+                println!("[Sync] Team data fetched: {} rows ({})", data.len(),
+                    if team_since.is_some() { "incremental" } else { "full" });
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Team data fetch failed: {}", e);
+                vec![]
+            }
+        };
+        if !team_data.is_empty() {
+            self.cache_teams_to_sqlite(&team_data)
+                .await
+                .context("Failed to cache team data to SQLite")?;
+        }
+
+        // 5. Fetch schedule — incremental if SQLite has rows, full if empty.
+        let schedule_since = if self.sqlite_has_rows("event_schedule", &self.current_event).await {
+            since_iso.as_deref()
+        } else {
+            println!("[Sync] event_schedule empty — forcing full fetch to heal cache");
+            None
+        };
+        let schedule_data = match self.supabase.fetch_event_schedule(&self.current_event, schedule_since).await {
+            Ok(data) => {
+                println!("[Sync] Schedule fetched: {} rows ({})", data.len(),
+                    if schedule_since.is_some() { "incremental" } else { "full" });
+                data
+            },
+            Err(e) => {
+                eprintln!("[Sync] Schedule fetch failed: {}", e);
+                vec![]
+            }
+        };
+        if !schedule_data.is_empty() {
+            // preserve_assignments=false: Supabase is authoritative — null means cleared
+            self.cache_schedule_to_sqlite(&schedule_data, false)
+                .await
+                .context("Failed to cache schedule to SQLite")?;
+            // Update snapshot for next push cycle's change detection
+            self.update_schedule_snapshot(&schedule_data, schedule_since.is_none());
+        }
+
+        // 6. Fetch ALL teams from TBA (not just statuses - we need all teams for EPA/OPR sync)
         // NOTE: TBA failure is non-fatal — we skip the TBA/Statbotics push steps but
         // ALWAYS continue to the Supabase pull steps (picklists, match data, etc.)
         let teams = match self.tba.fetch_event_teams(&self.current_event).await {
@@ -516,166 +674,6 @@ impl SyncService {
                 }
             }
         } // end if let Some(teams)
-
-        // Compute incremental sync window: only fetch records modified since last sync.
-        // 5-minute buffer handles clock skew and edge cases.
-        // On first sync (last_sync_time = None), fetches all rows for a full initial load.
-        let since_iso: Option<String> = {
-            let guard = self.last_sync_time.lock().unwrap();
-            guard.as_ref().map(|dt| {
-                (*dt - chrono::Duration::minutes(5)).to_rfc3339()
-            })
-        };
-        let is_first_sync = since_iso.is_none();
-        if is_first_sync {
-            println!("[Sync] First sync — performing full table fetch");
-        } else {
-            println!("[Sync] Incremental fetch since: {}", since_iso.as_deref().unwrap_or("?"));
-        }
-
-        // 10. Fetch user profiles — incremental if SQLite has rows, full if empty (auto-heal).
-        // Full fetch also propagates deletions (supabase.rs: no deleted_at filter when since=None).
-        let profile_since = if self.sqlite_has_rows_global("user_profiles").await {
-            since_iso.as_deref()
-        } else {
-            println!("[Sync] user_profiles empty — forcing full fetch to heal cache");
-            None
-        };
-        let user_profiles = match self.supabase.fetch_user_profiles(profile_since).await {
-            Ok(profiles) => {
-                println!("[Sync] User profiles fetched: {} ({})", profiles.len(),
-                    if profile_since.is_some() { "incremental" } else { "full" });
-                profiles
-            },
-            Err(e) => {
-                eprintln!("[Sync] User profiles fetch failed: {}", e);
-                vec![]
-            }
-        };
-        if !user_profiles.is_empty() {
-            self.cache_user_profiles_to_sqlite(&user_profiles)
-                .await
-                .context("Failed to cache user profiles to SQLite")?;
-        }
-
-        // 13. Fetch picklists — incremental if SQLite has rows, full if empty (auto-heal).
-        // Full fetch includes deleted rows so deletions propagate to SQLite (no deleted_at filter).
-        let picklist_since = if self.sqlite_has_rows("event_picklist", &self.current_event).await {
-            since_iso.as_deref()
-        } else {
-            println!("[Sync] event_picklist empty — forcing full fetch to heal cache");
-            None
-        };
-        let picklists = match self.supabase.fetch_event_picklists(&self.current_event, picklist_since).await {
-            Ok(data) => {
-                println!("[Sync] Picklists fetched: {} ({})", data.len(),
-                    if picklist_since.is_some() { "incremental" } else { "full" });
-                data
-            },
-            Err(e) => {
-                eprintln!("[Sync] Picklists fetch failed: {}", e);
-                vec![]
-            }
-        };
-        if !picklists.is_empty() {
-            self.cache_picklists_to_sqlite(&picklists)
-                .await
-                .context("Failed to cache picklists to SQLite")?;
-        }
-
-        // 15. Fetch match scouting data — incremental if SQLite has rows, full if empty.
-        // EGRESS NOTE: Each data_raw is 5-15 KB; incremental is critical for large datasets.
-        // Full fetch only happens when the table is empty (first use or after migration wipe).
-        let match_since = if self.sqlite_has_rows("event_match_data", &self.current_event).await {
-            since_iso.as_deref()
-        } else {
-            println!("[Sync] event_match_data empty — forcing full fetch to heal cache");
-            None
-        };
-        let match_data = match self.supabase.fetch_event_match_data(&self.current_event, match_since).await {
-            Ok(data) => {
-                println!("[Sync] Match data fetched: {} submissions ({})", data.len(),
-                    if match_since.is_some() { "incremental" } else { "full" });
-                data
-            },
-            Err(e) => {
-                eprintln!("[Sync] Match data fetch failed: {}", e);
-                vec![]
-            }
-        };
-        if !match_data.is_empty() {
-            self.cache_match_data_to_sqlite(&match_data)
-                .await
-                .context("Failed to cache match data to SQLite")?;
-        }
-
-        // Reconcile on first sync after startup: catch old mobile deletions that are outside
-        // the incremental window (their last_modified predates our sync window) or hidden by RLS.
-        // Fetches only (match, team) keys — minimal egress.
-        if is_first_sync {
-            match self.supabase.fetch_active_match_keys(&self.current_event).await {
-                Ok(active_keys) => {
-                    if let Err(e) = self.reconcile_match_deletions(&active_keys).await {
-                        eprintln!("[Sync] Match reconciliation error: {}", e);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("[Sync] Failed to fetch active match keys for reconciliation: {}", e);
-                }
-            }
-        }
-
-        // 16. Fetch team data — incremental if SQLite has rows, full if empty.
-        let team_since = if self.sqlite_has_rows("event_team_data", &self.current_event).await {
-            since_iso.as_deref()
-        } else {
-            println!("[Sync] event_team_data empty — forcing full fetch to heal cache");
-            None
-        };
-        let team_data = match self.supabase.fetch_event_team_data(&self.current_event, team_since).await {
-            Ok(data) => {
-                println!("[Sync] Team data fetched: {} rows ({})", data.len(),
-                    if team_since.is_some() { "incremental" } else { "full" });
-                data
-            },
-            Err(e) => {
-                eprintln!("[Sync] Team data fetch failed: {}", e);
-                vec![]
-            }
-        };
-        if !team_data.is_empty() {
-            self.cache_teams_to_sqlite(&team_data)
-                .await
-                .context("Failed to cache team data to SQLite")?;
-        }
-
-        // 17. Fetch schedule — incremental if SQLite has rows, full if empty.
-        let schedule_since = if self.sqlite_has_rows("event_schedule", &self.current_event).await {
-            since_iso.as_deref()
-        } else {
-            println!("[Sync] event_schedule empty — forcing full fetch to heal cache");
-            None
-        };
-        let schedule_data = match self.supabase.fetch_event_schedule(&self.current_event, schedule_since).await {
-            Ok(data) => {
-                println!("[Sync] Schedule fetched: {} rows ({})", data.len(),
-                    if schedule_since.is_some() { "incremental" } else { "full" });
-                data
-            },
-            Err(e) => {
-                eprintln!("[Sync] Schedule fetch failed: {}", e);
-                vec![]
-            }
-        };
-
-        if !schedule_data.is_empty() {
-            // preserve_assignments=false: Supabase is authoritative — null means cleared
-            self.cache_schedule_to_sqlite(&schedule_data, false)
-                .await
-                .context("Failed to cache schedule to SQLite")?;
-            // Update snapshot for next push cycle's change detection
-            self.update_schedule_snapshot(&schedule_data, schedule_since.is_none());
-        }
 
         // Only advance last_sync_time if:
         // - We're already in incremental mode (not the first sync), OR

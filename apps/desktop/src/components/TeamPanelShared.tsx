@@ -1870,7 +1870,7 @@ export function FullTeamPanel({
                             <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">Match Notes</p>
                             <div className="relative flex-1 min-h-0">
                               <div className="h-full overflow-y-auto overflow-x-hidden px-2 pb-2">
-                                <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-all text-center">
+                                <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-words text-center">
                                   {stats?.notes?.trim() || "—"}
                                 </p>
                               </div>
@@ -1880,7 +1880,7 @@ export function FullTeamPanel({
                               <p className="text-[10px] font-medium text-foreground uppercase text-center shrink-0">Selected Auto</p>
                               <div className="relative h-[42px] min-w-0 w-full">
                                 <div className="h-full overflow-y-auto overflow-x-hidden px-2 pb-2">
-                                  <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-all">{selectedAutoInfo}</p>
+                                  <p className="text-xs text-muted-foreground leading-snug whitespace-pre-wrap break-words">{selectedAutoInfo}</p>
                                 </div>
                                 <div className="absolute bottom-0 left-0 right-0 h-5 pointer-events-none bg-gradient-to-t from-card to-transparent rounded-b" />
                               </div>
