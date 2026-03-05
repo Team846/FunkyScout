@@ -3,7 +3,6 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { Toaster } from "@shadcn/ui/components/sonner.tsx";
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";

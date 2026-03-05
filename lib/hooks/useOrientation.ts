@@ -39,7 +39,7 @@ export function useOrientation(preferredOrientation: 'landscape' | 'portrait') {
         await requestFs.call(doc);
       }
       if ('orientation' in screen && 'lock' in screen.orientation) {
-        await (screen.orientation.lock as (orientation: OrientationLockType) => Promise<void>)(
+        await (screen.orientation.lock as (orientation: string) => Promise<void>)(
           preferredOrientation
         );
         console.log(`[Orientation] Locked to ${preferredOrientation} (after fullscreen)`);
@@ -54,7 +54,7 @@ export function useOrientation(preferredOrientation: 'landscape' | 'portrait') {
     const lockOrientation = async () => {
       try {
         if ('orientation' in screen && 'lock' in screen.orientation) {
-          await (screen.orientation.lock as (orientation: OrientationLockType) => Promise<void>)(
+          await (screen.orientation.lock as (orientation: string) => Promise<void>)(
             preferredOrientation
           );
           console.log(`[Orientation] Locked to ${preferredOrientation}`);

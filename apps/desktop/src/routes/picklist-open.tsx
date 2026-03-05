@@ -115,20 +115,6 @@ const ALL_GRAPH_METRICS = [
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function getTeamStatAvg(
-  statKey: string,
-  teamKey: string,
-  matchData: MatchScoutingData[]
-): number {
-  const pts = getStatDataPoints(
-    statKey,
-    matchData.filter((m) => m.team === teamKey) as any
-  );
-  if (!pts.length) return 0;
-  return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
-}
-
-
 function computeGraphData(
   metricKey: string,
   teams: string[],

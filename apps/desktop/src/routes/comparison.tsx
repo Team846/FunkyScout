@@ -82,19 +82,6 @@ const DEFAULT_COMP_METRICS = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getTeamStatAvg(
-  statKey: string,
-  teamKey: string,
-  matchScoutingData: MatchScoutingData[]
-): number {
-  const pts = getStatDataPoints(
-    statKey,
-    matchScoutingData.filter((m) => m.team === teamKey) as any
-  );
-  if (!pts.length) return 0;
-  return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
-}
-
 function computeGraphData(
   metricKey: string,
   teams: string[],
