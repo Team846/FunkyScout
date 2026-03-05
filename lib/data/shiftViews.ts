@@ -250,6 +250,29 @@ interface PitDataInput {
   assigned?: string | null; // UID of assigned pit scouter
 }
 
+interface TbaScheduleEntryInput {
+  est_time?: number;
+}
+
+/**
+ * True if a match has been played.
+ * TBA stores -1 (not null) for unplayed match scores, so we use >= 0 as the
+ * "score available" check rather than != null.
+ */
+function matchIsCompleted(entry: ScheduleEntryInput, tbaScheduleMap?: Record<string, TbaScheduleEntryInput>): boolean {
+  // Time-based check is most reliable when available
+  const time = tbaScheduleMap?.[entry.match]?.est_time || entry.est_time || null;
+  if (time && time > 0) {
+    return time < Math.floor(Date.now() / 1000) - 300; // 5-min buffer for in-progress
+  }
+  // Fallback: TBA uses -1 for unplayed, >= 0 means a real score was recorded
+  return (entry.red_score ?? -1) >= 0 || (entry.blue_score ?? -1) >= 0;
+}
+
+function effectiveEstTime(matchKey: string, rawEstTime?: number | null, tbaScheduleMap?: Record<string, TbaScheduleEntryInput>): number | null {
+  return tbaScheduleMap?.[matchKey]?.est_time || rawEstTime || null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function extractScoutedClimbLevel(data_raw: unknown): "L1" | "L2" | "L3" | null {
@@ -307,8 +330,9 @@ export function buildScouterViewData(params: {
   matchData: MatchDataInput[];
   profiles: ProfileInput[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntryInput>>;
+  tbaScheduleMap?: Record<string, TbaScheduleEntryInput>;
 }): ScouterViewRow[] {
-  const { schedule, matchData, profiles, tbaClimbData } = params;
+  const { schedule, matchData, profiles, tbaClimbData, tbaScheduleMap } = params;
 
   // ── Name resolution: schedule.name → matchData.name, overridden by profile.name
   const uidNames = new Map<string, string>(); // uid → best available name
@@ -362,7 +386,7 @@ export function buildScouterViewData(params: {
         team: scouted.team,
         teamNumber,
         alliance: (scheduleEntry?.alliance as "red" | "blue") ?? "red",
-        estTime: scheduleEntry?.est_time ?? null,
+        estTime: effectiveEstTime(scouted.match, scheduleEntry?.est_time, tbaScheduleMap),
         isCompleted: true,
         wasScouted: true,
       };
@@ -384,9 +408,8 @@ export function buildScouterViewData(params: {
 
     // Future matches: what this user is assigned to that hasn't been completed
     for (const entry of assignedEntries) {
-      const isCompleted = entry.red_score != null || entry.blue_score != null;
-      if (isCompleted) continue; // Skip completed matches for future section
-      
+      if (matchIsCompleted(entry, tbaScheduleMap)) continue;
+
       const teamNumber = parseInt(entry.team.replace("frc", ""), 10);
       const card: MatchCard = {
         matchKey: entry.match,
@@ -394,7 +417,7 @@ export function buildScouterViewData(params: {
         team: entry.team,
         teamNumber,
         alliance: entry.alliance as "red" | "blue",
-        estTime: entry.est_time ?? null,
+        estTime: effectiveEstTime(entry.match, entry.est_time, tbaScheduleMap),
         isCompleted: false,
         wasScouted: false,
       };
@@ -453,8 +476,9 @@ export function buildTeamViewData(params: {
   pitData: PitDataInput[];
   tbaClimbData: Record<string, Record<string, TbaClimbEntryInput>>;
   profiles?: ProfileInput[];
+  tbaScheduleMap?: Record<string, TbaScheduleEntryInput>;
 }): TeamViewRow[] {
-  const { schedule, matchData, tbaTeams, pitData, tbaClimbData } = params;
+  const { schedule, matchData, tbaTeams, pitData, tbaClimbData, tbaScheduleMap } = params;
 
   // Build UID → name lookup for assigned pit scouter resolution
   const profileNameMap = new Map<string, string>();
@@ -497,7 +521,7 @@ export function buildTeamViewData(params: {
     const nextMatchCards: MatchCard[] = [];
 
     for (const entry of teamEntries) {
-      const isCompleted = entry.red_score != null || entry.blue_score != null;
+      const isCompleted = matchIsCompleted(entry, tbaScheduleMap);
       const scouted = scoutedByMatchTeam.get(`${entry.match}|${teamKey}`);
 
       const card: MatchCard = {
@@ -506,7 +530,7 @@ export function buildTeamViewData(params: {
         team: entry.team,
         teamNumber,
         alliance: entry.alliance as "red" | "blue",
-        estTime: entry.est_time ?? null,
+        estTime: effectiveEstTime(entry.match, entry.est_time, tbaScheduleMap),
         isCompleted,
         redScore: entry.red_score ?? null,
         blueScore: entry.blue_score ?? null,

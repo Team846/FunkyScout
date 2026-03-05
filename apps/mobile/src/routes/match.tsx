@@ -32,7 +32,7 @@ const formatMatchTime = (timestamp: number) => {
 export function Match() {
   const navigate = useNavigate();
   const { teams, loading: teamsLoading } = useTeamData();
-  const { schedule, nexusMatches, loading: scheduleLoading } = useCompetition();
+  const { schedule, nexusMatches, tbaSchedule, loading: scheduleLoading } = useCompetition();
 
   const loading = teamsLoading || scheduleLoading;
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
@@ -156,12 +156,13 @@ export function Match() {
                       .includes(matchQuery.toLowerCase()),
                   )
                   .map((match) => {
-                    // Try to find nexus match for time data
+                    // Try to find nexus match for time data, fall back to tbaSchedule est_time
                     const matchLabel = formatMatchKey(match);
                     const nexusMatch = nexusMatches.find(
                       (nm) => nm.label === matchLabel,
                     );
-                    const matchTime = nexusMatch?.times.estimatedStartTime;
+                    const matchTime = nexusMatch?.times.estimatedStartTime
+                      ?? (tbaSchedule[match]?.est_time ? tbaSchedule[match].est_time * 1000 : null);
                     return (
                       <div
                         key={match}
@@ -381,11 +382,22 @@ export function Match() {
           <p className="text-muted-foreground">Loading matches...</p>
         ) : (() => {
           // Deduplicate by match key, keeping only the user's assigned entry per match
+          const now = Date.now();
+          const getEffectiveTime = (s: (typeof schedule)[0]): number | null =>
+            s.est_time || (tbaSchedule[s.match]?.est_time ?? null);
           const seen = new Set<string>();
           const assignedShifts = schedule
             .filter((s) => s.uid === currentUserUid)
-            .filter((s) => !s.est_time || s.est_time * 1000 >= Date.now() - 30 * 60 * 1000)
-            .sort((a, b) => (a.est_time ?? 0) - (b.est_time ?? 0))
+            .filter((s) => {
+              const t = getEffectiveTime(s);
+              if (!t) return true; // no time info = include (can't determine past/future)
+              return t * 1000 >= now; // only future matches
+            })
+            .sort((a, b) => {
+              const ta = getEffectiveTime(a) ?? Infinity;
+              const tb = getEffectiveTime(b) ?? Infinity;
+              return ta - tb;
+            })
             .filter((s) => {
               if (seen.has(s.match)) return false;
               seen.add(s.match);
@@ -403,7 +415,8 @@ export function Match() {
                 const matchLabel = formatMatchKey(shift.match);
                 const nexusMatch = nexusMatches.find((nm) => nm.label === matchLabel);
                 const matchTime = nexusMatch?.times.estimatedStartTime
-                  ?? (shift.est_time ? shift.est_time * 1000 : null);
+                  ?? (shift.est_time ? shift.est_time * 1000 : null)
+                  ?? (tbaSchedule[shift.match]?.est_time ? tbaSchedule[shift.match].est_time * 1000 : null);
                 const team = teams.find((t: { key: string; num?: number }) => t.key === shift.team);
 
                 return (

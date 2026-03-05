@@ -12,14 +12,14 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Label } from "@shadcn/ui/components/label.tsx";
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
-import type { ScheduleEntry, TBAMatchData } from "../../../contexts/DesktopCompetitionDataContext";
+import type { TBAMatchData } from "../../../contexts/DesktopCompetitionDataContext";
 import { useDesktopEvent } from "../../../contexts/DesktopEventContext";
 import { useTabContext } from "../../../contexts/TabContext";
 import { getMatchLabel } from "@lib/utils/match";
 
 interface RightPanelProps {
   tbaTeams: TBATeam[];
-  schedule: ScheduleEntry[];
+
   tbaSchedule: Record<string, TBAMatchData>;
 }
 
@@ -64,13 +64,6 @@ interface UpcomingMatchCardProps {
 }
 
 function UpcomingMatchCard({ matchKey, tba, tbaTeams, homeTeamKey, onMatchClick }: UpcomingMatchCardProps) {
-  const homeAlliance =
-    tba.redTeams.includes(homeTeamKey)
-      ? "red"
-      : tba.blueTeams.includes(homeTeamKey)
-      ? "blue"
-      : null;
-
   const winProb = tba.red_win_prob;
 
   const getRank = (teamKey: string) => {
@@ -84,80 +77,66 @@ function UpcomingMatchCard({ matchKey, tba, tbaTeams, homeTeamKey, onMatchClick 
       onClick={() => onMatchClick(matchKey)}
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
-        <span className="text-xs font-semibold text-foreground">{formatMatchKey(matchKey)}</span>
-        <span className="text-[10px] text-muted-foreground">{formatTime(tba.est_time)}</span>
+        <span className="text-sm font-semibold text-foreground">{formatMatchKey(matchKey)}</span>
+        <span className="text-xs text-muted-foreground">{formatTime(tba.est_time)}</span>
       </div>
 
-      <div className="p-3 space-y-2">
-        {/* Red Alliance */}
-        <div className="flex items-center gap-1.5">
-          <div
-            className="w-1 h-full rounded-full self-stretch flex-shrink-0"
-            style={{ background: "oklch(var(--destructive) / 0.7)", minHeight: "16px" }}
-          />
-          <div className="flex gap-1 flex-1 flex-wrap">
-            {tba.redTeams.map((team) => (
-              <span
-                key={team}
-                className={[
-                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive/20 text-destructive",
-                  team === homeTeamKey && homeAlliance === "red" ? "ring-1 ring-primary" : "",
-                ].join(" ")}
-              >
-                {team.replace("frc", "")}
-                {getRank(team) > 0 && (
-                  <span className="text-destructive/60">#{getRank(team)}</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Blue Alliance */}
-        <div className="flex items-center gap-1.5">
-          <div
-            className="w-1 h-full rounded-full self-stretch flex-shrink-0"
-            style={{ background: "oklch(var(--chart-1) / 0.7)", minHeight: "16px" }}
-          />
-          <div className="flex gap-1 flex-1 flex-wrap">
-            {tba.blueTeams.map((team) => (
-              <span
-                key={team}
-                className={[
-                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-chart-1/20 text-chart-1",
-                  team === homeTeamKey && homeAlliance === "blue" ? "ring-1 ring-primary" : "",
-                ].join(" ")}
-              >
-                {team.replace("frc", "")}
-                {getRank(team) > 0 && (
-                  <span className="text-chart-1/60">#{getRank(team)}</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Win probability bar */}
-        {winProb != null && (
-          <div className="space-y-0.5">
-            <div className="flex justify-between text-[10px] text-muted-foreground">
-              <span>Red {Math.round(winProb * 100)}%</span>
-              <span>Blue {Math.round((1 - winProb) * 100)}%</span>
+      {/* Alliances: red stack left, blue stack right */}
+      <div className="flex gap-2 px-3 py-2.5">
+        <div className="flex-1 flex flex-col gap-1.5">
+          {tba.redTeams.map((team) => (
+            <div
+              key={team}
+              className={[
+                "flex items-center justify-between px-2 py-1.5 rounded bg-destructive/15 border border-destructive/30",
+                team === homeTeamKey ? "ring-1 ring-primary" : "",
+              ].join(" ")}
+            >
+              <span className="text-sm font-bold text-destructive">{team.replace("frc", "")}</span>
+              {getRank(team) > 0 && (
+                <span className="text-[10px] text-destructive/60">#{getRank(team)}</span>
+              )}
             </div>
-            <div className="h-1 rounded-full bg-chart-1/30 overflow-hidden">
-              <div
-                className="h-full bg-destructive/70 rounded-full transition-all"
-                style={{ width: `${Math.round(winProb * 100)}%` }}
-              />
+          ))}
+        </div>
+        <div className="flex-1 flex flex-col gap-1.5">
+          {tba.blueTeams.map((team) => (
+            <div
+              key={team}
+              className={[
+                "flex items-center justify-between px-2 py-1.5 rounded bg-chart-1/15 border border-chart-1/30",
+                team === homeTeamKey ? "ring-1 ring-primary" : "",
+              ].join(" ")}
+            >
+              <span className="text-sm font-bold text-chart-1">{team.replace("frc", "")}</span>
+              {getRank(team) > 0 && (
+                <span className="text-[10px] text-chart-1/60">#{getRank(team)}</span>
+              )}
             </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
+
+      {/* Win probability bar */}
+      {winProb != null && (
+        <div className="px-3 pb-2.5 space-y-0.5">
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>Red {Math.round(winProb * 100)}%</span>
+            <span>Blue {Math.round((1 - winProb) * 100)}%</span>
+          </div>
+          <div className="h-1 rounded-full bg-chart-1/30 overflow-hidden">
+            <div
+              className="h-full bg-destructive/70 rounded-full transition-all"
+              style={{ width: `${Math.round(winProb * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps) {
+export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
   const { homeTeam, setHomeTeam } = useDesktopEvent();
   const { addTab } = useTabContext();
   const navigate = useNavigate();
@@ -186,23 +165,20 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
     }
   };
 
-  // Upcoming matches for home team (future, sorted by est_time)
+  // Upcoming matches — next few by QM number across the whole event
   const upcomingMatches = useMemo(() => {
     const now = Date.now() / 1000;
-    const homeEntries = schedule.filter((s) => s.team === homeTeamKey);
-    const futureMatchKeys = [...new Set(homeEntries.map((s) => s.match))].filter(
-      (key) => {
-        const tba = tbaSchedule[key];
-        return tba?.est_time != null && tba.est_time > now;
-      }
-    );
-    futureMatchKeys.sort((a, b) => {
+    const allKeys = Object.keys(tbaSchedule).filter((key) => {
+      const tba = tbaSchedule[key];
+      return tba?.est_time != null && tba.est_time > now - 120;
+    });
+    allKeys.sort((a, b) => {
       const tA = tbaSchedule[a]?.est_time ?? 0;
       const tB = tbaSchedule[b]?.est_time ?? 0;
       return tA - tB;
     });
-    return futureMatchKeys.slice(0, 2);
-  }, [schedule, tbaSchedule, homeTeamKey]);
+    return allKeys.slice(0, 5);
+  }, [tbaSchedule]);
 
   return (
     <>
@@ -311,7 +287,7 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
 
         {/* Upcoming Matches */}
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-4">
             <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-sm font-semibold text-foreground">Upcoming Matches</span>
           </div>
@@ -319,7 +295,7 @@ export function RightPanel({ tbaTeams, schedule, tbaSchedule }: RightPanelProps)
           {upcomingMatches.length === 0 ? (
             <p className="text-xs text-muted-foreground italic">No upcoming matches</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-4">
               {upcomingMatches.map((matchKey) => {
                 const tba = tbaSchedule[matchKey];
                 if (!tba) return null;

@@ -159,7 +159,6 @@ function DashboardPage() {
       {/* Right Panel */}
       <RightPanel
         tbaTeams={tbaTeams}
-        schedule={schedule}
         tbaSchedule={tbaSchedule}
       />
     </div>

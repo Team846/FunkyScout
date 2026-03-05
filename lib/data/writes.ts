@@ -952,6 +952,9 @@ export async function assignShiftsFromCycle(
   // Read current schedule, compute full new state:
   // assigned rows get the new scouter, all others are cleared to null.
   const schedule = await invoke<EventScheduleEntry[]>("get_schedule", { event: eventKey });
+  if (schedule.length === 0) {
+    throw new Error("Local schedule not synced yet — wait a moment and try again");
+  }
   const scheduleMap = new Map(schedule.map((s: EventScheduleEntry) => [`${s.match}|${s.team}`, s]));
   const updated = schedule.map((s: EventScheduleEntry) => {
     const a = assignmentMap.get(`${s.match}|${s.team}`);

@@ -299,6 +299,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       setBootstrapEventKey("");
       setShowBootstrapDialog(false);
       fetchEvents();
+      // Pull bootstrapped data into local SQLite so shift assignment works immediately
+      invoke("trigger_sync_now").catch(() => {});
     } catch (e) {
       setBootstrapMsg(`Error: ${e}`);
     } finally {
@@ -455,6 +457,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       setCsvEventKey("");
       setShowCsvDialog(false);
       fetchEvents();
+      invoke("trigger_sync_now").catch(() => {});
     } catch (e) {
       setCsvMsg(`Error: ${e}`);
     } finally {

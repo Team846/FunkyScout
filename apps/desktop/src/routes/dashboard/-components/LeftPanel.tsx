@@ -36,7 +36,7 @@ export function LeftPanel({ schedule, matchData, profiles }: LeftPanelProps) {
     const uniqueMatches = [...new Set(qualMatches.map((s) => s.match))];
     const playedMatches = uniqueMatches.filter((matchKey) => {
       const entry = qualMatches.find((s) => s.match === matchKey);
-      return entry?.red_score != null || entry?.blue_score != null;
+      return (entry?.red_score ?? -1) >= 0 && (entry?.blue_score ?? -1) >= 0;
     });
     return { played: playedMatches.length, total: uniqueMatches.length };
   }, [schedule]);

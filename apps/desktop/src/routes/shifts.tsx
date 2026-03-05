@@ -151,7 +151,7 @@ function MatchCardSmall({
 
         {type === "team-past" && (
           <>
-            {card.redScore != null && (
+            {(card.redScore ?? -1) >= 0 && (
               <div className="text-sm leading-none font-medium">
                 <span className="text-red-400">{card.redScore}</span>
                 <span className="text-muted-foreground/50"> - </span>
@@ -172,9 +172,9 @@ function MatchCardSmall({
 
         {type === "team-next" && card.predictedRedScore != null && (
           <div className="text-sm leading-none font-medium">
-            <span className="text-red-400/70">~{Math.round(card.predictedRedScore)}</span>
+            <span className="text-red-400/70">{Math.round(card.predictedRedScore)}</span>
             <span className="text-muted-foreground/50"> - </span>
-            <span className="text-blue-400/70">~{Math.round(card.predictedBlueScore ?? 0)}</span>
+            <span className="text-blue-400/70">{Math.round(card.predictedBlueScore ?? 0)}</span>
           </div>
         )}
       </div>
@@ -437,7 +437,7 @@ function ShiftViewerPage() {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const { currentEvent } = useDesktopEvent();
-  const { schedule, tbaClimbData, matchScoutingData, refresh: refreshCompetition } =
+  const { schedule, tbaClimbData, matchScoutingData, tbaSchedule, refresh: refreshCompetition } =
     useDesktopCompetitionData();
   const { tbaTeams, pitScoutingData, refresh: refreshTeams } = useDesktopTeamData();
   const { userProfiles, refresh: refreshUserProfiles } = useUserProfiles();
@@ -474,13 +474,13 @@ function ShiftViewerPage() {
   }, [currentEvent]);
 
   const scouterRows = useMemo(
-    () => buildScouterViewData({ schedule, matchData: matchScoutingData, profiles: userProfiles, tbaClimbData }),
-    [schedule, matchScoutingData, userProfiles, tbaClimbData]
+    () => buildScouterViewData({ schedule, matchData: matchScoutingData, profiles: userProfiles, tbaClimbData, tbaScheduleMap: tbaSchedule }),
+    [schedule, matchScoutingData, userProfiles, tbaClimbData, tbaSchedule]
   );
 
   const teamRows = useMemo(
-    () => buildTeamViewData({ schedule, matchData: matchScoutingData, tbaTeams, pitData: pitScoutingData, tbaClimbData, profiles: userProfiles }),
-    [schedule, matchScoutingData, tbaTeams, pitScoutingData, tbaClimbData, userProfiles]
+    () => buildTeamViewData({ schedule, matchData: matchScoutingData, tbaTeams, pitData: pitScoutingData, tbaClimbData, profiles: userProfiles, tbaScheduleMap: tbaSchedule }),
+    [schedule, matchScoutingData, tbaTeams, pitScoutingData, tbaClimbData, userProfiles, tbaSchedule]
   );
 
   const filteredScouters = useMemo(

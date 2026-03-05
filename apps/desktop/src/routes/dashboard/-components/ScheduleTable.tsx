@@ -150,7 +150,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
 
       const redScore = tba?.redScore ?? null;
       const blueScore = tba?.blueScore ?? null;
-      const hasActualScore = redScore != null && blueScore != null;
+      const hasActualScore = (redScore ?? -1) >= 0 && (blueScore ?? -1) >= 0;
       const predictedRed = tba?.predicted_red_score ?? null;
       const predictedBlue = tba?.predicted_blue_score ?? null;
       const hasPrediction = predictedRed != null && predictedBlue != null;
@@ -312,10 +312,10 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                   })() : row.hasPrediction ? (
                     <>
                       <span className="min-w-[44px] text-center px-2 py-2 rounded text-xs font-medium border border-destructive/60 text-destructive/80 tabular-nums">
-                        ~{Math.round(row.predictedRed!)}
+                        {Math.round(row.predictedRed!)}
                       </span>
                       <span className="min-w-[44px] text-center px-2 py-2 rounded text-xs font-medium border border-chart-1/60 text-chart-1/80 tabular-nums">
-                        ~{Math.round(row.predictedBlue!)}
+                        {Math.round(row.predictedBlue!)}
                       </span>
                     </>
                   ) : null}

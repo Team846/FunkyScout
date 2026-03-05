@@ -713,13 +713,13 @@ function MatchPlaybackView({
           <div className="flex items-center justify-between px-20 py-2 rounded-lg bg-muted/30 border border-border font-bold">
             <div className={`flex items-center gap-12 ${blueScore !== null && redScore !== null && blueScore < redScore ? "opacity-40" : ""}`}>
               <span className="text-xl text-blue-400 font-regular">{matchRP.blue !== null ? `${matchRP.blue}rp` : "—"}</span>
-              <span className="text-3xl font-regular text-blue-400">{blueScore !== null ? String(blueScore).padStart(3, "0") : "—"}</span>
+              <span className="text-3xl font-regular text-blue-400">{blueScore !== null ? blueScore : "—"}</span>
             </div>
             <div className="text-center">
               <span className="text-sm text-muted-foreground">{getMatchLabel(matchKey)}</span>
             </div>
             <div className={`flex items-center gap-12 ${redScore !== null && blueScore !== null && redScore < blueScore ? "opacity-40" : ""}`}>
-              <span className="text-3xl font-regular text-red-400">{redScore !== null ? String(redScore).padStart(3, "0") : "—"}</span>
+              <span className="text-3xl font-regular text-red-400">{redScore !== null ? redScore : "—"}</span>
               <span className="text-xl font-regular text-red-400">{matchRP.red !== null ? `${matchRP.red}rp` : "—"}</span>
             </div>
           </div>
@@ -767,7 +767,7 @@ function MatchPlaybackView({
                   style={{ width: `${Math.min(progress * 100, 98)}%` }}
                 />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 size-3 rounded-full bg-primary border-2 border-background shadow-sm z-20 pointer-events-none"
+                  className="absolute top-1/2 -translate-y-1/2 size-3 rounded-full bg-primary border-2 border-background shadow-sm z-20 pointer-events-none transition-[left] duration-75"
                   style={{ left: `calc(${Math.min(progress * 100, 98)}% - 6px)` }}
                 />
                 <input
@@ -934,6 +934,7 @@ function MatchPlaybackView({
               <div className="flex flex-col gap-1.5" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
                 <div ref={videoContainerRef} className="relative bg-black rounded-lg overflow-hidden w-full" style={{ aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
                   <iframe
+                    key={youtubeId}
                     title={`Match video ${matchKey}`}
                     src={`https://www.youtube.com/embed/${youtubeId}`}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -1018,6 +1019,7 @@ function MatchPlaybackView({
                     const md = teamDataByTeam.get(s.team);
                     const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
                     const tbaClimbLevel = climbForMatch[s.team]?.teleop_climb ?? null;
+                    const climbedTeleop = tbaClimbLevel === "L1" || tbaClimbLevel === "L2" || tbaClimbLevel === "L3";
                     return (
                       <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-blue-500/30 p-3">
                         <div className="flex items-center gap-2 flex-1">
@@ -1025,7 +1027,7 @@ function MatchPlaybackView({
                             <TooltipTrigger asChild>
                             <span className="text-md font-semibold text-muted-foreground hover:text-primary cursor-pointer" onClick={() => { addTab("/team", `Team ${s.team.replace(/frc/i, "")}`, { team: s.team }, `team-${s.team}`); navigate({ to: "/team", search: { team: s.team } }); }}>{teamNum}</span>
                             </TooltipTrigger>
-                            <TooltipContent>Team {teamNum} stats</TooltipContent>
+                            <TooltipContent className = "bg-muted text-muted-foreground" >Team {teamNum} stats</TooltipContent>
                           </Tooltip>
                         </div>
                         <div className="flex gap-2">
@@ -1035,7 +1037,7 @@ function MatchPlaybackView({
                           <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${matchStats?.wasDisabled ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"}`}>
                             Disable
                           </span>
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${tbaClimbLevel ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${climbedTeleop ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-muted text-muted-foreground"}`}>
                             {tbaClimbLevel ?? "Climb"}
                           </span>
                         </div>
@@ -1052,6 +1054,7 @@ function MatchPlaybackView({
                     const md = teamDataByTeam.get(s.team);
                     const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
                     const tbaClimbLevel = climbForMatch[s.team]?.teleop_climb ?? null;
+                    const climbedTeleop = tbaClimbLevel === "L1" || tbaClimbLevel === "L2" || tbaClimbLevel === "L3";
                     return (
                       <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-red-500/30 p-3">
                         <div className="flex items-center gap-2 flex-1">
@@ -1059,7 +1062,7 @@ function MatchPlaybackView({
                             <TooltipTrigger asChild>
                             <span className="text-md font-semibold text-muted-foreground hover:text-primary cursor-pointer" onClick={() => { addTab("/team", `Team ${s.team.replace(/frc/i, "")}`, { team: s.team }, `team-${s.team}`); navigate({ to: "/team", search: { team: s.team } }); }}>{teamNum}</span>
                             </TooltipTrigger>
-                            <TooltipContent>Team {teamNum} stats</TooltipContent>
+                            <TooltipContent className = "bg-muted text-muted-foreground">Team {teamNum} stats</TooltipContent>
                           </Tooltip>
                         </div>
                         <div className="flex gap-2">
@@ -1069,7 +1072,7 @@ function MatchPlaybackView({
                           <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${matchStats?.wasDisabled ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"}`}>
                             Disable
                           </span>
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${tbaClimbLevel ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${climbedTeleop ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-muted text-muted-foreground"}`}>
                             {tbaClimbLevel ?? "Climb"}
                           </span>
                         </div>
@@ -1300,13 +1303,13 @@ function MatchPredictionView({
             <div className="flex items-center justify-between px-20 py-2 rounded-lg bg-muted/30 border border-border font-bold">
               <div className="flex items-center gap-12">
                 <span className="text-xl text-blue-400 font-regular">{tbaEntry?.red_win_prob != null ? `${Math.round((1 - tbaEntry.red_win_prob) * 100)}%` : "—"}</span>
-                <span className="text-3xl font-regular text-blue-400">{tbaEntry?.predicted_blue_score != null ? String(Math.round(tbaEntry.predicted_blue_score)).padStart(3, "0") : "—"}</span>
+                <span className="text-3xl font-regular text-blue-400">{tbaEntry?.predicted_blue_score != null ? Math.round(tbaEntry.predicted_blue_score) : "—"}</span>
               </div>
               <div className="text-center">
                 <span className="text-sm text-muted-foreground">{getMatchLabel(matchKey)}</span>
               </div>
               <div className="flex items-center gap-12">
-                <span className="text-3xl font-regular text-red-400">{tbaEntry?.predicted_red_score != null ? String(Math.round(tbaEntry.predicted_red_score)).padStart(3, "0") : "—"}</span>
+                <span className="text-3xl font-regular text-red-400">{tbaEntry?.predicted_red_score != null ? Math.round(tbaEntry.predicted_red_score) : "—"}</span>
                 <span className="text-xl font-regular text-red-400">{tbaEntry?.red_win_prob != null ? `${Math.round(tbaEntry.red_win_prob * 100)}%` : "—"}</span>
               </div>
             </div>
@@ -1364,7 +1367,10 @@ function MatchPredictionView({
                               }, 0) / teamMatches.length) * 100
                             )
                           : null;
-                        const teamStats = calculateTeamStats(s.team, matchData as unknown as EventMatchData[]);
+                        const pitData = pitScoutingByTeam.get(s.team);
+                        const isPitScouted = !!(pitData?.name || pitData?.uid);
+                        const pitBump = isPitScouted ? !!(pitData.data?.bump) : null;
+                        const pitTrough = isPitScouted ? !!(pitData.data?.trough) : null;
                         return (
                           <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-blue-500/30 p-3">
                             <div className="flex items-center gap-2 flex-1">
@@ -1379,8 +1385,8 @@ function MatchPredictionView({
                               <span className="px-2 py-1 rounded text-xs min-w-[3.5rem] text-center bg-muted text-muted-foreground">
                                 {failPct != null ? `Fail: ${failPct}%` : "Fail: —"}
                               </span>
-                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${teamStats?.hasBump ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>Bump</span>
-                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${teamStats?.hasTrough ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>Trough</span>
+                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitBump === null ? "bg-muted text-muted-foreground" : pitBump ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Bump</span>
+                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitTrough === null ? "bg-muted text-muted-foreground" : pitTrough ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Trough</span>
                             </div>
                           </div>
                         );
@@ -1399,7 +1405,10 @@ function MatchPredictionView({
                               }, 0) / teamMatches.length) * 100
                             )
                           : null;
-                        const teamStats = calculateTeamStats(s.team, matchData as unknown as EventMatchData[]);
+                        const pitData = pitScoutingByTeam.get(s.team);
+                        const isPitScouted = !!(pitData?.name || pitData?.uid);
+                        const pitBump = isPitScouted ? !!(pitData.data?.bump) : null;
+                        const pitTrough = isPitScouted ? !!(pitData.data?.trough) : null;
                         return (
                           <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-red-500/30 p-3">
                             <div className="flex items-center gap-2 flex-1">
@@ -1414,8 +1423,8 @@ function MatchPredictionView({
                               <span className="px-2 py-1 rounded text-xs min-w-[3.5rem] text-center bg-muted text-muted-foreground">
                                 {failPct != null ? `Fail: ${failPct}%` : "Fail: —"}
                               </span>
-                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${teamStats?.hasBump ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>Bump</span>
-                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${teamStats?.hasTrough ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>Trough</span>
+                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitBump === null ? "bg-muted text-muted-foreground" : pitBump ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Bump</span>
+                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitTrough === null ? "bg-muted text-muted-foreground" : pitTrough ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Trough</span>
                             </div>
                           </div>
                         );
@@ -1557,7 +1566,7 @@ function PredictionTeamBox({
           <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
             <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
-            <span className="text-foreground">Auto: {autoClimbPct != null ? `${autoClimbPct}%` : "—"}</span>
+            <span className="text-primary">Auto:</span> {autoClimbPct != null ? `${autoClimbPct}%` : "—"}
           </p>
         </>
       ) : (
@@ -1566,7 +1575,7 @@ function PredictionTeamBox({
           <p className="text-sm font-medium text-foreground text-center">
             <span className="text-primary">Tele Climb:</span> {climbPct != null ? `${climbPct}%` : "—"}
             <span className="text-muted-foreground mx-1">|</span>
-            <span className="text-foreground">Auto: {autoClimbPct != null ? `${autoClimbPct}%` : "—"}</span>
+            <span className="text-primary">Auto:</span> {autoClimbPct != null ? `${autoClimbPct}%` : "—"}
           </p>
         </div>
       )}

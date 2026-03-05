@@ -455,7 +455,7 @@ function GraphCard({
     [metricKey, teams.join(","), matchData.length, tbaTeams.length, tbaClimbData]
   );
 
-  const maxBarHeight = BAR_HEIGHT_PX * 0.8;
+  const maxBarHeight = BAR_HEIGHT_PX;
 
   // Calculate bar width based on number of teams (expand when fewer teams)
   const barWidth = teams.length <= 2 ? 70 : teams.length === 3 ? 55 : 45;
@@ -486,9 +486,9 @@ function GraphCard({
       </div>
 
       {/* Bar chart */}
-      <div 
-        className="flex items-end justify-around px-3 pb-2 pt-1 flex-1 min-h-0 overflow-hidden"
-        style={{ gap: teams.length <= 2 ? '8px' : teams.length === 3 ? '6px' : '4px' }}
+      <div
+        className="flex items-end justify-around px-3 pb-2 pt-2"
+        style={{ height: `${BAR_HEIGHT_PX + 24}px`, gap: teams.length <= 2 ? '8px' : teams.length === 3 ? '6px' : '4px' }}
       >
         {teams.length === 0 ? (
           <span className="text-xs text-muted-foreground self-center">
