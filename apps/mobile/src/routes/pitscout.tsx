@@ -465,9 +465,9 @@ function ScoutPage() {
                 pressed={movementTrough}
                 onPressedChange={setMovementTrough}
                 className="w-full"
-                info="Can the robot traverse through the trough?"
+                info="Can the robot traverse through the trench?"
               >
-                Trough
+                Trench
               </ScoutToggle>
             </div>
           </div>

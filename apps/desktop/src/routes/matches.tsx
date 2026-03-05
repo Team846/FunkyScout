@@ -10,6 +10,7 @@ import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
 import { Search, ChevronLeft, ChevronRight, Maximize2, ExternalLink } from "lucide-react";
+import { TauriYouTubeEmbed } from "../components/TauriYouTubeEmbed";
 import { fetchTBAData } from "@lib/tba/fetch";
 import React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -933,14 +934,7 @@ function MatchPlaybackView({
             ) : youtubeId ? (
               <div className="flex flex-col gap-1.5" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
                 <div ref={videoContainerRef} className="relative bg-black rounded-lg overflow-hidden w-full" style={{ aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
-                  <iframe
-                    key={youtubeId}
-                    title={`Match video ${matchKey}`}
-                    src={`https://www.youtube.com/embed/${youtubeId}`}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                    className="absolute inset-0 w-full h-full"
-                  />
+                  <TauriYouTubeEmbed youtubeId={youtubeId} />
                 </div>
                 <div className="flex justify-end gap-1.5">
                   <button
@@ -1386,7 +1380,7 @@ function MatchPredictionView({
                                 {failPct != null ? `Fail: ${failPct}%` : "Fail: —"}
                               </span>
                               <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitBump === null ? "bg-muted text-muted-foreground" : pitBump ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Bump</span>
-                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitTrough === null ? "bg-muted text-muted-foreground" : pitTrough ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Trough</span>
+                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitTrough === null ? "bg-muted text-muted-foreground" : pitTrough ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Trench</span>
                             </div>
                           </div>
                         );
@@ -1424,7 +1418,7 @@ function MatchPredictionView({
                                 {failPct != null ? `Fail: ${failPct}%` : "Fail: —"}
                               </span>
                               <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitBump === null ? "bg-muted text-muted-foreground" : pitBump ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Bump</span>
-                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitTrough === null ? "bg-muted text-muted-foreground" : pitTrough ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Trough</span>
+                              <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${pitTrough === null ? "bg-muted text-muted-foreground" : pitTrough ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"}`}>Trench</span>
                             </div>
                           </div>
                         );

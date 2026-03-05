@@ -20,9 +20,9 @@
           },
           {
             "name": "trough",
-            "label": "Trough",
+            "label": "Trench",
             "type": "boolean",
-            "info": "Can the robot traverse through the trough?"
+            "info": "Can the robot traverse through the trench?"
           }
         ]
       },

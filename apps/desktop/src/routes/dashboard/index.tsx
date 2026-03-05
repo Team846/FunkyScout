@@ -70,7 +70,7 @@ function DashboardPage() {
   return (
     <div className="h-full flex overflow-hidden pb-3">
       {/* Left Panel */}
-      <LeftPanel schedule={schedule} matchData={matchScoutingData} profiles={userProfiles} />
+      <LeftPanel schedule={schedule} tbaSchedule={tbaSchedule} matchData={matchScoutingData} profiles={userProfiles} />
 
       {/* Middle Panel */}
       <div className="flex-1 flex flex-col overflow-hidden pr-2">

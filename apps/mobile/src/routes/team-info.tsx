@@ -820,7 +820,7 @@ function TeamInfoPage() {
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex items-center justify-between py-2">
-                    <p className="text-foreground">Trough</p>
+                    <p className="text-foreground">Trench</p>
                     <div className="flex items-center gap-2">
                       <p className={`font-semibold ${pitData.movement?.trough ? "text-chart-2" : "text-destructive"}`}>
                         {pitData.movement?.trough ? "Yes" : "No"}

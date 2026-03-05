@@ -45,3 +45,16 @@ its path to the `LDAI_RUNTIME_FILE` environment variable.
 to filter: 2>&1 | grep -vE '(sqlx|sea_orm)'
 to open: xattr -cr /Applications/funkyscout.app
 to build: pnpm --filter funkyscout-desktop tauri build (don't use unless authorized)
+to create dmg: 
+APP="XX/strata/apps/desktop/target/release/bundle/macos/funkyscout.app"
+DMG="XX/strata/apps/desktop/target/release/bundle/dmg/funkyscout_0.1.0_aarch64.dmg"
+SCRIPT="XX/strata/apps/desktop/target/release/bundle/dmg/bundle_dmg.sh"
+
+bash "$SCRIPT" \
+  --volname "funkyscout" \
+  --icon "funkyscout.app" 180 170 \
+  --app-drop-link 480 170 \
+  --icon-size 128 \
+  --window-size 660 400 \
+  --hide-extension "funkyscout.app" \
+  "$DMG" "$APP" 2>&1

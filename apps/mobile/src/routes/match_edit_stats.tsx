@@ -1297,7 +1297,7 @@ function MatchEditStats() {
               <div className="flex gap-2 flex-wrap">
                 {([
                   { key: 'bump', label: 'Bump' },
-                  { key: 'through', label: 'Trough' },
+                  { key: 'through', label: 'Trench' },
                   { key: 'canStation', label: 'Outpost' },
                   { key: 'canGround', label: 'Ground' },
                 ] as const).map(({ key, label }) => {

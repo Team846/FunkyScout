@@ -180,6 +180,21 @@ export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
     return allKeys.slice(0, 5);
   }, [tbaSchedule]);
 
+  // Next/last match for home team — derived from tbaSchedule so it updates in
+  // lockstep with the upcoming list (same est_time threshold, same data source).
+  // Avoids the ~120s lag from waiting for TBA rankings to round-trip through Supabase.
+  const homeNextLastMatch = useMemo(() => {
+    if (!homeTeamKey) return { nextMatch: null, lastMatch: null };
+    const now = Date.now() / 1000;
+    const teamMatches = Object.entries(tbaSchedule)
+      .filter(([, tba]) => tba.redTeams.includes(homeTeamKey) || tba.blueTeams.includes(homeTeamKey))
+      .sort(([, a], [, b]) => (a.est_time ?? 0) - (b.est_time ?? 0));
+    const nextIdx = teamMatches.findIndex(([, tba]) => tba.est_time != null && tba.est_time > now - 120);
+    const nextMatch = nextIdx !== -1 ? teamMatches[nextIdx][0] : null;
+    const lastMatch = nextIdx > 0 ? teamMatches[nextIdx - 1][0] : nextIdx === -1 && teamMatches.length > 0 ? teamMatches[teamMatches.length - 1][0] : null;
+    return { nextMatch, lastMatch };
+  }, [homeTeamKey, tbaSchedule]);
+
   return (
     <>
       <Dialog open={showEditTeam} onOpenChange={setShowEditTeam}>
@@ -252,36 +267,36 @@ export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
         </div>
 
         {/* Last Match */}
-        {homeTeamData?.lastMatch && (
+        {homeNextLastMatch.lastMatch && (
           <div
             className="bg-card rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/30 transition-colors"
-            onClick={() => handleMatchClick(homeTeamData.lastMatch!)}
+            onClick={() => handleMatchClick(homeNextLastMatch.lastMatch!)}
           >
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Last Match</span>
               <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
             </div>
             <p className="text-xl font-bold text-foreground mt-1">
-              {formatMatchKey(homeTeamData.lastMatch)}
+              {formatMatchKey(homeNextLastMatch.lastMatch)}
             </p>
-            <p className="text-xs text-muted-foreground">{formatMatchLabel(homeTeamData.lastMatch)}</p>
+            <p className="text-xs text-muted-foreground">{formatMatchLabel(homeNextLastMatch.lastMatch)}</p>
           </div>
         )}
 
         {/* Next Match */}
-        {homeTeamData?.nextMatch && (
+        {homeNextLastMatch.nextMatch && (
           <div
             className="bg-card rounded-lg border border-border p-3 cursor-pointer hover:bg-secondary/30 transition-colors"
-            onClick={() => handleMatchClick(homeTeamData.nextMatch!)}
+            onClick={() => handleMatchClick(homeNextLastMatch.nextMatch!)}
           >
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Next Match</span>
               <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
             </div>
             <p className="text-xl font-bold text-primary mt-1">
-              {formatMatchKey(homeTeamData.nextMatch)}
+              {formatMatchKey(homeNextLastMatch.nextMatch)}
             </p>
-            <p className="text-xs text-muted-foreground">{formatMatchLabel(homeTeamData.nextMatch)}</p>
+            <p className="text-xs text-muted-foreground">{formatMatchLabel(homeNextLastMatch.nextMatch)}</p>
           </div>
         )}
 

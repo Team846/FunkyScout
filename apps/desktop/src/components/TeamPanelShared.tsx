@@ -21,6 +21,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { TauriYouTubeEmbed } from "./TauriYouTubeEmbed";
 import {
   Tooltip,
   TooltipContent,
@@ -2309,14 +2310,7 @@ export function FullTeamPanel({
                             className="relative bg-black rounded-lg overflow-hidden w-full"
                             style={{ aspectRatio: `${PANEL_FIELD_W}/${PANEL_FIELD_H}` }}
                           >
-                            <iframe
-                              key={matchYoutubeId}
-                              title={`Match video ${effectiveMatchKey}`}
-                              src={`https://www.youtube.com/embed/${matchYoutubeId}`}
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                              className="absolute inset-0 w-full h-full"
-                            />
+                            <TauriYouTubeEmbed youtubeId={matchYoutubeId} />
                           </div>
                           <div className="flex justify-end gap-1.5">
                             <button
@@ -3796,14 +3790,7 @@ export function ExpandedTeamPanel({
                     matchYoutubeId ? (
                       <div className="px-2 pb-2 pt-1.5 flex flex-col gap-1.5">
                         <div className="relative bg-black rounded-lg overflow-hidden w-full" style={{ aspectRatio: `${PANEL_FIELD_W}/${PANEL_FIELD_H}` }}>
-                          <iframe
-                            key={matchYoutubeId}
-                            title={`Match video ${effectiveMatchKey}`}
-                            src={`https://www.youtube.com/embed/${matchYoutubeId}`}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            className="absolute inset-0 w-full h-full"
-                          />
+                          <TauriYouTubeEmbed youtubeId={matchYoutubeId} />
                         </div>
                         <div className="flex justify-end gap-1.5">
                           <button type="button" title="Open in browser" onClick={() => openUrl(`https://www.youtube.com/watch?v=${matchYoutubeId}`)} className="flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors">
