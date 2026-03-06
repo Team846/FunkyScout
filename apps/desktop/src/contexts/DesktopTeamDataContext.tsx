@@ -210,8 +210,11 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
 
     const unregister = registerRefreshCallback(() => {
       // Rust sync is triggered once centrally in DesktopRealtimeContext.
-      // Re-read SQLite after sync has had time to pull new data.
+      // Re-read SQLite at 7s (fast path), 15s (slow: TBA + Statbotics), and 25s
+      // (queued-trigger case: trigger arrived while Rust was mid-sync).
       setTimeout(() => fetchTeamsRef.current?.(), 7_000);
+      setTimeout(() => fetchTeamsRef.current?.(), 15_000);
+      setTimeout(() => fetchTeamsRef.current?.(), 25_000);
     });
 
     return unregister;

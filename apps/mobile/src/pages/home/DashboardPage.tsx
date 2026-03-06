@@ -298,11 +298,11 @@ export function DashboardPage() {
       try {
         const now = Date.now();
 
-        // Count ACTUAL completed match scouting submissions FIRST (doesn't depend on assignments)
-        const { getSession } = await import("@lib/supabase/auth");
+        // Use locally stored UID — avoids a Supabase auth.getSession() call that
+        // can hang when offline trying to refresh an expired token.
+        const currentUid = userData.uid || undefined;
+
         const { getEventMatchData } = await import("@lib/db");
-        const session = await getSession();
-        const currentUid = session?.user?.id;
 
         let shiftsActuallyDone = 0;
         try {
@@ -332,6 +332,7 @@ export function DashboardPage() {
         const assignments = currentUid
           ? await getUserEventScheduleAssignments(currentEvent, currentUid, true)
           : await getUserEventScheduleAssignments(currentEvent, userData.name || "", false);
+        // Both paths read from local SQLite — works offline.
 
         if (assignments.length === 0) {
           // User has no scheduled assignments, but may have completed shifts

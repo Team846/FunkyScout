@@ -78,6 +78,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.0
+      '@tauri-apps/plugin-websocket':
+        specifier: ^2.4.2
+        version: 2.4.2
       lucide-react:
         specifier: ^0.546.0
         version: 0.546.0(react@19.2.0)
@@ -2520,6 +2523,9 @@ packages:
 
   '@tauri-apps/plugin-opener@2.5.0':
     resolution: {integrity: sha512-B0LShOYae4CZjN8leiNDbnfjSrTwoZakqKaWpfoH6nXiJwt6Rgj6RnVIffG3DoJiKsffRhMkjmBV9VeilSb4TA==}
+
+  '@tauri-apps/plugin-websocket@2.4.2':
+    resolution: {integrity: sha512-B1/csKPwJH9kLduNoqWFUdCsTgCvLM84T5ZZYK35jeBc9m2cm2m2G/hbSr28ZpVOZrl0x24fCWFe/9rpp7WETw==}
 
   '@tauri-apps/tauri-inliner@1.14.1':
     resolution: {integrity: sha512-IXlPbWXpKNz0dz1fplPAetBBzKA8kUaOvrrpyJ0jvxMihI9vKHaKP4GDyF89XCi0edXKv2MM+MWaaPVcmy12Bg==}
@@ -9149,6 +9155,10 @@ snapshots:
       '@tauri-apps/api': 2.8.0
 
   '@tauri-apps/plugin-opener@2.5.0':
+    dependencies:
+      '@tauri-apps/api': 2.8.0
+
+  '@tauri-apps/plugin-websocket@2.4.2':
     dependencies:
       '@tauri-apps/api': 2.8.0
 

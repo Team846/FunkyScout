@@ -7,10 +7,11 @@ import { Toggle } from "@shadcn/ui/components/toggle.tsx";
 import { toast } from "sonner";
 import { useEvent } from "@lib/context/EventContext";
 import { useSync } from "@lib/context/SyncContext";
-import { getEventMatchData, getEventTeamData, getEventSchedule, cacheEventTeamData, type EventMatchData } from "@lib/db";
+import { getEventMatchData, getEventTeamData, cacheEventTeamData, type EventMatchData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
+import { getFromImageQueue } from "@lib/storage/imageQueue";
 import { putTeamData } from "@lib/data/writes";
-import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
 import { MatchScoutingTab } from "../components/MatchScoutingTab";
@@ -147,11 +148,31 @@ function PitImageWithRetry({
     setBlobUrl(null);
   }, [path]);
 
+  // For pending paths: image is queued in IndexedDB (not yet uploaded).
+  // Show it immediately from IndexedDB so the scouter can confirm the photo
+  // was captured, even without network.
+  useEffect(() => {
+    if (!path.startsWith("pending-")) return;
+    let cancelled = false;
+    const id = path.slice("pending-".length);
+    getFromImageQueue(id)
+      .then((item) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(item.blob);
+        setBlobUrl(url);
+      })
+      .catch(() => {
+        // Image may have already been uploaded and removed from queue — let the
+        // normal fetch effect handle it once the path is updated to a real path.
+      });
+    return () => { cancelled = true; };
+  }, [path]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // Don't attempt to fetch pending paths — image is still uploading
+    // Network fetch is for real (uploaded) paths only
     if (path.startsWith("pending-")) return;
 
     let cancelled = false;
@@ -341,28 +362,21 @@ function TeamInfoPage() {
   }, [registerRefreshCallback, refreshPitData]);
 
 
-  useEffect(() => {
+  const refreshMatchData = useCallback(() => {
     if (!currentEvent || !teamKey) return;
-
-    Promise.all([
-      getEventMatchData(currentEvent, undefined, teamKey),
-      getEventTeamData(currentEvent),
-      getEventSchedule(currentEvent),
-    ]).then(([matchDataResult]) => {
-      console.log("Raw match data count:", matchDataResult.length);
-      console.log("Sample record:", matchDataResult[0]);
-      console.log("teamKey filter:", teamKey);
-      
+    getEventMatchData(currentEvent, undefined, teamKey).then((matchDataResult) => {
       const validData = matchDataResult.filter((d) => !d.deleted_at && d.name);
-      console.log("After filter:", validData.length);
-      console.log(validData)
-
-      console.log(pitData)
-      
       setMatchData(validData);
-      console.log(matchData)
     });
   }, [currentEvent, teamKey]);
+
+  useEffect(() => {
+    refreshMatchData();
+  }, [refreshMatchData]);
+
+  useEffect(() => {
+    return registerRefreshCallback(refreshMatchData);
+  }, [registerRefreshCallback, refreshMatchData]);
 
   const aggregateStats = useMemo(
     () => (teamKey && matchData.length > 0 ? calculateTeamStats(teamKey, matchData) : null),
@@ -467,9 +481,9 @@ function TeamInfoPage() {
     }
 
     try {
-      const session = await getSession();
-      const userName = session?.user?.email || "Unknown";
-      const userId = session?.user?.id || "unknown";
+      const localUser = getLocalUserData();
+      const userName = localUser.name || localUser.email || "Unknown";
+      const userId = localUser.uid || "unknown";
 
       const updatedAutos = [...pitData.autos];
       updatedAutos[editingAutoIndex2] = {
@@ -535,9 +549,9 @@ function TeamInfoPage() {
     }
 
     try {
-      const session = await getSession();
-      const userName = session?.user?.email || "Unknown";
-      const userId = session?.user?.id || "unknown";
+      const localUser = getLocalUserData();
+      const userName = localUser.name || localUser.email || "Unknown";
+      const userId = localUser.uid || "unknown";
 
       // Guard against pitData.autos being undefined (older records without autos field)
       const currentAutos = pitData.autos || [];
@@ -789,7 +803,6 @@ function TeamInfoPage() {
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       {pitData.images.files
-                        .filter((img) => img.uploaded)
                         .map((img, idx) => (
                           <PitImageWithRetry
                             key={img.path}

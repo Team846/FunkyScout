@@ -83,8 +83,10 @@ export function setDesktopTeamRefresh(cb: (() => void) | null) {
  * Fire-and-forget - errors are logged but don't block the write
  */
 async function triggerInstantSync() {
-  if (typeof window === "undefined" || !navigator.onLine) return;
+  if (typeof window === "undefined") return;
   if (!globalSyncTrigger) return;
+  // Call even when offline — forceSyncNow handles the offline case by
+  // firing refresh callbacks from local SQLite so the UI reflects the write immediately.
 
   try {
     await globalSyncTrigger();

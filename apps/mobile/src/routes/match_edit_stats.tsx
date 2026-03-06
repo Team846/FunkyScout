@@ -23,11 +23,10 @@ import { getActiveToggles } from "@lib/types/matchScouting";
 import { putMatchData } from "@lib/data/writes";
 import { transformMatchData } from "@lib/data/matchDataTransform";
 import { reverseTransformMatchData } from "@lib/data/matchDataTransform";
-import { getSession } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
 import { useEvent } from "@lib/context/EventContext";
 import { getMatchData } from "@lib/data/match-data";
-import { getEventTeamData } from "@lib/db";
+import { getEventTeamData, getEventMatchData } from "@lib/db";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import type { DrawingData } from "../components/auto-path-drawer/types";
 import { toast } from "sonner";
@@ -146,19 +145,30 @@ function MatchEditStats() {
         return;
       }
 
-      // If no sessionStorage and we have route params, load from Supabase
-      // (covers team view edit, past matches from ScoutingPage, etc.)
+      // If no sessionStorage and we have route params, load existing match data.
+      // Always try local SQLite first so offline-submitted matches (not yet synced
+      // to Supabase) are found immediately without wiping the local cache.
       if (currentEvent && teamNum && matchNum) {
         try {
-          console.log("[MatchEditStats] Loading existing data from Supabase");
+          console.log("[MatchEditStats] Loading existing data from local cache");
 
-          const allMatchData = await getMatchData(currentEvent);
-          const existingData = allMatchData.find(
+          // 1. Try local SQLite first (covers offline writes, avoids full-load wipe)
+          const localMatches = await getEventMatchData(currentEvent, matchNum, teamNum);
+          let existingData = localMatches.find(
             (m) => m.team === teamNum && m.match === matchNum
           );
 
-          console.log("[MatchEditStats] Supabase query result:", {
-            totalMatches: allMatchData.length,
+          // 2. If not in local cache, fall back to Supabase (match scouted on another device)
+          if (!existingData) {
+            console.log("[MatchEditStats] Not in local cache, falling back to Supabase");
+            const allMatchData = await getMatchData(currentEvent);
+            existingData = allMatchData.find(
+              (m) => m.team === teamNum && m.match === matchNum
+            );
+          }
+
+          console.log("[MatchEditStats] Match data load result:", {
+            localCacheSize: localMatches.length,
             foundMatch: !!existingData,
             hasDataRaw: !!existingData?.data_raw,
             dataRawKeys: existingData?.data_raw
@@ -321,11 +331,9 @@ function MatchEditStats() {
     const toastId = toast.loading("Uploading match data…");
 
     try {
-      // Get user session and local user data
-      const session = await getSession();
       const localUser = getLocalUserData();
-      const scoutName = localUser.name || session?.user?.email || "Unknown";
-      const scoutUid = session?.user?.id || "unknown";
+      const scoutName = localUser.name || localUser.email || "Unknown";
+      const scoutUid = localUser.uid || "unknown";
 
       // Complete match data with notes
       const completeMatchData: MatchScoutingData = {

@@ -9,7 +9,6 @@ import { usePitScoutForm } from "@lib/context/PitScoutFormContext";
 import { useEvent } from "@lib/context/EventContext";
 import { useSync } from "@lib/context/SyncContext";
 import { putTeamDataWithImages } from "@lib/data/writes";
-import { getSession } from "@lib/supabase/auth";
 import { getLocalUserData } from "@lib/supabase/user";
 import { toast } from "sonner";
 
@@ -85,10 +84,9 @@ function PitScoutImagesPage() {
 
     try {
       // Get user session and local user data
-      const session = await getSession();
       const localUser = getLocalUserData();
-      const userName = localUser.name || session?.user?.email || "Unknown";
-      const userId = session?.user?.id || "unknown";
+      const userName = localUser.name || localUser.email || "Unknown";
+      const userId = localUser.uid || "unknown";
 
       // Prepare full data with images metadata
       // Normalize autos: pit scouting uses "climb", team-info expects "climbDuringAuto"

@@ -44,6 +44,7 @@ function formatMatchLabel(matchKey: string): string {
 }
 
 function formatTime(estTime: number): string {
+  if (!estTime) return "";
   const now = Date.now() / 1000;
   const diff = estTime - now;
   if (Math.abs(diff) < 60) return "Now";
@@ -53,6 +54,17 @@ function formatTime(estTime: number): string {
   }
   const mins = Math.round(-diff / 60);
   return mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+}
+
+// Sort matches by match number (qm < sf < f) for offline fallback when est_time is unavailable
+function matchSortKey(matchKey: string): number {
+  const qm = matchKey.match(/_qm(\d+)$/);
+  if (qm) return parseInt(qm[1], 10);
+  const sf = matchKey.match(/_sf(\d+)m(\d+)$/);
+  if (sf) return 10000 + parseInt(sf[1], 10) * 10 + parseInt(sf[2], 10);
+  const f = matchKey.match(/_f\d+m(\d+)$/);
+  if (f) return 20000 + parseInt(f[1], 10);
+  return 99999;
 }
 
 interface UpcomingMatchCardProps {
@@ -165,34 +177,68 @@ export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
     }
   };
 
-  // Upcoming matches — next few by QM number across the whole event
+  // Upcoming matches — next few across the whole event.
+  // Uses est_time when available; falls back to match-number order + score
+  // presence so cards still render when offline (est_time not yet synced).
   const upcomingMatches = useMemo(() => {
     const now = Date.now() / 1000;
-    const allKeys = Object.keys(tbaSchedule).filter((key) => {
-      const tba = tbaSchedule[key];
-      return tba?.est_time != null && tba.est_time > now - 120;
-    });
-    allKeys.sort((a, b) => {
-      const tA = tbaSchedule[a]?.est_time ?? 0;
-      const tB = tbaSchedule[b]?.est_time ?? 0;
-      return tA - tB;
-    });
-    return allKeys.slice(0, 5);
+    const hasEstTime = Object.values(tbaSchedule).some((tba) => tba.est_time > 0);
+    let keys: string[];
+    if (hasEstTime) {
+      keys = Object.keys(tbaSchedule).filter((key) => {
+        const tba = tbaSchedule[key];
+        return tba?.est_time != null && tba.est_time > now - 120;
+      });
+      keys.sort((a, b) => (tbaSchedule[a]?.est_time ?? 0) - (tbaSchedule[b]?.est_time ?? 0));
+    } else {
+      // Offline: show first unplayed matches sorted by match number
+      keys = Object.keys(tbaSchedule).filter((key) => {
+        const tba = tbaSchedule[key];
+        return tba != null && (tba.redScore == null || tba.redScore < 0);
+      });
+      keys.sort((a, b) => matchSortKey(a) - matchSortKey(b));
+    }
+    return keys.slice(0, 5);
   }, [tbaSchedule]);
 
   // Next/last match for home team — derived from tbaSchedule so it updates in
-  // lockstep with the upcoming list (same est_time threshold, same data source).
-  // Avoids the ~120s lag from waiting for TBA rankings to round-trip through Supabase.
+  // lockstep with the upcoming list (same data source).
+  // Falls back to match-number + score-based logic when offline (no est_time).
   const homeNextLastMatch = useMemo(() => {
     if (!homeTeamKey) return { nextMatch: null, lastMatch: null };
+    const teamMatches = Object.entries(tbaSchedule).filter(
+      ([, tba]) => tba.redTeams.includes(homeTeamKey) || tba.blueTeams.includes(homeTeamKey)
+    );
+    if (teamMatches.length === 0) return { nextMatch: null, lastMatch: null };
+
     const now = Date.now() / 1000;
-    const teamMatches = Object.entries(tbaSchedule)
-      .filter(([, tba]) => tba.redTeams.includes(homeTeamKey) || tba.blueTeams.includes(homeTeamKey))
-      .sort(([, a], [, b]) => (a.est_time ?? 0) - (b.est_time ?? 0));
-    const nextIdx = teamMatches.findIndex(([, tba]) => tba.est_time != null && tba.est_time > now - 120);
-    const nextMatch = nextIdx !== -1 ? teamMatches[nextIdx][0] : null;
-    const lastMatch = nextIdx > 0 ? teamMatches[nextIdx - 1][0] : nextIdx === -1 && teamMatches.length > 0 ? teamMatches[teamMatches.length - 1][0] : null;
-    return { nextMatch, lastMatch };
+    const hasEstTime = teamMatches.some(([, tba]) => tba.est_time > 0);
+
+    if (hasEstTime) {
+      const sorted = [...teamMatches].sort(([, a], [, b]) => (a.est_time ?? 0) - (b.est_time ?? 0));
+      const nextIdx = sorted.findIndex(([, tba]) => tba.est_time > now - 120);
+      return {
+        nextMatch: nextIdx !== -1 ? sorted[nextIdx][0] : null,
+        lastMatch:
+          nextIdx > 0
+            ? sorted[nextIdx - 1][0]
+            : nextIdx === -1 && sorted.length > 0
+              ? sorted[sorted.length - 1][0]
+              : null,
+      };
+    }
+
+    // Offline fallback: sort by match number, detect played via scores
+    const sorted = [...teamMatches].sort(([a], [b]) => matchSortKey(a) - matchSortKey(b));
+    const lastPlayedIdx = sorted.reduce(
+      (acc, [, tba], idx) => (tba.redScore != null && tba.redScore >= 0 ? idx : acc),
+      -1
+    );
+    const firstUnplayedIdx = sorted.findIndex(([, tba]) => tba.redScore == null || tba.redScore < 0);
+    return {
+      nextMatch: firstUnplayedIdx >= 0 ? sorted[firstUnplayedIdx][0] : null,
+      lastMatch: lastPlayedIdx >= 0 ? sorted[lastPlayedIdx][0] : null,
+    };
   }, [homeTeamKey, tbaSchedule]);
 
   return (

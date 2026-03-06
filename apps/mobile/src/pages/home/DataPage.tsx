@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Select,
   SelectContent,
@@ -10,9 +10,9 @@ import {
 import { useEvent } from "@lib/context/EventContext";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
-import { getMatchData } from "@lib/data/match-data";
-import { getTeams } from "@lib/data/teams";
+import { useSync } from "@lib/context/SyncContext";
 import { calculateAllTeamStats } from "@lib/data/matchStats";
+import { getEventMatchData, getEventTeamData } from "@lib/db";
 import type { EventMatchData, EventTeamData } from "@lib/db";
 
 interface TeamStats {
@@ -65,9 +65,10 @@ interface NextMatchData {
 
 export function DataPage() {
   const navigate = useNavigate();
-  const { currentEvent } = useEvent();  
+  const { currentEvent } = useEvent();
   const { teams, tbaTeams } = useTeamData();
   const { tbaSchedule } = useCompetition();
+  const { registerRefreshCallback } = useSync();
 
   const [matchScoutingData, setMatchScoutingData] = useState<EventMatchData[]>([]);
   const [teamData, setTeamData] = useState<EventTeamData[]>([]);
@@ -78,22 +79,29 @@ export function DataPage() {
 
   const OUR_TEAM = 846;
 
-  // Fetch match scouting data and team data from Supabase (with local cache)
-  useEffect(() => {
+  // Load match scouting and team data from local SQLite cache.
+  // Supabase syncs happen in the background via the sync context.
+  const loadData = useCallback(() => {
     if (!currentEvent) return;
 
     Promise.all([
-      getMatchData(currentEvent),
-      getTeams(currentEvent)
+      getEventMatchData(currentEvent),
+      getEventTeamData(currentEvent),
     ])
       .then(([matchData, teamDataResults]) => {
-        setMatchScoutingData(matchData);
-        setTeamData(teamDataResults);
+        setMatchScoutingData(matchData.filter((d) => !d.deleted_at));
+        setTeamData(teamDataResults.filter((d) => !d.deleted_at));
       })
       .catch((error) => {
         console.error("Failed to load data:", error);
       });
   }, [currentEvent]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    return registerRefreshCallback(loadData);
+  }, [registerRefreshCallback, loadData]);
 
   // Calculate team statistics using centralized utility
   const teamStats = useMemo<TeamStats[]>(() => {

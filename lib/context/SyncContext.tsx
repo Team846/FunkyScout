@@ -82,10 +82,30 @@ export function SyncProvider({
     };
   }, [dbInitialized]);
 
+  // Fire all registered refresh callbacks (SQLite reads — always safe, no network).
+  // Called after local writes so UI reflects cached data immediately, even offline.
+  const fireRefreshCallbacks = useCallback(() => {
+    refreshCallbacks.current.forEach((callback) => {
+      try {
+        callback();
+      } catch (error) {
+        console.error("[SyncContext] Error in refresh callback:", error);
+      }
+    });
+  }, []);
+
   // Manual sync function for UI (with loading state and data refresh)
   const forceSyncNow = useCallback(async () => {
-    if (!syncManagerRef.current || !isOnline) {
-      console.log("[SyncContext] Cannot sync: manager not ready or offline");
+    if (!syncManagerRef.current) {
+      console.log("[SyncContext] Cannot sync: manager not ready");
+      return;
+    }
+
+    if (!isOnline) {
+      // Offline: can't push to Supabase, but still refresh UI from local SQLite
+      // so writes made offline are reflected immediately without waiting for polling.
+      console.log("[SyncContext] Offline — refreshing UI from local cache only");
+      fireRefreshCallbacks();
       return;
     }
 
@@ -117,13 +137,7 @@ export function SyncProvider({
       }
 
       // Step 3: Refresh all data contexts
-      refreshCallbacks.current.forEach((callback) => {
-        try {
-          callback();
-        } catch (error) {
-          console.error("[SyncContext] Error in refresh callback:", error);
-        }
-      });
+      fireRefreshCallbacks();
 
       console.log(
         `[SyncContext] Triggered ${refreshCallbacks.current.size} refresh callbacks`,
@@ -135,7 +149,7 @@ export function SyncProvider({
     } finally {
       setIsSyncing(false);
     }
-  }, [isOnline, currentEvent]);
+  }, [isOnline, currentEvent, fireRefreshCallbacks]);
 
   // Register forceSyncNow as the global sync trigger for instant sync
   useEffect(() => {

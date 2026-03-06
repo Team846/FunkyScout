@@ -19,11 +19,11 @@ export default defineConfig(async () => ({
   // Use shared .env from workspace root
   envDir: path.resolve(__dirname, "../.."),
   resolve: {
-    alias: {
-      "@ui": path.resolve(__dirname, "../../packages/shadcn/src"),
-      "@": path.resolve(__dirname, "../../packages/shadcn/src"),
-      "@lib": path.resolve(__dirname, "../../lib"),
-    },
+    alias: [
+      { find: "@ui", replacement: path.resolve(__dirname, "../../packages/shadcn/src") },
+      { find: "@", replacement: path.resolve(__dirname, "../../packages/shadcn/src") },
+      { find: "@lib", replacement: path.resolve(__dirname, "../../lib") },
+    ],
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

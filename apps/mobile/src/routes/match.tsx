@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
 import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
-import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 import {
   Select,
   SelectContent,
@@ -39,17 +39,8 @@ export function Match() {
   const [showMatchDropdown, setShowMatchDropdown] = useState(false);
   const [matchQuery, setMatchQuery] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
-  const [currentUserUid, setCurrentUserUid] = useState<string>("");
+  const [currentUserUid] = useState<string>(() => getLocalUserData().uid);
   const matchInputRef = useRef<HTMLInputElement>(null);
-
-  // Get current user's uid
-  useEffect(() => {
-    getSession().then((session) => {
-      if (session?.user?.id) {
-        setCurrentUserUid(session.user.id);
-      }
-    }).catch(() => {});
-  }, []);
 
   // Get unique matches from schedule
   const uniqueMatches = [...new Set(schedule.map((s) => s.match))].sort(

@@ -1,5 +1,6 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import supabase from "@lib/supabase/supabase";
+import { getLocalUserData } from "@lib/supabase/user";
 import { useState, useMemo, useRef, useCallback } from "react";
 import { Search, ArrowDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shadcn/ui/components/tabs.tsx";
@@ -17,6 +18,9 @@ import { RightPanel } from "./-components/RightPanel";
 
 export const Route = createFileRoute("/dashboard/")({
   beforeLoad: async () => {
+    // Fast offline-first check — see apps/desktop/src/routes/index.tsx for explanation.
+    if (getLocalUserData().uid) return;
+
     const {
       data: { session },
     } = await supabase.auth.getSession();

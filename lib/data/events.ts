@@ -2,7 +2,7 @@ import supabase from "../supabase/supabase";
 import { fetchTBAEventTeams } from "../tba/event";
 import { refreshSchedule } from "./schedule";
 import { bootstrapMatchData } from "./match-data";
-import { getLocalEventList, cacheEventList } from "../db";
+import { getLocalEventList, cacheEventList, pruneDeletedEvents } from "../db";
 import { isTauri } from "../utils/platform";
 
 /**
@@ -123,6 +123,9 @@ export async function getEvents() {
           deleted_at: d.deleted_at ? Date.parse(d.deleted_at) : undefined,
         })),
       );
+      // Mark any locally-cached events that Supabase no longer returns as active.
+      // getEvents() only fetches non-deleted events, so missing events were deleted.
+      await pruneDeletedEvents(data.map((d) => d.event));
     }
 
     return data;

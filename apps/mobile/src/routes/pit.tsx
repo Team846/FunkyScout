@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@shadcn/ui/components/button.js";
 import { Badge } from "@shadcn/ui/components/badge.js";
 import { useTeamData } from "@lib/context/TeamDataContext";
-import { getSession } from "@lib/supabase/auth";
+import { getLocalUserData } from "@lib/supabase/user";
 
 export const Route = createFileRoute("/pit")({
   component: Pit,
@@ -16,17 +16,8 @@ export function Pit() {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [query, setQuery] = useState("");
-  const [currentUserUid, setCurrentUserUid] = useState<string>("");
+  const [currentUserUid] = useState<string>(() => getLocalUserData().uid);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Get current user's uid
-  useEffect(() => {
-    getSession().then((session) => {
-      if (session?.user?.id) {
-        setCurrentUserUid(session.user.id);
-      }
-    }).catch(() => {});
-  }, []);
 
   const handleBackClick = () => {
     navigate({ to: "/home" });

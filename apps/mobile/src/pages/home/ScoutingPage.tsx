@@ -7,7 +7,6 @@ import { getLocalUserData } from "@lib/supabase/user";
 import { getUserEventScheduleAssignments, getEventMatchData } from "@lib/db";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { getMatchLabel } from "@lib/utils/match";
-import { getSession } from "@lib/supabase/auth";
 import { Command, CommandInput, CommandList, CommandItem, CommandEmpty } from "@shadcn/ui/components/command.js";
 import { Badge } from "@shadcn/ui/components/badge.tsx";
 export function ScoutingPage() {
@@ -65,8 +64,7 @@ export function ScoutingPage() {
         try {
 
           // Count ACTUAL completed match scouting submissions FIRST (doesn't depend on assignments)
-          const session = await getSession();
-          const currentUid = session?.user?.id;
+          const currentUid = getLocalUserData().uid;
 
           let shiftsActuallyDone = 0;
           try {
@@ -250,8 +248,7 @@ export function ScoutingPage() {
 
     const fetchPastMatches = async () => {
       try {
-        const session = await getSession();
-        const currentUid = session?.user?.id;
+        const currentUid = getLocalUserData().uid;
         const userRole = userData.role || "user";
         const isAdmin = userRole === "admin";
 
@@ -264,10 +261,12 @@ export function ScoutingPage() {
           // Must have actual scouting data and not be deleted
           if (!m.name || m.deleted_at) return false;
 
-          // Only include if match has happened
+          // If we have timing data, only show matches that have already happened.
+          // If est_time is unavailable (offline, not yet synced), show the match
+          // anyway — we can't determine if it's past, so err on the side of showing it.
           const matchData = tbaSchedule[m.match];
           const matchTime = matchData?.est_time ? matchData.est_time * 1000 : null;
-          if (!matchTime || matchTime > now) return false;
+          if (matchTime !== null && matchTime > now) return false;
 
           // Permission check
           if (isAdmin) return true; // Admins see all scouted matches

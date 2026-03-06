@@ -47,7 +47,7 @@ function HomePage() {
   const navigate = useNavigate();
   const { tab } = Route.useSearch();
   const currentPage: PageType = tab || "dashboard";
-  const { currentEvent } = useEvent();
+  const { currentEvent, isOnline } = useEvent();
   const [userData, setUserData] = useState(getLocalUserData());
 
   const setCurrentPage = (page: PageType) => {
@@ -236,6 +236,23 @@ function HomePage() {
         {currentPage === "data" && <DataPage />}
         {currentPage === "scouting" && <ScoutingPage />}
       </main>
+
+      {/* Offline indicator — fixed above nav, bottom-left */}
+      {!isOnline && (
+        <div className="fixed left-4 z-50" style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)" }}>
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-muted shadow-lg text-muted-foreground">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="1" y1="1" x2="23" y2="23" />
+              <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+              <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+              <path d="M10.71 5.05A16 16 0 0 1 22.56 9" />
+              <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+              <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" />
+            </svg>
+          </div>
+        </div>
+      )}
 
       {/* Bottom Nav (same icons/count, consistent bottom spacing) */}
       <nav className="fixed inset-x-0 bottom-0 z-50">

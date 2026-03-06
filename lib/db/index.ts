@@ -211,6 +211,27 @@ export async function cacheEventList(events: LocalEvent[]): Promise<void> {
   });
 }
 
+/**
+ * Mark locally-cached events as deleted if they are not in the given active list.
+ * Called after fetching active events from Supabase so that server-side deletions
+ * propagate to the local cache and disappear offline.
+ */
+export async function pruneDeletedEvents(activeEventKeys: string[]): Promise<void> {
+  await initDatabase();
+  if (activeEventKeys.length === 0) {
+    await execWorker(
+      "UPDATE event_list SET deleted_at = ? WHERE deleted_at IS NULL",
+      [Date.now()],
+    );
+    return;
+  }
+  const placeholders = activeEventKeys.map(() => "?").join(", ");
+  await execWorker(
+    `UPDATE event_list SET deleted_at = ? WHERE event NOT IN (${placeholders}) AND deleted_at IS NULL`,
+    [Date.now(), ...activeEventKeys],
+  );
+}
+
 export async function getEventTeamData(
   event: string,
 ): Promise<EventTeamData[]> {
@@ -409,7 +430,16 @@ export async function cacheEventMatchData(
     await initDatabase();
     await execWorker("BEGIN TRANSACTION");
     try {
-      // Always clear old match data (even if new data is empty - handles deletions)
+      // Save locally soft-deleted rows before wiping. These are deletions that
+      // were made offline and may not yet be confirmed in Supabase (push in-flight
+      // or failed). We re-apply them after the full reload so they aren't
+      // resurrected by a Supabase response that doesn't include the deletion yet.
+      const localDeleted = await execWorker(
+        "SELECT match, team, deleted_at FROM event_match_data WHERE event = ? AND deleted_at IS NOT NULL",
+        [eventKey],
+      ) as { match: string; team: string; deleted_at: number }[];
+
+      // Clear old match data (handles server-side deletions not in the fetch result)
       await execWorker("DELETE FROM event_match_data WHERE event = ?", [eventKey]);
 
       for (const item of data) {
@@ -436,6 +466,17 @@ export async function cacheEventMatchData(
           ],
         );
       }
+
+      // Re-apply local soft-deletes for rows that came back from Supabase without
+      // deleted_at (push not yet confirmed). This prevents offline deletions from
+      // being resurrected by the full reload until Supabase reflects the deletion.
+      for (const row of localDeleted) {
+        await execWorker(
+          "UPDATE event_match_data SET deleted_at = ? WHERE event = ? AND match = ? AND team = ? AND deleted_at IS NULL",
+          [row.deleted_at, eventKey, row.match, row.team],
+        );
+      }
+
       await execWorker("COMMIT");
     } catch (e) {
       await execWorker("ROLLBACK");

@@ -54,6 +54,7 @@ import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopSync } from "../contexts/DesktopSyncContext";
+import { useDesktopRealtime } from "../contexts/DesktopRealtimeContext";
 import { MatchPickerDialog } from "./MatchPickerDialog";
 import { TeamPickerDialog } from "./TeamPickerDialog";
 import supabase from "@lib/supabase/supabase";
@@ -90,6 +91,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const nexusActive = nexusMatches.length > 0 &&
     Object.values(tbaSchedule).some((m) => m.est_time > 0);
   const { forceSyncNow } = useDesktopSync();
+  const { isConnected: realtimeConnected } = useDesktopRealtime();
+  const { lastDataRefreshAt } = useDesktopCompetitionData();
 
   const [events, setEvents] = useState<EventListEntry[]>([]);
   const [userName, setUserName] = useState("");
@@ -776,29 +779,47 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             {/* Right controls */}
             <div className="flex items-center gap-1 px-3 flex-shrink-0 border-l border-border">
-              {/* Cloud sync icon */}
+              {/* Cloud sync icon + realtime dot */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     onClick={handleSync}
                     disabled={!isOnline}
-                    className={`p-1.5 rounded hover:bg-secondary transition-colors ${syncColor}`}
+                    className={`relative p-1.5 rounded hover:bg-secondary transition-colors ${syncColor}`}
                   >
                     {isOnline ? (
                       <Cloud className="w-4 h-4" />
                     ) : (
                       <CloudOff className="w-4 h-4" />
                     )}
+                    {/* Realtime connection dot */}
+                    <span
+                      className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${
+                        realtimeConnected ? "bg-green-500" : "bg-yellow-500"
+                      }`}
+                    />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
-                  {!isOnline
-                    ? "Offline — writes queued locally"
-                    : isSyncing
-                      ? "Syncing..."
-                      : teams.length > 0
-                        ? "Synced — click to sync now"
-                        : "Not synced"}
+                  <div className="text-xs space-y-0.5">
+                    <div>
+                      {!isOnline
+                        ? "Offline — writes queued locally"
+                        : isSyncing
+                          ? "Syncing..."
+                          : teams.length > 0
+                            ? "Synced — click to sync now"
+                            : "Not synced"}
+                    </div>
+                    <div className="text-muted-foreground">
+                      Realtime: {realtimeConnected ? "connected" : "reconnecting..."}
+                    </div>
+                    {lastDataRefreshAt > 0 && (
+                      <div className="text-muted-foreground">
+                        Last sync: {Math.round((Date.now() - lastDataRefreshAt) / 1000)}s ago
+                      </div>
+                    )}
+                  </div>
                 </TooltipContent>
               </Tooltip>
 

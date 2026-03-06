@@ -313,8 +313,12 @@ export function DesktopCompetitionDataProvider({
 
     const unregister = registerRefreshCallback(() => {
       // Rust sync is triggered once centrally in DesktopRealtimeContext.
-      // Re-read SQLite after sync has had time to pull new data.
+      // Re-read SQLite at 7s (fast: picklists/match data ready), 15s (slow: TBA/Statbotics),
+      // and 25s (queued-trigger case: trigger arrived while Rust was mid-sync, new sync
+      // starts after current one finishes ~15-20s later).
       setTimeout(() => fetchDataRef.current?.(), 7_000);
+      setTimeout(() => fetchDataRef.current?.(), 15_000);
+      setTimeout(() => fetchDataRef.current?.(), 25_000);
     });
 
     return unregister;

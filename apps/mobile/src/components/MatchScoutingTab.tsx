@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
+import { useSync } from "@lib/context/SyncContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { calculateSingleMatchStats, calculateTeamStats, type TeamStats } from "@lib/data/matchStats";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@shadcn/ui/components/select.tsx";
 import { Button } from "@shadcn/ui/components/button.tsx";
-import { getSession } from "@lib/supabase/auth";
+
 import { getLocalUserData } from "@lib/supabase/user";
 import { AutoPathDisplay } from "./AutoPathDisplay";
 import type { DrawingData } from "./auto-path-drawer/types";
@@ -33,8 +34,9 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   } | null>(null);
   const [nextMatch, setNextMatch] = useState<{ match: string; time?: number } | null>(null);
   const [teamAutos, setTeamAutos] = useState<TeamAutoDisplay[]>([]);
+  const { registerRefreshCallback } = useSync();
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     if (!eventKey || !teamKey) return;
 
     Promise.all([
@@ -114,6 +116,16 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
       setLoading(false);
     });
   }, [eventKey, teamKey]);
+
+  // Initial load
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Refresh when a sync completes (e.g. after offline write or foreground resume)
+  useEffect(() => {
+    return registerRefreshCallback(loadData);
+  }, [registerRefreshCallback, loadData]);
 
   if (loading) {
     return (
@@ -337,9 +349,8 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
   // Check if user can edit this submission (is owner or admin)
   useEffect(() => {
     async function checkPermissions() {
-      const session = await getSession();
       const localUser = getLocalUserData();
-      const currentUid = session?.user?.id;
+      const currentUid = localUser.uid;
       const userRole = localUser.role || "user";
 
       // Can edit if: (1) you scouted it, OR (2) you're an admin

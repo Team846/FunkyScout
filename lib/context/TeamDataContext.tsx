@@ -272,8 +272,13 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (dbInitialized) {
-      // Set skip flag when changing events (only if online and has prior data)
-      if (isOnline && hasLoadedDataRef.current) {
+      // Always reset so the new event's cache can load, even offline.
+      // Without this, hasLoadedDataRef=true from the previous event prevents
+      // fetchTeams() from loading the new event's cached data when offline.
+      hasLoadedDataRef.current = false;
+      // When online and switching away from a loaded event, skip cache so we
+      // don't flash stale old-event data before fresh Supabase data arrives.
+      if (isOnline) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }

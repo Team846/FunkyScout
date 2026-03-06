@@ -10,17 +10,18 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@sqlite.org/sqlite-wasm": "^3.41.2",
     "@shadcn/ui": "workspace:*",
-    "recharts": "2.15.4",
+    "@sqlite.org/sqlite-wasm": "^3.41.2",
     "@tanstack/react-router": "^1.136.4",
     "@tanstack/react-router-devtools": "^1.136.4",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-log": "~2.7.0",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-websocket": "^2.4.2",
     "lucide-react": "^0.546.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "recharts": "2.15.4"
   },
   "devDependencies": {
     "@tanstack/router-plugin": "^1.136.4",
