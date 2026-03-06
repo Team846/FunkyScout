@@ -32,7 +32,7 @@ export const Route = createFileRoute("/match_end")({
 })
 
 function MatchEnd() {
-  const { isWrongOrientation } = useOrientation('landscape');
+  const { isWrongOrientation, requestFullscreenAndLock } = useOrientation('landscape');
   const navigate = useNavigate();
   const { teamNum, matchNum, alliance, practice } = Route.useSearch();
   const [coordinates, setCoordinates] = useState([1000, 1000]);
@@ -64,7 +64,7 @@ function MatchEnd() {
   
   return (
     <>
-      {isWrongOrientation && <RotateDevicePrompt />}
+      {isWrongOrientation && <RotateDevicePrompt onRequestRotation={requestFullscreenAndLock} />}
       {/* {teamNum && <span className="text-foreground"> | {teamNum}</span>} */}
       {/* {matchNum && <span className="text-foreground"> | {matchNum}</span>} */}
       <div className="flex flex-row w-screen h-screen gap-5 py-5 pr-5 pl-[max(1.25rem,env(safe-area-inset-left,0px))]">
