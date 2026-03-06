@@ -940,7 +940,7 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   // Climb
   {
     // source: "tba" — use getTbaStatDataPoints() so denominator = all played matches.
-    key: "avg_climb_points", label: "Avg Climb Points", group: "Climb",
+    key: "avg_climb_points", label: "Climb Points", group: "Climb",
     source: "tba",
     getValueFromTba: (entry) => {
       let pts = entry.auto_climb != null ? 15 : 0;
@@ -963,7 +963,7 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   },
   {
     // source: "tba" — use getTbaStatDataPoints() so denominator = all played matches.
-    key: "avg_fuel_points", label: "Avg Fuel Points", group: "Climb",
+    key: "avg_fuel_points", label: "Fuel Points", group: "Climb",
     source: "tba",
     getValueFromTba: (entry, epa) => {
       if (epa == null) return null;
@@ -987,7 +987,7 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   },
   {
     // Teleop climb in points (L1=10, L2=20, L3=30) from TBA. source: "tba".
-    key: "climb_level", label: "Avg Teleop Climb Pts", group: "Climb",
+    key: "climb_level", label: "Teleop Climb Pts", group: "Climb",
     source: "tba",
     getValueFromTba: (entry) => {
       if (entry.teleop_climb === "L1") return 10;
@@ -1001,7 +1001,7 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   },
   {
     // Auto climb in points (15 if any level, 0 if none) from TBA. source: "tba".
-    key: "auto_climb", label: "Avg Auto Climb Pts", group: "Climb",
+    key: "auto_climb", label: "Auto Climb Pts", group: "Climb",
     source: "tba",
     getValueFromTba: (entry) => entry.auto_climb != null ? 15 : 0,
     getValue: (s) => s.climb.hasAutoClimb ? 15 : 0,
@@ -1094,6 +1094,8 @@ export function getTbaStatDataPoints(
 
   const points: Array<{ matchKey: string; raw: number }> = [];
   for (const [matchKey, teamEntries] of Object.entries(tbaClimbData)) {
+    // Only include qualification matches this team played in
+    if (!matchKey.includes("_qm")) continue;
     const entry = teamEntries[teamKey];
     if (!entry) continue;
     const raw = stat.getValueFromTba(entry, epa);

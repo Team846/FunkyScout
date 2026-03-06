@@ -712,7 +712,7 @@ function StatMatchGraph({
   }, [sorted, allValues]);
 
   const H = 160;
-  const pad = { top: 12, right: 20, bottom: 14, left: 30 };
+  const pad = { top: 12, right: 20, bottom: 28, left: 30 };
 
   const formatYLabel = (v: number) => {
     if (["disabled_time", "block_time", "defend_time"].includes(metric)) {
@@ -916,6 +916,9 @@ export interface FullTeamPanelProps {
   /** Stat Overview: controlled metric selection (shared across panels when provided) */
   statOverviewMetric?: string;
   onStatOverviewMetricChange?: (key: string) => void;
+  /** Graph the current stat overview metric in the graph section below */
+  onGraphMetric?: (key: string) => void;
+  graphedMetrics?: string[];
 }
 
 // Module-level: shared stat selection when not controlled by parent
@@ -944,6 +947,8 @@ export function FullTeamPanel({
   onTeamExpand,
   statOverviewMetric: statOverviewMetricProp,
   onStatOverviewMetricChange,
+  onGraphMetric,
+  graphedMetrics = [],
 }: FullTeamPanelProps) {
   const teamNum = getTeamNum(teamKey);
   const teamName = tbaTeam?.name ?? teamKey;
@@ -1184,15 +1189,13 @@ export function FullTeamPanel({
     if (!stat) return { pts: [] as { matchKey: string; raw: number }[], allValuesForPercentile: [] as number[], isTeamLevel: false, isOverview: false };
     if (stat.source === "tba") {
       const epa = tbaTeam?.epa?.total_points?.mean ?? null;
-      const pts = getTbaStatDataPoints(key, teamKey, tbaClimbData, epa);
-      const avg = pts.length ? pts.reduce((s, p) => s + p.raw, 0) / pts.length : null;
-      const allVals: number[] = [];
+      const tbaPts = getTbaStatDataPoints(key, teamKey, tbaClimbData, epa);
+      const tbaAllVals: number[] = [];
       for (const t of allTbaTeams) {
         const tPts = getTbaStatDataPoints(key, t.key, tbaClimbData, t.epa?.total_points?.mean ?? null);
-        if (tPts.length) allVals.push(tPts.reduce((s, p) => s + p.raw, 0) / tPts.length);
+        if (tPts.length) tbaAllVals.push(tPts.reduce((s, p) => s + p.raw, 0) / tPts.length);
       }
-      const eventPts: { matchKey: string; raw: number }[] = avg != null ? [{ matchKey: "event", raw: avg }] : [];
-      return { pts: eventPts, allValuesForPercentile: allVals, isTeamLevel: true, isOverview: false };
+      return { pts: tbaPts, allValuesForPercentile: tbaAllVals, isTeamLevel: false, isOverview: false };
     }
     const teamMatches = allMatchData.filter(m => m.team === teamKey);
     const pts = getStatDataPoints(key, teamMatches as any, ctx);
@@ -1977,16 +1980,32 @@ export function FullTeamPanel({
 
           {/* Stat Overview — collapsible dropdown */}
           <div className="rounded-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setStatOverviewOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-muted/10 hover:bg-muted/20 transition-colors text-left"
-            >
-              <p className="text-base font-semibold text-primary">Stat Overview</p>
-              <ChevronDown
-                className={`w-4 h-4 text-muted-foreground transition-transform shrink-0 ${statOverviewOpen ? "" : "-rotate-90"}`}
-              />
-            </button>
+            <div className="flex items-center bg-muted/10 hover:bg-muted/20 transition-colors">
+              <button
+                type="button"
+                onClick={() => setStatOverviewOpen((o) => !o)}
+                className="flex-1 flex items-center justify-between px-3 py-2 text-left"
+              >
+                <p className="text-base font-semibold text-primary">Stat Overview</p>
+                <ChevronDown
+                  className={`w-4 h-4 text-muted-foreground transition-transform shrink-0 ${statOverviewOpen ? "" : "-rotate-90"}`}
+                />
+              </button>
+              {onGraphMetric && statOverviewMetric !== "overview" && (
+                <button
+                  onClick={() => onGraphMetric(statOverviewMetric)}
+                  className={[
+                    "p-1.5 mr-1 rounded transition-colors flex-shrink-0",
+                    graphedMetrics.includes(statOverviewMetric)
+                      ? "text-primary drop-shadow-[0_0_4px_hsl(var(--primary))]"
+                      : "text-muted-foreground/60 hover:text-muted-foreground",
+                  ].join(" ")}
+                  title={graphedMetrics.includes(statOverviewMetric) ? "Remove from graph" : "Add to graph"}
+                >
+                  <BarChart2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
             {statOverviewOpen && (
               <div className="p-2 space-y-2">
                 {/* Metric picker row */}
@@ -2862,15 +2881,13 @@ export function ExpandedTeamPanel({
     if (!stat) return { pts: [] as { matchKey: string; raw: number }[], allValuesForPercentile: [] as number[], isTeamLevel: false, isOverview: false };
     if (stat.source === "tba") {
       const epa = tbaTeam?.epa?.total_points?.mean ?? null;
-      const pts = getTbaStatDataPoints(key, teamKey, tbaClimbData, epa);
-      const avg = pts.length ? pts.reduce((s, p) => s + p.raw, 0) / pts.length : null;
-      const allVals: number[] = [];
+      const tbaPts = getTbaStatDataPoints(key, teamKey, tbaClimbData, epa);
+      const tbaAllVals: number[] = [];
       for (const t of allTbaTeams) {
         const tPts = getTbaStatDataPoints(key, t.key, tbaClimbData, t.epa?.total_points?.mean ?? null);
-        if (tPts.length) allVals.push(tPts.reduce((s, p) => s + p.raw, 0) / tPts.length);
+        if (tPts.length) tbaAllVals.push(tPts.reduce((s, p) => s + p.raw, 0) / tPts.length);
       }
-      const eventPts: { matchKey: string; raw: number }[] = avg != null ? [{ matchKey: "event", raw: avg }] : [];
-      return { pts: eventPts, allValuesForPercentile: allVals, isTeamLevel: true, isOverview: false };
+      return { pts: tbaPts, allValuesForPercentile: tbaAllVals, isTeamLevel: false, isOverview: false };
     }
     const pts = getStatDataPoints(key, teamMatchData as any, { epa: tbaTeam?.epa?.total_points?.mean ?? null, tbaClimbData });
     const allVals: number[] = [];

@@ -473,8 +473,8 @@ function GraphCard({
 
       {/* Bar chart */}
       <div
-        className="flex items-end justify-around px-3 pb-2 pt-2"
-        style={{ height: `${BAR_HEIGHT_PX + 24}px`, gap: teams.length <= 2 ? '8px' : teams.length === 3 ? '6px' : '4px' }}
+        className="flex-1 flex items-end justify-around px-3 pb-2 pt-2"
+        style={{ gap: teams.length <= 2 ? '8px' : teams.length === 3 ? '6px' : '4px' }}
       >
         {teams.length === 0 ? (
           <span className="text-xs text-muted-foreground self-center">
@@ -1214,6 +1214,8 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                         }
                         statOverviewMetric={statOverviewMetric}
                         onStatOverviewMetricChange={setStatOverviewMetric}
+                        onGraphMetric={(key) => setActiveMetrics((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key])}
+                        graphedMetrics={activeMetrics}
                         onTeamExpand={() => {
                           const teamNum = teamKey.replace("frc", "");
                           addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);

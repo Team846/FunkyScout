@@ -367,8 +367,8 @@ function GraphCard({
       </div>
 
       <div
-        className="flex items-end justify-around px-3 pb-2 pt-2"
-        style={{ height: `${BAR_HEIGHT_PX + 24}px`, gap: teams.length <= 2 ? "8px" : teams.length === 3 ? "6px" : "4px" }}
+        className="flex-1 flex items-end justify-around px-3 pb-2 pt-2"
+        style={{ gap: teams.length <= 2 ? "8px" : teams.length === 3 ? "6px" : "4px" }}
       >
         {teams.length === 0 ? (
           <span className="text-xs text-muted-foreground self-center">
@@ -741,6 +741,8 @@ function ComparisonPage() {
                     onTeamExpand={() => navigateToTeam(displayTeams[0])}
                     statOverviewMetric={statOverviewMetric}
                     onStatOverviewMetricChange={setStatOverviewMetric}
+                    onGraphMetric={(key) => setGraphMetrics((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key])}
+                    graphedMetrics={graphMetrics}
                   />
                 </div>
               )}
@@ -805,6 +807,8 @@ function ComparisonPage() {
                     onTeamExpand={() => navigateToTeam(displayTeams[1])}
                     statOverviewMetric={statOverviewMetric}
                     onStatOverviewMetricChange={setStatOverviewMetric}
+                    onGraphMetric={(key) => setGraphMetrics((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key])}
+                    graphedMetrics={graphMetrics}
                   />
                 </div>
               )}
