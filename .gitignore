@@ -39,4 +39,6 @@ Thumbs.db
 database.db
 .vscode/*
 
+.claude
+
 
