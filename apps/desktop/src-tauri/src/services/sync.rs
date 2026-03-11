@@ -92,7 +92,7 @@ impl SyncService {
 
                 // Instant sync when triggered by write operations
                 Some(_) = trigger_rx.recv() => {
-                    // Drain any additional pending triggers (debounce: run once for a burst of signals)
+                    // Drain any burst triggers that arrived before sync starts
                     while trigger_rx.try_recv().is_ok() {}
                     // Refresh current event in case user changed events
                     let ev = self.current_event_shared.read().unwrap().clone();
@@ -101,6 +101,9 @@ impl SyncService {
                     if let Err(e) = self.sync_once().await {
                         eprintln!("[Sync] Error during instant sync: {}", e);
                     }
+                    // Drain any triggers that queued up DURING sync — no need for a
+                    // redundant second sync cycle; data was just fully refreshed.
+                    while trigger_rx.try_recv().is_ok() {}
                 }
             }
         }
@@ -1187,6 +1190,15 @@ impl SyncService {
     /// Process sync queue: Push pending operations to Supabase
     /// Implements offline-first write queue with retry logic
     async fn process_sync_queue(&self) -> Result<()> {
+        // Guard: skip queue processing if the frontend hasn't sent a JWT yet.
+        // Without a valid user JWT, writes will fail with auth errors and burn retry counts.
+        // The frontend calls set_user_jwt → trigger_sync_now in sequence on mount, so the
+        // next triggered sync will have the JWT available.
+        if !self.supabase.has_jwt() {
+            println!("[SyncQueue] JWT not yet available — deferring queue processing until auth is ready");
+            return Ok(());
+        }
+
         // Crash recovery: if items were stuck in 'processing' state from a previous
         // run that crashed, reset them to 'pending' so they get retried.
         // Threshold: 3 minutes (well above the longest single operation).

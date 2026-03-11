@@ -50,6 +50,13 @@ export const Route = createFileRoute("/shifts")({
   component: ShiftViewerPage,
 });
 
+// ─── Module-level UI state persistence (survives tab navigation) ─────────────
+interface ShiftsUIState {
+  scouterSearch: string;
+  teamSearch: string;
+}
+let _shiftsUIState: ShiftsUIState | null = null;
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StarRating({
@@ -459,8 +466,10 @@ function ShiftViewerPage() {
     [addTab, navigate]
   );
 
-  const [scouterSearch, setScouterSearch] = useState("");
-  const [teamSearch, setTeamSearch] = useState("");
+  const [scouterSearch, setScouterSearch] = useState(() => _shiftsUIState?.scouterSearch ?? "");
+  const [teamSearch, setTeamSearch] = useState(() => _shiftsUIState?.teamSearch ?? "");
+  // Persist UI state synchronously on every render
+  _shiftsUIState = { scouterSearch, teamSearch };
 
   // Pending changes — lifted from individual rows so one Save covers everything
   const [dirtyRatings, setDirtyRatings] = useState<Record<string, number>>({});

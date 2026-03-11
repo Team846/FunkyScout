@@ -165,21 +165,22 @@ export function ScoutingPage() {
             untilBreak,
           });
   
-          // Find next upcoming shift
+          // Find next upcoming shift (2-minute buffer so shift stays "upcoming" briefly after est time)
+          const SHIFT_BUFFER_MS = 2 * 60 * 1000;
           const upcomingShifts = shiftsWithTimes
-            .filter((s) => s.matchTime && s.matchTime > now)
+            .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
             .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
-  
+
           let shiftToDisplay;
           let isPast = false;
-  
+
           if (upcomingShifts.length > 0) {
             // Use next upcoming shift
             shiftToDisplay = upcomingShifts[0];
           } else {
             // Use most recent past shift
             const pastShifts = shiftsWithTimes
-              .filter((s) => s.matchTime && s.matchTime <= now)
+              .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
               .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
   
             if (pastShifts.length > 0) {

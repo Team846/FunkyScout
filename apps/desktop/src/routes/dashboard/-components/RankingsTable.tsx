@@ -12,6 +12,9 @@ import type { TbaClimbEntry } from "../../../contexts/DesktopCompetitionDataCont
 
 type SortColumn = "rank" | "epa" | "rating" | "climb";
 
+// Persist sort column across tab navigation
+let _savedSortCol: SortColumn = "rank";
+
 interface RankingsTableProps {
   tbaTeams: TBATeam[];
   matchData: MatchScoutingData[];
@@ -49,7 +52,7 @@ function useEpaColors(tbaTeams: TBATeam[]) {
 
 export const RankingsTable = forwardRef<RankingsTableHandle, RankingsTableProps>(
   function RankingsTable({ tbaTeams, matchData, searchQuery, tbaClimbData, useTbaClimb, homeTeamKey, onTeamClick }, ref) {
-  const [sortCol, setSortCol] = useState<SortColumn>("rank");
+  const [sortCol, setSortCol] = useState<SortColumn>(_savedSortCol);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const { q25, q75 } = useEpaColors(tbaTeams);
@@ -148,6 +151,7 @@ export const RankingsTable = forwardRef<RankingsTableHandle, RankingsTableProps>
   }, [filteredRows, sortCol]);
 
   const handleSort = (col: SortColumn) => {
+    _savedSortCol = col;
     setSortCol(col);
   };
 

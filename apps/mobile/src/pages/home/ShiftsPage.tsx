@@ -100,22 +100,14 @@ export function ShiftsPage() {
           };
         });
 
-        // Separate upcoming and past shifts
-        const upcomingShifts = shiftsWithTimes
-          .filter((s) => s.time && s.time > now)
+        // Show all shifts: upcoming first (sorted by time), then past (most recent first)
+        const upcoming = shiftsWithTimes
+          .filter((s) => !s.time || s.time > now)
           .sort((a, b) => (a.time || 0) - (b.time || 0));
-
-        // If there are upcoming shifts, show only those
-        // Otherwise, show all shifts sorted by time
-        if (upcomingShifts.length > 0) {
-          setShifts(upcomingShifts);
-        } else {
-          // Show all shifts sorted by time (most recent first for past matches)
-          const allShiftsSorted = shiftsWithTimes.sort(
-            (a, b) => (b.time || 0) - (a.time || 0)
-          );
-          setShifts(allShiftsSorted);
-        }
+        const past = shiftsWithTimes
+          .filter((s) => s.time && s.time <= now)
+          .sort((a, b) => (b.time || 0) - (a.time || 0));
+        setShifts([...past, ...upcoming]);
       })
       .catch((error) => {
         console.error("Failed to load shifts:", error);

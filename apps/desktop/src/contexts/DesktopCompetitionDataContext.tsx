@@ -313,12 +313,16 @@ export function DesktopCompetitionDataProvider({
 
     const unregister = registerRefreshCallback(() => {
       // Rust sync is triggered once centrally in DesktopRealtimeContext.
-      // Re-read SQLite at 7s (fast: picklists/match data ready), 15s (slow: TBA/Statbotics),
-      // and 25s (queued-trigger case: trigger arrived while Rust was mid-sync, new sync
-      // starts after current one finishes ~15-20s later).
+      // Re-read SQLite at multiple delays to handle two scenarios:
+      // - Fast case (7s, 15s): no periodic sync running, triggered sync completes quickly
+      // - Slow case (40s, 55s): periodic sync was mid-run when trigger arrived;
+      //   periodic sync takes ~15-30s for TBA/Statbotics, triggered sync starts after,
+      //   then needs ~5-8s for Supabase pulls → data ready at ~35-40s total.
       setTimeout(() => fetchDataRef.current?.(), 7_000);
       setTimeout(() => fetchDataRef.current?.(), 15_000);
       setTimeout(() => fetchDataRef.current?.(), 25_000);
+      setTimeout(() => fetchDataRef.current?.(), 40_000);
+      setTimeout(() => fetchDataRef.current?.(), 55_000);
     });
 
     return unregister;

@@ -29,6 +29,13 @@ export class TauriWebSocketWrapper {
 
   readyState = 0; // CONNECTING
 
+  // Standard WebSocket interface properties Supabase's RealtimeClient may inspect
+  url: string;
+  protocol: string = "";
+  extensions: string = "";
+  bufferedAmount: number = 0;
+  binaryType: BinaryType = "blob";
+
   onopen: EventHandler | null = null;
   onmessage: MessageHandler | null = null;
   onclose: CloseHandler | null = null;
@@ -40,6 +47,8 @@ export class TauriWebSocketWrapper {
   private listeners = new Map<string, Set<Function>>();
 
   constructor(url: string, _protocols?: string | string[]) {
+    this.url = url;
+
     TauriWS.connect(url)
       .then((ws) => {
         this.ws = ws;
@@ -57,6 +66,8 @@ export class TauriWebSocketWrapper {
             this.onmessage?.(evt);
             this.listeners.get("message")?.forEach((fn) => fn(evt));
           } else if (msg.type === "Close") {
+            // Guard: if close() was already called client-side, don't double-fire onclose
+            if (this.readyState === 3) return;
             this.readyState = 3; // CLOSED
             const evt = new CloseEvent("close", {
               code: msg.data?.code ?? 1000,
@@ -89,20 +100,28 @@ export class TauriWebSocketWrapper {
       // Queue until connection opens
       this.sendQueue.push(text);
     }
+    // readyState 2 (CLOSING) or 3 (CLOSED): silently drop (matches native WS behavior)
   }
 
   close(_code?: number, _reason?: string): void {
     if (this.readyState === 3) return;
     this.readyState = 2; // CLOSING
-    if (this.ws) {
-      this.ws
-        .disconnect()
-        .catch(console.error)
-        .finally(() => {
-          this.readyState = 3;
-        });
-    } else {
+
+    // Always fire onclose after disconnect, whether the server acknowledges or not.
+    // Supabase's Phoenix client waits for onclose to finalize cleanup before reconnecting.
+    // Without this, the socket hangs in CLOSING state if the server doesn't send a close frame.
+    const fireClose = () => {
+      if (this.readyState === 3) return; // Already fired by server-side Close message
       this.readyState = 3;
+      const evt = new CloseEvent("close", { code: 1000, reason: "", wasClean: true });
+      this.onclose?.(evt);
+      this.listeners.get("close")?.forEach((fn) => fn(evt));
+    };
+
+    if (this.ws) {
+      this.ws.disconnect().catch(console.error).finally(fireClose);
+    } else {
+      fireClose();
     }
   }
 

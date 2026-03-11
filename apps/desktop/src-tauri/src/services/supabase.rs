@@ -42,6 +42,12 @@ impl SupabaseService {
         }
     }
 
+    /// Returns true if a user JWT has been set (i.e. the frontend has called set_user_jwt).
+    /// Used by process_sync_queue to defer writes until auth is ready.
+    pub fn has_jwt(&self) -> bool {
+        self.jwt.read().unwrap().is_some()
+    }
+
     /// Return a JWT-authenticated client if a user JWT is set, otherwise the anon-key client
     fn auth_client(&self) -> Postgrest {
         let guard = self.jwt.read().unwrap();

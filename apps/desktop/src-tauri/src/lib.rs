@@ -28,6 +28,9 @@ pub fn run() {
     let _ = dotenvy::dotenv();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new()
+            .level(log::LevelFilter::Info)
+            .build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_websocket::init())
@@ -141,6 +144,7 @@ pub fn run() {
             commands::config::save_config,
             commands::config::get_config,
             commands::config::set_user_jwt,
+            commands::config::clear_user_jwt,
             commands::db::get_teams,
             commands::db::get_schedule,
             commands::db::get_picklists,
@@ -188,8 +192,13 @@ impl AppState {
         // Read config from store
         let config = store.get_config();
 
-        // JWT Arc shared between AppState (written by set_user_jwt command) and SupabaseService (read on every write)
-        let user_jwt_shared: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+        // JWT Arc shared between AppState (written by set_user_jwt command) and SupabaseService (read on every write).
+        // Restore from store so sync starts authenticated immediately (no startup race).
+        let persisted_jwt: Option<String> = store.get("user_jwt");
+        if persisted_jwt.is_some() {
+            println!("[Auth] Restored persisted JWT from store — sync starts authenticated");
+        }
+        let user_jwt_shared: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(persisted_jwt));
 
         // Current event Arc shared between AppState (written by save_config) and SyncService (read per sync cycle)
         let initial_event = if config.event_key.is_empty() {

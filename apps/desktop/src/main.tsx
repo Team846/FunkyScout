@@ -1,5 +1,24 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
+
+// In production Tauri builds, pipe console output → tauri-plugin-log → log file on disk.
+// This lets us read logs from ~/Library/Logs/funkyscout/ (macOS) or platform equivalent
+// without needing DevTools, which aren't available in a signed .app bundle.
+// In dev (http://localhost) this is skipped — browser DevTools console works fine.
+//
+// Top-level await ensures the override is in place BEFORE React renders so no early
+// logs (e.g. "[DesktopRealtime] ✅ Realtime subscribed") are missed in the log file.
+if (window.location.protocol === "tauri:") {
+  const { info, warn, error } = await import("@tauri-apps/plugin-log");
+  const fmt = (args: unknown[]) =>
+    args.map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+  const _log = console.log.bind(console);
+  const _warn = console.warn.bind(console);
+  const _error = console.error.bind(console);
+  console.log = (...args) => { _log(...args); info(fmt(args)).catch(() => {}); };
+  console.warn = (...args) => { _warn(...args); warn(fmt(args)).catch(() => {}); };
+  console.error = (...args) => { _error(...args); error(fmt(args)).catch(() => {}); };
+}
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import "@shadcn/ui/styles.css";
 import "./index.css";

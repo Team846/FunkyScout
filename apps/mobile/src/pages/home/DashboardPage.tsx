@@ -144,11 +144,13 @@ export function DashboardPage() {
         );
 
         // Only look for upcoming matches from Nexus
+        // Use a 2-minute buffer so a match stays "upcoming" even if its est time just passed
         const now = Date.now();
+        const MATCH_BUFFER_MS = 2 * 60 * 1000;
         const upcomingMatches = ourMatches.filter(
           (match: NexusMatch) =>
             !match.times.actualOnFieldTime &&
-            match.times.estimatedStartTime > now
+            match.times.estimatedStartTime > now - MATCH_BUFFER_MS
         );
 
         if (upcomingMatches.length > 0) {
@@ -398,9 +400,10 @@ export function DashboardPage() {
           untilBreak,
         });
 
-        // Find next upcoming shift
+        // Find next upcoming shift (2-minute buffer so shift stays "upcoming" briefly after est time)
+        const SHIFT_BUFFER_MS = 2 * 60 * 1000;
         const upcomingShifts = shiftsWithTimes
-          .filter((s) => s.matchTime && s.matchTime > now)
+          .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
           .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
 
         let shiftToDisplay;
@@ -412,7 +415,7 @@ export function DashboardPage() {
         } else {
           // Use most recent past shift
           const pastShifts = shiftsWithTimes
-            .filter((s) => s.matchTime && s.matchTime <= now)
+            .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
             .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
 
           if (pastShifts.length > 0) {

@@ -148,42 +148,48 @@ function specifyMatches(
   matchKeys: string[],
 ): CycleAssignment[] {
   const result: CycleAssignment[] = [];
-  // Ensure each (match, team) slot is assigned to at most one scouter.
-  // If the group has more scouters than teams, extra scouters rest that match.
   const assignedSlots = new Set<string>();
+  // Track assignment count per scouter for even distribution
+  const assignmentCount = new Map<string, number>();
+  for (const group of groupedScouters) {
+    for (const s of group) assignmentCount.set(s.uid, 0);
+  }
 
-  for (let groupIdx = 0; groupIdx < groupedScouters.length; groupIdx++) {
-    if (groupIdx >= matches.length) break;
+  // Build a Set<number> per group for O(1) "does this group work match m?" lookup
+  const groupMatchSets: Set<number>[] = matches.map((list) => new Set(list));
 
-    const scouters = groupedScouters[groupIdx];
-    const groupMatchList = matches[groupIdx];
+  // Process match by match so we can sort working scouters by assignment count
+  // before assigning teams — this prevents early groups from monopolizing slots
+  // and ensures shifts are distributed evenly when scouters > teams per match.
+  for (let matchIdx = 0; matchIdx < sortedMatches.length; matchIdx++) {
+    const m = matchIdx + 1; // 1-indexed
+    const matchKey = matchKeys[matchIdx] ?? `qm${m}`;
+    const teamsAvailable = sortedMatches[matchIdx];
+    if (!teamsAvailable || teamsAvailable.length === 0) continue;
 
-    for (let scouterIdxInGroup = 0; scouterIdxInGroup < scouters.length; scouterIdxInGroup++) {
-      const scouter = scouters[scouterIdxInGroup];
-      for (let matchIndex = 0; matchIndex < groupMatchList.length; matchIndex++) {
-        const match = groupMatchList[matchIndex];
-        if (match > sortedMatches.length) continue;
+    // Collect all scouters whose group works this match
+    const working: Scouter[] = [];
+    for (let gIdx = 0; gIdx < groupedScouters.length; gIdx++) {
+      if (gIdx >= groupMatchSets.length) break;
+      if (groupMatchSets[gIdx].has(m)) {
+        working.push(...groupedScouters[gIdx]);
+      }
+    }
 
-        const teamsAvailable = sortedMatches[match - 1];
-        if (!teamsAvailable || teamsAvailable.length === 0) continue;
+    // Sort by fewest assignments first so the distribution stays even
+    working.sort((a, b) => (assignmentCount.get(a.uid) ?? 0) - (assignmentCount.get(b.uid) ?? 0));
 
-        const matchKey = matchKeys[match - 1] ?? `qm${match}`;
-
-        // Find the next un-assigned team for this match, offset by scouter position.
-        let assigned = false;
-        for (let offset = 0; offset < teamsAvailable.length; offset++) {
-          const teamIdx = (matchIndex + scouterIdxInGroup + offset) % teamsAvailable.length;
-          const team = teamsAvailable[teamIdx];
-          const slotKey = `${matchKey}|${team}`;
-          if (!assignedSlots.has(slotKey)) {
-            assignedSlots.add(slotKey);
-            result.push({ uid: scouter.uid, name: scouter.name, teamKey: team, matchKey });
-            assigned = true;
-            break;
-          }
-        }
-        // If all teams are taken, this scouter rests this match (no push).
-        void assigned;
+    // Assign teams in priority order (sortedMatches already sorted by team priority)
+    let teamIdx = 0;
+    for (const scouter of working) {
+      if (teamIdx >= teamsAvailable.length) break;
+      const team = teamsAvailable[teamIdx];
+      const slotKey = `${matchKey}|${team}`;
+      if (!assignedSlots.has(slotKey)) {
+        assignedSlots.add(slotKey);
+        assignmentCount.set(scouter.uid, (assignmentCount.get(scouter.uid) ?? 0) + 1);
+        result.push({ uid: scouter.uid, name: scouter.name, teamKey: team, matchKey });
+        teamIdx++;
       }
     }
   }

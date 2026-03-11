@@ -16,6 +16,14 @@ import { ScheduleTable, type ScheduleTableHandle } from "./-components/ScheduleT
 import { RankingsTable, type RankingsTableHandle } from "./-components/RankingsTable";
 import { RightPanel } from "./-components/RightPanel";
 
+// ─── Module-level UI state persistence (survives tab navigation) ─────────────
+interface DashboardUIState {
+  activeTab: string;
+  scheduleSearch: string;
+  rankingsSearch: string;
+}
+let _dashboardUIState: DashboardUIState | null = null;
+
 export const Route = createFileRoute("/dashboard/")({
   beforeLoad: async () => {
     // Fast offline-first check — see apps/desktop/src/routes/index.tsx for explanation.
@@ -58,10 +66,16 @@ function DashboardPage() {
 
   const scheduleTableRef = useRef<ScheduleTableHandle>(null);
   const rankingsTableRef = useRef<RankingsTableHandle>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("schedule");
+  const [scheduleSearch, setScheduleSearch] = useState(() => _dashboardUIState?.scheduleSearch ?? "");
+  const [rankingsSearch, setRankingsSearch] = useState(() => _dashboardUIState?.rankingsSearch ?? "");
+  const [activeTab, setActiveTab] = useState(() => _dashboardUIState?.activeTab ?? "schedule");
+  // Persist UI state synchronously on every render
+  _dashboardUIState = { activeTab, scheduleSearch, rankingsSearch };
 
   const homeTeamKey = `frc${homeTeam}`;
+
+  const searchQuery = activeTab === "schedule" ? scheduleSearch : rankingsSearch;
+  const setSearchQuery = activeTab === "schedule" ? setScheduleSearch : setRankingsSearch;
 
   const searchPlaceholder = useMemo(
     () =>
@@ -80,7 +94,7 @@ function DashboardPage() {
       <div className="flex-1 flex flex-col overflow-hidden pr-2">
         <Tabs
           value={activeTab}
-          onValueChange={(v) => { setActiveTab(v); setSearchQuery(""); }}
+          onValueChange={(v) => setActiveTab(v)}
           className="flex flex-col h-full gap-0"
         >
           {/* Tab header */}
@@ -134,7 +148,7 @@ function DashboardPage() {
                 schedule={schedule}
                 tbaSchedule={tbaSchedule}
                 tbaTeams={tbaTeams}
-                searchQuery={searchQuery}
+                searchQuery={scheduleSearch}
                 homeTeamKey={homeTeamKey}
                 onMatchClick={handleMatchClick}
                 onTeamClick={handleTeamClick}
@@ -149,7 +163,7 @@ function DashboardPage() {
                 ref={rankingsTableRef}
                 tbaTeams={tbaTeams}
                 matchData={matchScoutingData}
-                searchQuery={searchQuery}
+                searchQuery={rankingsSearch}
                 tbaClimbData={tbaClimbData}
                 useTbaClimb={useTbaClimb}
                 homeTeamKey={homeTeamKey}

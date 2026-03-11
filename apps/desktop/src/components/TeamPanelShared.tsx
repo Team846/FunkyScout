@@ -1362,13 +1362,17 @@ export function FullTeamPanel({
   const matchOverviewTbaClimb = selectedMatch ? tbaClimbData[selectedMatch.match]?.[teamKey] ?? null : null;
   const matchOverviewOrientShort = (o: "left" | "right" | "center" | null) =>
     o === "left" ? "(L)" : o === "right" ? "(R)" : o === "center" ? "(C)" : "";
-  const matchOverviewClimbA = useTbaClimb && matchOverviewTbaClimb?.auto_climb
-    ? `${matchOverviewTbaClimb.auto_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.autoClimbOrientation ?? null)}`.trim()
+  const matchOverviewClimbA = useTbaClimb && matchOverviewTbaClimb
+    ? matchOverviewTbaClimb.auto_climb
+      ? `${matchOverviewTbaClimb.auto_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.autoClimbOrientation ?? null)}`.trim()
+      : "None"
     : matchOverviewStats?.climb?.hasAutoClimb
       ? `Yes ${matchOverviewOrientShort(matchOverviewStats.climb.autoClimbOrientation)}`.trim()
       : "None";
-  const matchOverviewClimbT = useTbaClimb && matchOverviewTbaClimb?.teleop_climb
-    ? `${matchOverviewTbaClimb.teleop_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+  const matchOverviewClimbT = useTbaClimb && matchOverviewTbaClimb
+    ? matchOverviewTbaClimb.teleop_climb
+      ? `${matchOverviewTbaClimb.teleop_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+      : "None"
     : matchOverviewStats?.climb?.level
       ? `${matchOverviewStats.climb.level} ${matchOverviewOrientShort(matchOverviewStats.climb.teleopClimbOrientation)}`.trim()
       : "None";
@@ -1864,13 +1868,17 @@ export function FullTeamPanel({
                     const scouterName = m.name?.trim() || "—";
                     const orientShort = (o: "left" | "right" | "center" | null) =>
                       o === "left" ? "(L)" : o === "right" ? "(R)" : o === "center" ? "(C)" : "";
-                    const climbA = useTbaClimb && tbaClimb?.auto_climb
-                      ? `${tbaClimb.auto_climb} ${orientShort(stats?.climb?.autoClimbOrientation ?? null)}`.trim()
+                    const climbA = useTbaClimb && tbaClimb
+                      ? tbaClimb.auto_climb
+                        ? `${tbaClimb.auto_climb} ${orientShort(stats?.climb?.autoClimbOrientation ?? null)}`.trim()
+                        : "None"
                       : stats?.climb?.hasAutoClimb
                         ? `Yes ${orientShort(stats.climb.autoClimbOrientation)}`.trim()
                         : "None";
-                    const climbT = useTbaClimb && tbaClimb?.teleop_climb
-                      ? `${tbaClimb.teleop_climb} ${orientShort(stats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+                    const climbT = useTbaClimb && tbaClimb
+                      ? tbaClimb.teleop_climb
+                        ? `${tbaClimb.teleop_climb} ${orientShort(stats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+                        : "None"
                       : stats?.climb?.level
                         ? `${stats.climb.level} ${orientShort(stats.climb.teleopClimbOrientation)}`.trim()
                         : "None";
@@ -3045,13 +3053,17 @@ export function ExpandedTeamPanel({
   const matchOverviewTbaClimb = selectedMatch ? tbaClimbData[selectedMatch.match]?.[teamKey] ?? null : null;
   const matchOverviewOrientShort = (o: "left" | "right" | "center" | null) =>
     o === "left" ? "(L)" : o === "right" ? "(R)" : o === "center" ? "(C)" : "";
-  const matchOverviewClimbA = useTbaClimb && matchOverviewTbaClimb?.auto_climb
-    ? `${matchOverviewTbaClimb.auto_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.autoClimbOrientation ?? null)}`.trim()
+  const matchOverviewClimbA = useTbaClimb && matchOverviewTbaClimb
+    ? matchOverviewTbaClimb.auto_climb
+      ? `${matchOverviewTbaClimb.auto_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.autoClimbOrientation ?? null)}`.trim()
+      : "None"
     : matchOverviewStats?.climb?.hasAutoClimb
       ? `Yes ${matchOverviewOrientShort(matchOverviewStats.climb.autoClimbOrientation)}`.trim()
       : "None";
-  const matchOverviewClimbT = useTbaClimb && matchOverviewTbaClimb?.teleop_climb
-    ? `${matchOverviewTbaClimb.teleop_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+  const matchOverviewClimbT = useTbaClimb && matchOverviewTbaClimb
+    ? matchOverviewTbaClimb.teleop_climb
+      ? `${matchOverviewTbaClimb.teleop_climb} ${matchOverviewOrientShort(matchOverviewStats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+      : "None"
     : matchOverviewStats?.climb?.level
       ? `${matchOverviewStats.climb.level} ${matchOverviewOrientShort(matchOverviewStats.climb.teleopClimbOrientation)}`.trim()
       : "None";
@@ -3421,11 +3433,15 @@ export function ExpandedTeamPanel({
                 const scouterName = m.name?.trim() || "—";
                 const orientShort = (o: "left" | "right" | "center" | null) =>
                   o === "left" ? "(L)" : o === "right" ? "(R)" : o === "center" ? "(C)" : "";
-                const climbA = useTbaClimb && tbaClimb?.auto_climb
-                  ? `${tbaClimb.auto_climb} ${orientShort(stats?.climb?.autoClimbOrientation ?? null)}`.trim()
+                const climbA = useTbaClimb && tbaClimb
+                  ? tbaClimb.auto_climb
+                    ? `${tbaClimb.auto_climb} ${orientShort(stats?.climb?.autoClimbOrientation ?? null)}`.trim()
+                    : "None"
                   : stats?.climb?.hasAutoClimb ? `Yes ${orientShort(stats.climb.autoClimbOrientation)}`.trim() : "None";
-                const climbT = useTbaClimb && tbaClimb?.teleop_climb
-                  ? `${tbaClimb.teleop_climb} ${orientShort(stats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+                const climbT = useTbaClimb && tbaClimb
+                  ? tbaClimb.teleop_climb
+                    ? `${tbaClimb.teleop_climb} ${orientShort(stats?.climb?.teleopClimbOrientation ?? null)}`.trim()
+                    : "None"
                   : stats?.climb?.level ? `${stats.climb.level} ${orientShort(stats.climb.teleopClimbOrientation)}`.trim() : "None";
                 const ratings = stats?.ratings;
                 const avgRating = ratings && (() => {

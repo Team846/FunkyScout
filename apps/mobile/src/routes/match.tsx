@@ -32,7 +32,12 @@ const formatMatchTime = (timestamp: number) => {
 export function Match() {
   const navigate = useNavigate();
   const { teams, loading: teamsLoading } = useTeamData();
-  const { schedule, nexusMatches, tbaSchedule, loading: scheduleLoading } = useCompetition();
+  const {
+    schedule,
+    nexusMatches,
+    tbaSchedule,
+    loading: scheduleLoading,
+  } = useCompetition();
 
   const loading = teamsLoading || scheduleLoading;
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
@@ -60,7 +65,7 @@ export function Match() {
       const bNum = parseInt(b.replace(/\D/g, ""), 10) || 0;
 
       return aNum - bNum;
-    },
+    }
   );
 
   // Get teams for selected match
@@ -144,16 +149,19 @@ export function Match() {
                   .filter((match) =>
                     formatMatchKey(match)
                       .toLowerCase()
-                      .includes(matchQuery.toLowerCase()),
+                      .includes(matchQuery.toLowerCase())
                   )
                   .map((match) => {
                     // Try to find nexus match for time data, fall back to tbaSchedule est_time
                     const matchLabel = formatMatchKey(match);
                     const nexusMatch = nexusMatches.find(
-                      (nm) => nm.label === matchLabel,
+                      (nm) => nm.label === matchLabel
                     );
-                    const matchTime = nexusMatch?.times.estimatedStartTime
-                      ?? (tbaSchedule[match]?.est_time ? tbaSchedule[match].est_time * 1000 : null);
+                    const matchTime =
+                      nexusMatch?.times.estimatedStartTime ??
+                      (tbaSchedule[match]?.est_time
+                        ? tbaSchedule[match].est_time * 1000
+                        : null);
                     return (
                       <div
                         key={match}
@@ -189,7 +197,7 @@ export function Match() {
                 {uniqueMatches.filter((match) =>
                   formatMatchKey(match)
                     .toLowerCase()
-                    .includes(matchQuery.toLowerCase()),
+                    .includes(matchQuery.toLowerCase())
                 ).length === 0 && (
                   <div className="px-6 py-4">
                     <p className="text-muted-foreground">No match found.</p>
@@ -212,10 +220,11 @@ export function Match() {
                   {selectedTeam
                     ? (() => {
                         const entry = teamsInMatch.find(
-                          (e) => e.team === selectedTeam,
+                          (e) => e.team === selectedTeam
                         );
                         const team = teams.find(
-                          (t: { key: string; num?: number; name?: string }) => t.key === selectedTeam,
+                          (t: { key: string; num?: number; name?: string }) =>
+                            t.key === selectedTeam
                         );
                         return entry ? (
                           <span className="flex w-full min-w-0 items-center gap-1">
@@ -253,9 +262,13 @@ export function Match() {
                         </SelectLabel>
                         {redTeamsInMatch.map((entry) => {
                           const team = teams.find(
-                            (t: { key: string; num?: number; name?: string }) => t.key === entry.team,
+                            (t: { key: string; num?: number; name?: string }) =>
+                              t.key === entry.team
                           );
-                          const badge = getAssignmentBadge(entry.team, entry.match);
+                          const badge = getAssignmentBadge(
+                            entry.team,
+                            entry.match
+                          );
                           return (
                             <SelectItem
                               key={`${entry.match}-${entry.team}`}
@@ -294,9 +307,13 @@ export function Match() {
                         </SelectLabel>
                         {blueTeamsInMatch.map((entry) => {
                           const team = teams.find(
-                            (t: { key: string; num?: number; name?: string }) => t.key === entry.team,
+                            (t: { key: string; num?: number; name?: string }) =>
+                              t.key === entry.team
                           );
-                          const badge = getAssignmentBadge(entry.team, entry.match);
+                          const badge = getAssignmentBadge(
+                            entry.team,
+                            entry.match
+                          );
                           return (
                             <SelectItem
                               key={`${entry.match}-${entry.team}`}
@@ -361,7 +378,9 @@ export function Match() {
           </div>
           {selectedTeam && selectedMatch && !selectedAlliance && (
             <p className="text-xs text-muted-foreground text-center">
-              {loading ? "Schedule still loading…" : "Refresh data and try again"}
+              {loading
+                ? "Schedule still loading…"
+                : "Refresh data and try again"}
             </p>
           )}
         </div>
@@ -371,89 +390,110 @@ export function Match() {
 
         {loading ? (
           <p className="text-muted-foreground">Loading matches...</p>
-        ) : (() => {
-          // Deduplicate by match key, keeping only the user's assigned entry per match
-          const now = Date.now();
-          const getEffectiveTime = (s: (typeof schedule)[0]): number | null =>
-            s.est_time || (tbaSchedule[s.match]?.est_time ?? null);
-          const seen = new Set<string>();
-          const assignedShifts = schedule
-            .filter((s) => s.uid === currentUserUid)
-            .filter((s) => {
-              const t = getEffectiveTime(s);
-              if (!t) return true; // no time info = include (can't determine past/future)
-              return t * 1000 >= now; // only future matches
-            })
-            .sort((a, b) => {
-              const ta = getEffectiveTime(a) ?? Infinity;
-              const tb = getEffectiveTime(b) ?? Infinity;
-              return ta - tb;
-            })
-            .filter((s) => {
-              if (seen.has(s.match)) return false;
-              seen.add(s.match);
-              return true;
-            })
-            .slice(0, 3);
+        ) : (
+          (() => {
+            // Deduplicate by match key, keeping only the user's assigned entry per match
+            const now = Date.now();
+            const MATCH_BUFFER_MS = 2 * 60 * 1000;
+            const getEffectiveTime = (s: (typeof schedule)[0]): number | null =>
+              s.est_time || (tbaSchedule[s.match]?.est_time ?? null);
+            const seen = new Set<string>();
+            const assignedShifts = schedule
+              .filter((s) => s.uid === currentUserUid)
+              .filter((s) => {
+                const t = getEffectiveTime(s);
+                if (!t) return true; // no time info = include (can't determine past/future)
+                return t * 1000 >= now - MATCH_BUFFER_MS; // keep for 2 min after est start
+              })
+              .sort((a, b) => {
+                const ta = getEffectiveTime(a) ?? Infinity;
+                const tb = getEffectiveTime(b) ?? Infinity;
+                return ta - tb;
+              })
+              .filter((s) => {
+                if (seen.has(s.match)) return false;
+                seen.add(s.match);
+                return true;
+              })
+              .slice(0, 3);
 
-          if (assignedShifts.length === 0) {
-            return <p className="text-muted-foreground">No assigned upcoming matches</p>;
-          }
+            if (assignedShifts.length === 0) {
+              return (
+                <p className="text-muted-foreground">
+                  No assigned upcoming matches
+                </p>
+              );
+            }
 
-          return (
-            <div className="flex flex-col">
-              {assignedShifts.map((shift) => {
-                const matchLabel = formatMatchKey(shift.match);
-                const nexusMatch = nexusMatches.find((nm) => nm.label === matchLabel);
-                const matchTime = nexusMatch?.times.estimatedStartTime
-                  ?? (shift.est_time ? shift.est_time * 1000 : null)
-                  ?? (tbaSchedule[shift.match]?.est_time ? tbaSchedule[shift.match].est_time * 1000 : null);
-                const team = teams.find((t: { key: string; num?: number }) => t.key === shift.team);
+            return (
+              <div className="flex flex-col">
+                {assignedShifts.map((shift) => {
+                  const matchLabel = formatMatchKey(shift.match);
+                  const nexusMatch = nexusMatches.find(
+                    (nm) => nm.label === matchLabel
+                  );
+                  const matchTime =
+                    nexusMatch?.times.estimatedStartTime ??
+                    (shift.est_time ? shift.est_time * 1000 : null) ??
+                    (tbaSchedule[shift.match]?.est_time
+                      ? tbaSchedule[shift.match].est_time * 1000
+                      : null);
+                  const team = teams.find(
+                    (t: { key: string; num?: number }) => t.key === shift.team
+                  );
 
-                return (
-                  <div
-                    key={shift.match}
-                    className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
-                    onClick={() => {
-                      setSelectedMatch(shift.match);
-                      setMatchQuery(matchLabel);
-                      setSelectedTeam(shift.team);
-                    }}
-                  >
-                    <div className="flex w-full items-center justify-between">
-                      <div>
-                        <p className="text-base">
-                          <span className="font-bold text-primary">{matchLabel}</span>
-                          {team && (
-                            <span className="text-foreground"> | Team {team.num}</span>
-                          )}
-                        </p>
-                        <p className="mt-1 text-sm text-border">
-                          {matchTime ? formatMatchTime(matchTime) : "Time not available"}
-                        </p>
+                  return (
+                    <div
+                      key={shift.match}
+                      className="rounded-2xl bg-muted px-5 py-5 mb-3 last:mb-0 cursor-pointer"
+                      onClick={() => {
+                        setSelectedMatch(shift.match);
+                        setMatchQuery(matchLabel);
+                        setSelectedTeam(shift.team);
+                      }}
+                    >
+                      <div className="flex w-full items-center justify-between">
+                        <div>
+                          <p className="text-base">
+                            <span className="font-bold text-primary">
+                              {matchLabel}
+                            </span>
+                            {team && (
+                              <span className="text-foreground">
+                                {" "}
+                                | Team {team.num}
+                              </span>
+                            )}
+                          </p>
+                          <p className="mt-1 text-sm text-border">
+                            {matchTime
+                              ? formatMatchTime(matchTime)
+                              : "Time not available"}
+                          </p>
+                        </div>
+                        <svg
+                          viewBox="0 0 24 24"
+                          style={{ width: 20, height: 20 }}
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M9 18L15 12L9 6"
+                            stroke="currentColor"
+                            className="text-primary"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </div>
-                      <svg
-                        viewBox="0 0 24 24"
-                        style={{ width: 20, height: 20 }}
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          d="M9 18L15 12L9 6"
-                          stroke="currentColor"
-                          className="text-primary"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+                  );
+                })}
+              </div>
+            );
+          })()
+        )}
 
         <p className="text-sm text-muted-foreground text-center mt-4">
           The match does NOT start after clicking the arrow button. Please lock

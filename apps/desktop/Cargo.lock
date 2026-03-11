@@ -1435,6 +1435,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dotenvy",
+ "log",
  "migration",
  "once_cell",
  "postgrest",

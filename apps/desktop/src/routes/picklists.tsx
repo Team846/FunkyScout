@@ -25,6 +25,14 @@ export const Route = createFileRoute("/picklists")({
 type PicklistType = "public" | "private" | "default";
 type SortBy = "date" | "alphabetical";
 
+// ─── Module-level UI state persistence (survives tab navigation) ─────────────
+interface PicklistsUIState {
+  sortBy: SortBy;
+  showOnlyMine: boolean;
+  search: string;
+}
+let _picklistsUIState: PicklistsUIState | null = null;
+
 const TYPE_LABELS: Record<PicklistType, string> = {
   private: "Private",
   public: "Public",
@@ -51,12 +59,14 @@ function PicklistsPage() {
 
   // Settings
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showOnlyMine, setShowOnlyMine] = useState(false);
+  const [showOnlyMine, setShowOnlyMine] = useState(() => _picklistsUIState?.showOnlyMine ?? false);
   const [defaultVisibility, setDefaultVisibility] = useState<PicklistType>("private");
-  const [sortBy, setSortBy] = useState<SortBy>("date");
+  const [sortBy, setSortBy] = useState<SortBy>(() => _picklistsUIState?.sortBy ?? "date");
 
   // UI
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => _picklistsUIState?.search ?? "");
+  // Persist UI state synchronously on every render
+  _picklistsUIState = { sortBy, showOnlyMine, search };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");

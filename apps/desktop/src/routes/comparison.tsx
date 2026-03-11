@@ -57,6 +57,8 @@ interface ComparisonUIState {
   graphTeams: string[];
   comparisonMetrics: string[];
   graphMetrics: string[];
+  sortKey: string;
+  searchTeam: string;
 }
 let _compUIState: ComparisonUIState | null = null;
 
@@ -465,12 +467,12 @@ function ComparisonPage() {
   const [showGraphPicker, setShowGraphPicker] = useState(false);
   const [statOverviewMetric, setStatOverviewMetric] = useState("overview");
   const [showPercentiles, setShowPercentiles] = useState<Record<string, boolean>>({});
-  const [searchTeam, setSearchTeam] = useState("");
-  const [sortKey, setSortKey] = useState("rank");
+  const [searchTeam, setSearchTeam] = useState(() => _compUIState?.searchTeam ?? "");
+  const [sortKey, setSortKey] = useState(() => _compUIState?.sortKey ?? "rank");
   const [sortOpen, setSortOpen] = useState(false);
   // Persist UI state synchronously on every render so a tab switch mid-flight
   // never reads stale data (useEffect fires after paint, too late if unmounting).
-  _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics };
+  _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics, sortKey, searchTeam };
 
   // ── Sorted + filtered team list ──
   const sortedTeams = useMemo(() => {

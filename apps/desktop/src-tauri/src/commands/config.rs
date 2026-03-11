@@ -45,20 +45,41 @@ pub async fn get_config(state: State<'_, Mutex<crate::AppState>>) -> Result<AppC
 }
 
 /// Set user JWT token for Supabase authentication
-/// Writes to the shared Arc so the background SyncService can use it for RLS-authenticated writes
+/// Writes to the shared Arc so the background SyncService can use it for RLS-authenticated writes.
+/// Also persists the JWT to app_store.json so it can be restored at next startup (eliminates
+/// the race window between Rust startup and the React effect calling this command).
 #[tauri::command]
 pub async fn set_user_jwt(
     state: State<'_, Mutex<crate::AppState>>,
     jwt: String,
 ) -> Result<(), String> {
-    // Clone the Arc while holding the Mutex briefly, then release it
+    // Clone the Arc and store handle while holding the Mutex briefly, then release it
     let jwt_arc = {
         let app_state = state.lock().unwrap();
+        // Persist to store so we can restore on next startup
+        app_state.app_store.store.set("user_jwt", serde_json::Value::String(jwt.clone()));
+        let _ = app_state.app_store.store.save().map_err(|e| eprintln!("[Auth] Failed to persist JWT: {}", e));
         Arc::clone(&app_state.user_jwt_shared)
     }; // Mutex released here — safe to await
 
     // Write the JWT to the shared Arc (accessible by SupabaseService without holding AppState mutex)
     *jwt_arc.write().unwrap() = Some(jwt);
-    println!("[Auth] User JWT token updated (shared with SyncService)");
+    println!("[Auth] User JWT token updated (shared with SyncService, persisted to store)");
+    Ok(())
+}
+
+/// Clear the persisted JWT token (called on logout)
+#[tauri::command]
+pub async fn clear_user_jwt(
+    state: State<'_, Mutex<crate::AppState>>,
+) -> Result<(), String> {
+    let jwt_arc = {
+        let app_state = state.lock().unwrap();
+        app_state.app_store.store.delete("user_jwt");
+        let _ = app_state.app_store.store.save().map_err(|e| eprintln!("[Auth] Failed to clear persisted JWT: {}", e));
+        Arc::clone(&app_state.user_jwt_shared)
+    };
+    *jwt_arc.write().unwrap() = None;
+    println!("[Auth] User JWT token cleared");
     Ok(())
 }

@@ -43,7 +43,12 @@ const RootLayout = () => {
     // new user sees fresh data immediately instead of waiting up to 2 minutes.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        invoke("clear_user_jwt").catch(console.error);
+        console.log("[Auth] Cleared JWT from Rust backend on sign out");
+        return;
+      }
       if (session?.access_token) {
         invoke("set_user_jwt", { jwt: session.access_token })
           .then(() => invoke("trigger_sync_now"))

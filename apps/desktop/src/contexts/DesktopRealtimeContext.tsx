@@ -28,13 +28,15 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   // Track whether this is a reconnect (vs. initial subscription) so we can
   // trigger a catch-up sync only when we've been disconnected and come back.
   const hasConnectedOnceRef = useRef(false);
-  // Set to false during effect cleanup so CLOSED doesn't schedule a retry
-  // against an already-removed channel (e.g. on unmount or event change).
+  // Set to false during effect cleanup so retries don't fire against a removed channel.
   const isEffectActiveRef = useRef(false);
 
   // Debouncing state to batch rapid updates
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const updateCountRef = useRef(0);
+
+  // Holds the currently active channel so retries can remove it before creating a new one.
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Register a callback to be called on realtime updates
   const registerRefreshCallback = useCallback((callback: () => void) => {
@@ -58,6 +60,8 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     // Set new timer to batch updates
     debounceTimerRef.current = setTimeout(() => {
       updateCountRef.current = 0;
+
+      console.log(`[DesktopRealtime] 🔄 Triggering sync + ${callbacksRef.current.size} refresh callbacks`);
 
       // Trigger one Rust sync cycle for the whole batch — called here so each
       // consumer context doesn't need to independently invoke it.
@@ -86,6 +90,84 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     hasConnectedOnceRef.current = false;
     isEffectActiveRef.current = true;
 
+    // Stable channel name per event — no incrementing counter. The counter was
+    // causing every retry to be treated as a brand-new (table, filter) subscription
+    // by Supabase's WAL decoder, forcing a cold-start delay on every reconnect.
+    // supabase.removeChannel() on cleanup/retry is sufficient to clear stale state.
+    const createChannel = () => {
+      const name = `desktop-realtime-${currentEvent}`;
+
+      const ch = supabase
+        .channel(name)
+        // Team data (pit scouting submissions from mobile)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "event_team_data" },
+          (payload) => {
+            // Filter client-side — avoids server-side filter cold-start delays.
+            // Server-side filters force Supabase to warm a new WAL decoder slot for
+            // every unique filter value, making the first event after each reconnect slow.
+            //
+            // Also handle 413 (payload too large): Supabase sends errors:["Error 413..."]
+            // and sets new/old to {} when the row is too large to transmit. We can't
+            // filter by event in that case, so refresh conservatively to avoid silent drops.
+            const errors = (payload as any).errors as string[] | undefined;
+            const is413 = errors?.some((e) => e.includes("413"));
+            const ev = (payload.new as any)?.event ?? (payload.old as any)?.event;
+            if (!is413 && ev !== currentEvent) return;
+            if (is413) console.warn("[DesktopRealtime] ⚠️ event_team_data payload too large — refreshing conservatively");
+            console.log(`[DesktopRealtime] 📨 event_team_data ${payload.eventType}`);
+            triggerRefresh();
+          }
+        )
+        // Picklists (admin edits from mobile or other desktop sessions)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "event_picklist" },
+          (payload) => {
+            const errors = (payload as any).errors as string[] | undefined;
+            const is413 = errors?.some((e) => e.includes("413"));
+            const ev = (payload.new as any)?.event ?? (payload.old as any)?.event;
+            if (!is413 && ev !== currentEvent) return;
+            if (is413) console.warn("[DesktopRealtime] ⚠️ event_picklist payload too large — refreshing conservatively");
+            console.log(`[DesktopRealtime] 📨 event_picklist ${payload.eventType}`);
+            triggerRefresh();
+          }
+        )
+        // Match data (match scouting submissions from mobile)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "event_match_data" },
+          (payload) => {
+            const errors = (payload as any).errors as string[] | undefined;
+            const is413 = errors?.some((e) => e.includes("413"));
+            const ev = (payload.new as any)?.event ?? (payload.old as any)?.event;
+            if (!is413 && ev !== currentEvent) return;
+            if (is413) console.warn("[DesktopRealtime] ⚠️ event_match_data payload too large — refreshing conservatively");
+            console.log(`[DesktopRealtime] 📨 event_match_data ${payload.eventType}`);
+            triggerRefresh();
+          }
+        )
+        .subscribe(handleStatus);
+
+      channelRef.current = ch;
+      return ch;
+    };
+
+    const scheduleRetry = () => {
+      retryTimerRef.current = setTimeout(() => {
+        if (!isEffectActiveRef.current) return;
+        // Remove the broken channel before creating a fresh one so Supabase fully
+        // tears down the old Phoenix socket and creates a new transport connection.
+        if (channelRef.current) {
+          supabase.removeChannel(channelRef.current);
+          channelRef.current = null;
+        }
+        console.log("[DesktopRealtime] Retrying with fresh channel...");
+        createChannel();
+      }, 5_000);
+    };
+
     const handleStatus = (status: any, err: any) => {
       if (err) {
         console.error("[DesktopRealtime] Subscription error:", err);
@@ -107,62 +189,21 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           hasConnectedOnceRef.current = true;
         }
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.warn(`[DesktopRealtime] ${status} — retrying in 5s`);
+        console.warn(`[DesktopRealtime] ${status} — retrying in 5s with fresh channel`);
         setIsConnected(false);
-        retryTimerRef.current = setTimeout(() => {
-          console.log("[DesktopRealtime] Retrying subscription...");
-          channel.subscribe(handleStatus);
-        }, 5_000);
+        scheduleRetry();
       } else if (status === "CLOSED") {
         setIsConnected(false);
         // Retry on unexpected closes (spotty network). Skip if the effect is
         // cleaning up — that's an intentional close and the channel is gone.
         if (isEffectActiveRef.current) {
-          console.warn("[DesktopRealtime] CLOSED unexpectedly — retrying in 5s");
-          retryTimerRef.current = setTimeout(() => {
-            console.log("[DesktopRealtime] Retrying after CLOSED...");
-            channel.subscribe(handleStatus);
-          }, 5_000);
+          console.warn("[DesktopRealtime] CLOSED unexpectedly — retrying in 5s with fresh channel");
+          scheduleRetry();
         }
       }
     };
 
-    const channel = supabase
-      .channel(`desktop-realtime-${currentEvent}`)
-      // Team data (pit scouting submissions from mobile)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_team_data",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => triggerRefresh()
-      )
-      // Picklists (admin edits from mobile or other desktop sessions)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_picklist",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => triggerRefresh()
-      )
-      // Match data (match scouting submissions from mobile)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "event_match_data",
-          filter: `event=eq.${currentEvent}`,
-        },
-        () => triggerRefresh()
-      )
-      .subscribe(handleStatus);
+    createChannel();
 
     return () => {
       // Mark effect as inactive BEFORE unsubscribing so the CLOSED handler
@@ -175,8 +216,11 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      channel.unsubscribe();
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
       setIsConnected(false);
     };
   }, [currentEvent, triggerRefresh]);
