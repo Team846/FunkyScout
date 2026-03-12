@@ -85,7 +85,7 @@ function MatchPlay() {
   const [isRotated, setIsRotated] = useState(
     fieldFlipped ?? alliance === "blue"
   );
-
+  const [showPuff, setShowPuff] = useState(false);
   const [shake, setShake] = useState(false);
   const [countdown, setCountdown] = useState<3 | 2 | 1 | null>(null);
 
@@ -121,6 +121,8 @@ function MatchPlay() {
   const [blockHeld, setBlockHeld] = useState(false);
   const blockHeldRef = useRef(false);
 
+
+  const [puffPos, setPuffPos] = useState<{ x: number; y: number } | null>(null);
   // Match scouting data - load from localStorage if exists
   const [matchData, setMatchData] = useState<MatchScoutingData>(() => {
     const saved = sessionStorage.getItem("inProgressMatchData");
@@ -466,6 +468,9 @@ function MatchPlay() {
   );
 
   // Handle field click for location actions
+
+  
+
   const handleFieldClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!pendingLocationAction || !fieldContainerRef.current || actionsDisabled)
       return;
@@ -479,6 +484,7 @@ function MatchPlay() {
       rect.width,
       rect.height
     );
+    
 
     // Convert tap coordinates to canonical red-alliance space.
     // Own field: flip both axes when rotated (180° rotation inverts x and y).
@@ -495,6 +501,8 @@ function MatchPlay() {
       normalizedX = 1 - normalizedX;
       normalizedY = 1 - normalizedY;
     }
+    
+    
 
     const newAction: LocationAction = {
       type: pendingLocationAction,
@@ -513,6 +521,11 @@ function MatchPlay() {
     setUndoStack([]);
 
     setPendingLocationAction(null);
+    
+    const displayX = isRotated ? 1 - normalizedX : normalizedX;
+    const displayY = isRotated ? 1 - normalizedY : normalizedY;
+    setPuffPos({ x: displayX, y: displayY });
+    setTimeout(() => setPuffPos(null), 600);
     vibrateTap();
   };
 
@@ -890,10 +903,22 @@ function MatchPlay() {
           </div>
         </div>
 
-        <div className="w-[60vw] h-full flex items-center justify-center">
+        <div className="w-[60vw] h-full flex-col items-center justify-center">
+
+          <div className = "flex justify-center items-center" style={{ opacity: pendingLocationAction ? 1 : 0 }}>
+            <p>
+              Please click on the field!
+            </p>
+          </div>
           <div
             ref={fieldContainerRef}
-            onClick={handleFieldClick}
+            onClick={(e) => {
+              handleFieldClick(e);
+
+            } 
+              
+          }
+            
             className={`w-full aspect-square max-h-full relative rounded-2xl overflow-hidden ${pendingLocationAction ? "cursor-crosshair" : ""}`}
           >
             {/* Alliance field — fades out during defend */}
@@ -1007,6 +1032,19 @@ function MatchPlay() {
                 />
               </svg>
             </div>
+
+            {puffPos && (
+              <div
+                className="absolute pointer-events-none z-10"
+                style={{
+                  left: `${puffPos.x * 100}%`,
+                  top: `${puffPos.y * 100}%`,
+                  transform: "translate(-50%, -50%)",
+                }}
+              >
+                <div className="w-10 h-10 bg-[#658f6e] rounded-full animate-puff" />
+              </div>
+            )}
 
             {/* Cage orientation buttons and dismount — normalized across alliances and rotations.
                 cageOnLeft: red+unrotated OR blue+rotated (both show cage on left edge).
