@@ -48,6 +48,7 @@ export const Route = createFileRoute("/match_play")({
   },
 });
 
+
 function MatchPlay() {
   const { isWrongOrientation, requestFullscreenAndLock } = useOrientation("landscape");
   const navigate = useNavigate();
@@ -902,24 +903,25 @@ function MatchPlay() {
             </svg>
           </div>
         </div>
+        
+        <div className="w-[60vw] h-full flex items-center justify-center">
 
-        <div className="w-[60vw] h-full flex-col items-center justify-center">
-
-          <div className = "flex justify-center items-center" style={{ opacity: pendingLocationAction ? 1 : 0 }}>
-            <p>
-              Please click on the field!
-            </p>
-          </div>
+          
           <div
             ref={fieldContainerRef}
             onClick={(e) => {
               handleFieldClick(e);
 
             } 
-              
+            
+            
           }
             
             className={`w-full aspect-square max-h-full relative rounded-2xl overflow-hidden ${pendingLocationAction ? "cursor-crosshair" : ""}`}
+            style = {{
+              opacity: pendingLocationAction ? 1 : 0.8
+            }}
+              
           >
             {/* Alliance field — fades out during defend */}
             <img
@@ -929,6 +931,8 @@ function MatchPlay() {
               style={{
                 transform: isRotated ? "rotate(180deg)" : "rotate(0deg)",
                 opacity: isDefending ? 0 : 1,
+
+                
               }}
             />
             {/* Opponent field — fades in during defend, oriented so cage sides connect */}
@@ -944,94 +948,7 @@ function MatchPlay() {
               }}
             />
 
-            {/* Yellow arrows - always rendered, toggled with opacity for performance */}
-            {/* Top arrow - pointing DOWN (inward) */}
-            <div
-              className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-75"
-              style={{ opacity: pendingLocationAction ? 1 : 0 }}
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M7 10L12 15L17 10"
-                  stroke="#CDA745"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            {/* Right arrow - pointing LEFT (inward) */}
-            <div
-              className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-75"
-              style={{ opacity: pendingLocationAction ? 1 : 0 }}
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M14 7L9 12L14 17"
-                  stroke="#CDA745"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            {/* Bottom arrow - pointing UP (inward) */}
-            <div
-              className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-75"
-              style={{ opacity: pendingLocationAction ? 1 : 0 }}
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M17 14L12 9L7 14"
-                  stroke="#CDA745"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            {/* Left arrow - pointing RIGHT (inward) */}
-            <div
-              className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none transition-opacity duration-75"
-              style={{ opacity: pendingLocationAction ? 1 : 0 }}
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M10 17L15 12L10 7"
-                  stroke="#CDA745"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
+            
 
             {puffPos && (
               <div
