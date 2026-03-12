@@ -18,18 +18,22 @@ interface Props {
   youtubeId: string;
   /** Tailwind classes applied to the outer container */
   className?: string;
+  /** Optional start time in seconds — appends &t=Xs to the YouTube URL */
+  startTime?: number;
 }
 
 let popupCounter = 0;
 
-export function TauriYouTubeEmbed({ youtubeId, className }: Props) {
+export function TauriYouTubeEmbed({ youtubeId, className, startTime }: Props) {
   const popupRef = useRef<WebviewWindow | null>(null);
 
   const openPopup = useCallback(() => {
     popupRef.current?.close().catch(() => {});
 
     const label = `match-video-${++popupCounter}`;
-    const url = `https://www.youtube.com/watch?v=${youtubeId}`;
+    const url = startTime != null
+      ? `https://www.youtube.com/watch?v=${youtubeId}&t=${startTime}s`
+      : `https://www.youtube.com/watch?v=${youtubeId}`;
     try {
       const win = new WebviewWindow(label, {
         url,
@@ -43,15 +47,18 @@ export function TauriYouTubeEmbed({ youtubeId, className }: Props) {
       win.once("tauri://error", () => {});
       popupRef.current = win;
     } catch {}
-  }, [youtubeId]);
+  }, [youtubeId, startTime]);
 
   if (!isTauri()) {
     // Browser / dev mode: plain iframe works fine.
+    const iframeSrc = startTime != null
+      ? `https://www.youtube-nocookie.com/embed/${youtubeId}?start=${startTime}`
+      : `https://www.youtube-nocookie.com/embed/${youtubeId}`;
     return (
       <iframe
         key={youtubeId}
         title="Match video"
-        src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+        src={iframeSrc}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
         className={`absolute inset-0 w-full h-full ${className ?? ""}`}

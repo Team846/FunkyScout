@@ -1482,7 +1482,7 @@ function MatchEditStats() {
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add any additional observations..."
+                placeholder="Add detailed observations of the robot's performance. Do NOT just say the robot was bad/good; Give description of their flaws and any possible strengths/utilites."
                 className="min-h-[120px] bg-background border-border"
               />
             </div>

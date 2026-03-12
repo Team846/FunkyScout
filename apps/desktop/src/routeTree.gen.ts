@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
+import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as TestPicklistsRouteImport } from './routes/test-picklists'
 import { Route as TeamRouteImport } from './routes/team'
 import { Route as ShiftsRouteImport } from './routes/shifts'
@@ -29,6 +30,11 @@ import { Route as AuthIndexRouteRouteImport } from './routes/auth/index.route'
 const VerifyRoute = VerifyRouteImport.update({
   id: '/verify',
   path: '/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TimelineRoute = TimelineRouteImport.update({
+  id: '/timeline',
+  path: '/timeline',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TestPicklistsRoute = TestPicklistsRouteImport.update({
@@ -121,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/shifts': typeof ShiftsRoute
   '/team': typeof TeamRoute
   '/test-picklists': typeof TestPicklistsRoute
+  '/timeline': typeof TimelineRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/shifts': typeof ShiftsRoute
   '/team': typeof TeamRoute
   '/test-picklists': typeof TestPicklistsRoute
+  '/timeline': typeof TimelineRoute
   '/verify': typeof VerifyRoute
   '/auth': typeof AuthIndexRouteRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/shifts': typeof ShiftsRoute
   '/team': typeof TeamRoute
   '/test-picklists': typeof TestPicklistsRoute
+  '/timeline': typeof TimelineRoute
   '/verify': typeof VerifyRoute
   '/auth/': typeof AuthIndexRouteRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/shifts'
     | '/team'
     | '/test-picklists'
+    | '/timeline'
     | '/verify'
     | '/auth'
     | '/dashboard'
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/shifts'
     | '/team'
     | '/test-picklists'
+    | '/timeline'
     | '/verify'
     | '/auth'
     | '/dashboard'
@@ -214,6 +225,7 @@ export interface FileRouteTypes {
     | '/shifts'
     | '/team'
     | '/test-picklists'
+    | '/timeline'
     | '/verify'
     | '/auth/'
     | '/dashboard/'
@@ -233,6 +245,7 @@ export interface RootRouteChildren {
   ShiftsRoute: typeof ShiftsRoute
   TeamRoute: typeof TeamRoute
   TestPicklistsRoute: typeof TestPicklistsRoute
+  TimelineRoute: typeof TimelineRoute
   VerifyRoute: typeof VerifyRoute
   AuthIndexRouteRoute: typeof AuthIndexRouteRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/verify'
       fullPath: '/verify'
       preLoaderRoute: typeof VerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/timeline': {
+      id: '/timeline'
+      path: '/timeline'
+      fullPath: '/timeline'
+      preLoaderRoute: typeof TimelineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/test-picklists': {
@@ -369,6 +389,7 @@ const rootRouteChildren: RootRouteChildren = {
   ShiftsRoute: ShiftsRoute,
   TeamRoute: TeamRoute,
   TestPicklistsRoute: TestPicklistsRoute,
+  TimelineRoute: TimelineRoute,
   VerifyRoute: VerifyRoute,
   AuthIndexRouteRoute: AuthIndexRouteRoute,
   DashboardIndexRoute: DashboardIndexRoute,

@@ -26,7 +26,7 @@ export function LeftPanel({ schedule, tbaSchedule, matchData, profiles }: LeftPa
   const navigate = useNavigate();
   const { homeTeam } = useDesktopEvent();
 
-  // Derive next/last match from tbaSchedule (Nexus-overlaid times) so it updates
+  //  next/last match from tbaSchedule (Nexus-overlaid times) so it updates
   // in lockstep with the upcoming list — same threshold, same data source.
   const strategyTarget = useMemo(() => {
     if (!homeTeam) return null;
