@@ -134,13 +134,16 @@
 /* Custom animations for match scouting */
 @keyframes puff {
   0% {
+    background-color: var(--primary);
     transform: scale(0.2);
     opacity: 1;
   }
   60% {
+    background-color: var(--primary);
     opacity: 0.5;
   }
   100% {
+    background-color: var(--primary);
     transform: scale(0.85);
     opacity: 0;
   }
