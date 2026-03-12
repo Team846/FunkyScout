@@ -141,13 +141,13 @@
     opacity: 0.5;
   }
   100% {
-    transform: scale(1.2);
+    transform: scale(0.85);
     opacity: 0;
   }
 }
 
 .animate-puff {
-  animation: puff 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: puff 0.5s cubic-bezier(0.32, 1.2, 0.43, 1.2) forwards;
 }
 
 @keyframes flash-yellow {
