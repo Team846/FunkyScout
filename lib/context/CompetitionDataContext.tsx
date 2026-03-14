@@ -213,7 +213,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
           supabaseSchedule.some((s: any) => s.est_time != null);
 
         if (supabaseSchedule) {
-          const entries = supabaseSchedule.map((s: any) => ({
+          const entries = supabaseSchedule
+            .filter((s: any) => !s.deleted_at)
+            .map((s: any) => ({
             match: s.match,
             team: s.team,
             alliance: s.alliance as "red" | "blue",

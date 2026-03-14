@@ -66,6 +66,7 @@ function SchedulerPage() {
   const [w, setW] = useState(3);
   const [r, setR] = useState(1);
   const [assignments, setAssignments] = useState<CycleAssignment[]>([]);
+  const [assignmentsForEvent, setAssignmentsForEvent] = useState<string | null>(null);
   const [assignedMatchTeams, setAssignedMatchTeams] = useState<Set<string>>(new Set());
   const [matchScouterMap, setMatchScouterMap] = useState<Record<string, string>>({});
   const [matchUidMap, setMatchUidMap] = useState<Record<string, string>>({});
@@ -270,6 +271,7 @@ function SchedulerPage() {
         .map((s) => ({ uid: s.uid, name: s.name }));
       const result = await runCycleForEvent(currentEvent, [w, r], scouters);
       setAssignments(result);
+      setAssignmentsForEvent(currentEvent);
       const newAssignedMatchTeams = new Set<string>();
       const newMatchScouterMap: Record<string, string> = {};
       const newMatchUidMap: Record<string, string> = {};
@@ -292,6 +294,10 @@ function SchedulerPage() {
 
   const handleApply = async () => {
     if (!currentEvent || assignments.length === 0) return;
+    if (assignmentsForEvent && assignmentsForEvent !== currentEvent) {
+      toast.error("Event changed since assignments were generated — regenerate first");
+      return;
+    }
     setApplying(true);
     try {
       await assignShiftsFromCycle(currentEvent, assignments);

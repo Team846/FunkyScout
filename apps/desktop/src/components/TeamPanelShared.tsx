@@ -922,8 +922,10 @@ export interface FullTeamPanelProps {
   graphedMetrics?: string[];
 }
 
-// Module-level: shared stat selection when not controlled by parent
+// Module-level: shared stat/match selection when not controlled by parent
 let _statOverviewMetricKey = "overview";
+let _matchOverviewMetricKey = "epa";
+let _matchOverviewOpen = false;
 
 export function FullTeamPanel({
   teamKey,
@@ -1032,10 +1034,10 @@ export function FullTeamPanel({
   const [matchRecapOpen, setMatchRecapOpen] = useState(true);
   const [statOverviewOpen, setStatOverviewOpen] = useState(true);
   const [showStatOverviewPicker, setShowStatOverviewPicker] = useState(false);
-  const [matchOverviewOpen, setMatchOverviewOpen] = useState(false);
+  const [matchOverviewOpen, setMatchOverviewOpen] = useState(() => _matchOverviewOpen);
   const [showMatchPicker, setShowMatchPicker] = useState(false);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
-  const [matchOverviewMetric, setMatchOverviewMetric] = useState("epa");
+  const [matchOverviewMetric, setMatchOverviewMetric] = useState(() => _matchOverviewMetricKey);
   const [showMatchOverviewMetricPicker, setShowMatchOverviewMetricPicker] = useState(false);
   // ── Match Overview video/replay ─────────────────────────────────────────────
   const [excludingMatch, setExcludingMatch] = useState(false);
@@ -2213,7 +2215,7 @@ export function FullTeamPanel({
             <div className="rounded-lg overflow-hidden">
               <button
                 type="button"
-                onClick={() => setMatchOverviewOpen((o) => !o)}
+                onClick={() => setMatchOverviewOpen((o) => { _matchOverviewOpen = !o; return !o; })}
                 className="w-full flex items-center justify-between px-3 py-2 bg-muted/10 hover:bg-muted/20 transition-colors text-left"
               >
                 <p className="text-base font-semibold text-primary">Match Overview</p>
@@ -2601,6 +2603,7 @@ export function FullTeamPanel({
                           <MetricPicker
                             activeMetrics={[matchOverviewMetric]}
                             onSelect={(k) => {
+                              _matchOverviewMetricKey = k;
                               setMatchOverviewMetric(k);
                               setShowMatchOverviewMetricPicker(false);
                             }}
@@ -2781,7 +2784,7 @@ export function ExpandedTeamPanel({
   // ── Match Overview state ───────────────────────────────────────────────────
   const [showMatchPicker, setShowMatchPicker] = useState(false);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
-  const [matchOverviewMetric, setMatchOverviewMetric] = useState("epa");
+  const [matchOverviewMetric, setMatchOverviewMetric] = useState(() => _matchOverviewMetricKey);
   const [showMatchOverviewMetricPicker, setShowMatchOverviewMetricPicker] = useState(false);
   const [excludingMatch, setExcludingMatch] = useState(false);
   const [matchViewMode, setMatchViewMode] = useState<"video" | "field">("video");
@@ -3851,7 +3854,7 @@ export function ExpandedTeamPanel({
                         <div className="fixed inset-0 z-40" onClick={() => setShowMatchOverviewMetricPicker(false)} />
                         <MetricPicker
                           activeMetrics={[matchOverviewMetric]}
-                          onSelect={(k) => { setMatchOverviewMetric(k); setShowMatchOverviewMetricPicker(false); }}
+                          onSelect={(k) => { _matchOverviewMetricKey = k; setMatchOverviewMetric(k); setShowMatchOverviewMetricPicker(false); }}
                           onClose={() => setShowMatchOverviewMetricPicker(false)}
                         />
                       </>
