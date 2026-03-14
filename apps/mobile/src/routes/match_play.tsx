@@ -904,7 +904,7 @@ function MatchPlay() {
           </div>
         </div>
         
-        <div className="w-[60vw] h-full flex items-center justify-center">
+        <div className="w-[60vw] h-full flex items-center justify-center ">
 
           
           <div
@@ -919,7 +919,7 @@ function MatchPlay() {
             
             className={`w-full aspect-square max-h-full relative rounded-2xl overflow-hidden ${pendingLocationAction ? "cursor-crosshair" : ""}`}
             style = {{
-              opacity: pendingLocationAction ? 1 : 0.8
+              opacity: pendingLocationAction ? 1 : 0.7
             }}
               
           >
