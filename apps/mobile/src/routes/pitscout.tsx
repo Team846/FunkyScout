@@ -41,7 +41,7 @@ export const Route = createFileRoute("/pitscout")({
   },
 });
 
-// Info icon with popover — uses <span> to avoid nested <button> error
+// Info icon with popover
 function InfoButton({ info }: { info?: string }) {
   if (!info) return null;
 
@@ -304,7 +304,6 @@ function ScoutPage() {
   const { formData, setFormData } = usePitScoutForm();
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
 
-  /* GENERATED:STATE:START */
   // Movement state
   const [movementBump, setMovementBump] = useState(false);
   const [movementTrough, setMovementTrough] = useState(false);
@@ -325,7 +324,11 @@ function ScoutPage() {
   const [teleopClimbLevel, setTeleopClimbLevel] = useState<string[]>([]);
   const [teleopClimbOrientation, setTeleopClimbOrientation] = useState<string[]>([]);
 
-    /* GENERATED:END */
+  // Weight
+  const [weight, setWeight] = useState<string>("");
+
+  // Drive Type
+  const [driveType, setDriveType] = useState<string>("");
 
   // Autos state (lifted from AutosSection)
   const [autoEntries, setAutoEntries] = useState<AutoEntry[]>([]);
@@ -333,7 +336,7 @@ function ScoutPage() {
   // Restore form data from context if available (for back navigation)
   useEffect(() => {
     if (formData && formData.teamNum === teamNum) {
-      /* GENERATED:RESTORE:START */
+      
       setMovementBump(formData.movement.bump);
       setMovementTrough(formData.movement.trough);
       setIntakeGround(formData.intake.ground);
@@ -344,7 +347,8 @@ function ScoutPage() {
       setAutoClimbOrientation(Array.isArray(formData.autoClimb.orientation) ? formData.autoClimb.orientation : formData.autoClimb.orientation ? [formData.autoClimb.orientation as unknown as string] : []);
       setTeleopClimbLevel(Array.isArray(formData.teleopClimb.level) ? formData.teleopClimb.level : formData.teleopClimb.level ? [formData.teleopClimb.level as unknown as string] : []);
       setTeleopClimbOrientation(Array.isArray(formData.teleopClimb.orientation) ? formData.teleopClimb.orientation : formData.teleopClimb.orientation ? [formData.teleopClimb.orientation as unknown as string] : []);
-    /* GENERATED:END */
+      if (formData.weight != null) setWeight(String(formData.weight));
+      setDriveType(formData.driveType || "");
       setAutoEntries(formData.autos);
     }
   }, [formData, teamNum]);
@@ -359,7 +363,6 @@ function ScoutPage() {
     const formData = {
       teamNum,
       teamName,
-      /* GENERATED:SAVE:START */
       movement: {
         bump: movementBump,
         trough: movementTrough,
@@ -380,7 +383,8 @@ function ScoutPage() {
         level: teleopClimbLevel,
         orientation: teleopClimbOrientation,
       },
-    /* GENERATED:END */
+      weight,
+      driveType, 
       autos: autoEntries,
     };
 
@@ -447,7 +451,6 @@ function ScoutPage() {
 
       {/* Sections */}
       <div className="flex flex-col gap-6">
-        {/* GENERATED:FORM:START */}
 
         {/* Movement Section */}
         <Section title="Movement">
@@ -632,7 +635,33 @@ function ScoutPage() {
             )}
           </div>
         </Section>
-        {/* GENERATED:END */}
+
+        {/* Weight Section */}
+        <Section title="Weight">
+          <div className="flex flex-col gap-3 px-2">
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
+              placeholder="Enter weight in lbs"
+            />
+          </div>
+        </Section>
+        {/* Drive Type Section */}
+        <Section title="Drive Type">
+          <div className="flex flex-col gap-3 px-2">
+            <Input
+              type="text"
+              inputMode="text"
+              value={driveType}
+              onChange={(e) => setDriveType(e.target.value)}
+              className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
+              placeholder="(E.g. swerve, tank, etc.)"
+            />
+            </div>
+        </Section>
 
         {/* Autos Section */}
         <AutosSection entries={autoEntries} setEntries={setAutoEntries} />

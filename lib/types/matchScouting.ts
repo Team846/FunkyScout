@@ -83,6 +83,7 @@ export interface PostMatchData {
   through?: boolean;
   canStation?: boolean;  // demonstrated station intake this match
   canGround?: boolean;   // demonstrated ground intake this match
+  shootWhileMove?: boolean;   // could shoot on the fly
 
   // Climb orientation (separate for auto and teleop)
   autoClimbOrientation?: 'left' | 'right' | 'center';

@@ -54,6 +54,8 @@ interface PitData {
     level: string[];
     orientation?: string[];
   };
+  weight?: string;
+  driveType?: string;
   autos: Array<{
     name?: string;
     description?: string;
@@ -816,7 +818,7 @@ function TeamInfoPage() {
                   </div>
                 )}
 
-              {/* GENERATED:DISPLAY:START */}
+              
 
                             {/* Movement Section */}
               <div>
@@ -956,8 +958,26 @@ function TeamInfoPage() {
                   </div>
                 </div>
               </div>
-
-        {/* GENERATED:END */}
+              {/* Misc section */}
+              <div>
+                <p className="text-base text-primary font-semibold mb-3">MISC</p>
+                <div className="rounded-2xl bg-muted px-6 py-4">
+                  <div className="flex items-center justify-between py-2">
+                    <p className="text-foreground">Weight</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-semibold text-foreground">{pitData.weight}</p>
+                    </div>
+                    </div>
+                    <div className="flex items-center justify-between py-2">
+                      <p className="text-foreground">Drive Type</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-semibold text-foreground">{pitData.driveType}</p>
+                     </div>
+                     
+                  </div>
+                </div>
+              </div>
+              
 
               {/* Autos Section */}
               {pitData.autos && pitData.autos.length > 0 && (

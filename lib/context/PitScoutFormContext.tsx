@@ -42,7 +42,6 @@ export interface AutoEntry {
 export interface PitScoutFormData {
   teamNum: number;
   teamName: string;
-  /* GENERATED:TYPES:START */
   movement: {
     bump: boolean;
     trough: boolean;
@@ -63,7 +62,9 @@ export interface PitScoutFormData {
     level: string[];
     orientation: string[];
   };
-    /* GENERATED:END */
+
+  weight?: string;
+  driveType?: string;
   autos: AutoEntry[];
 }
 

@@ -1308,6 +1308,7 @@ function MatchEditStats() {
                   { key: 'through', label: 'Trench' },
                   { key: 'canStation', label: 'Outpost' },
                   { key: 'canGround', label: 'Ground' },
+                  {key: 'shootWhileMove', label: 'Shoot While Moving'}
                 ] as const).map(({ key, label }) => {
                   const active = !!(matchData?.postMatch as Record<string, unknown>)?.[key];
                   return (
