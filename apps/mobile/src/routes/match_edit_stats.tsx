@@ -483,9 +483,20 @@ function MatchEditStats() {
     // All actions in a batch share the same timestamp — user said "fine if they blink together."
     const phaseTs = endOfPhase(phase);
 
-    // Climb exclusivity: activating a climb level deactivates all others in the same phase
-    const newActions: ToggleAction[] = [];
-    if (isClimb && !currentlyActive) {
+    // When DEACTIVATING a toggle: remove all existing events of that type so the timeline
+    // shows no trace of it. Appending enabled:false leaves the enabled:true event visible in
+    // the timeline as a "hold" action, displaying a climb/defend that was corrected away.
+    if (currentlyActive) {
+      setMatchData({
+        ...matchData,
+        toggleActions: matchData.toggleActions.filter((a) => a.type !== resolvedType),
+      });
+      return;
+    }
+
+    // When ACTIVATING: climb exclusivity — erase all other climbs in the same phase entirely
+    const typesToErase = new Set<ToggleActionType>();
+    if (isClimb) {
       const samePhaseClimbs: ToggleActionType[] = phase === "auto"
         ? ["autoClimbL1"]
         : ["teleopClimbL1", "teleopClimbL2", "teleopClimbL3"];
@@ -494,9 +505,7 @@ function MatchEditStats() {
         if (climbType !== resolvedType) {
           const isActiveInSamePhase =
             matchData.toggleActions.filter((a) => a.type === climbType).at(-1)?.active ?? false;
-          if (isActiveInSamePhase) {
-            newActions.push({ type: climbType, timestamp: phaseTs, active: false, phase });
-          }
+          if (isActiveInSamePhase) typesToErase.add(climbType);
         }
       });
     }
@@ -504,13 +513,16 @@ function MatchEditStats() {
     const newAction: ToggleAction = {
       type: resolvedType,
       timestamp: phaseTs,
-      active: !currentlyActive,
+      active: true,
       phase,
     };
 
     setMatchData({
       ...matchData,
-      toggleActions: [...matchData.toggleActions, ...newActions, newAction],
+      toggleActions: [
+        ...matchData.toggleActions.filter((a) => !typesToErase.has(a.type)),
+        newAction,
+      ],
     });
   };
 
@@ -519,17 +531,13 @@ function MatchEditStats() {
     matchData?.locationActions.filter(
       (a) => a.type === "groundIntake" && a.phase === "auto"
     ).length || 0;
-  const teleopIntakes =
-    matchData?.locationActions.filter(
-      (a) => a.type === "groundIntake" && a.phase === "teleop"
-    ).length || 0;
-  const autoPasses =
-    matchData?.locationActions.filter(
-      (a) => a.type === "passing" && a.phase === "auto"
-    ).length || 0;
   const teleopPasses =
     matchData?.locationActions.filter(
       (a) => a.type === "passing" && a.phase === "teleop"
+    ).length || 0;
+  const teleopShootPasses =
+    matchData?.locationActions.filter(
+      (a) => a.type === "shootPassing" && a.phase === "teleop"
     ).length || 0;
   const autoShoots =
     matchData?.locationActions.filter(
@@ -575,32 +583,6 @@ function MatchEditStats() {
     setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
 
-  const setTeleopIntakes = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.locationActions.filter(
-      (a) => !(a.type === "groundIntake" && a.phase === "teleop")
-    );
-    const baseTs = endOfPhase("teleop", filtered);
-    const newActions: LocationAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({ type: "groundIntake", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "teleop" });
-    }
-    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
-  };
-
-  const setAutoPasses = (value: number) => {
-    if (!matchData) return;
-    const filtered = matchData.locationActions.filter(
-      (a) => !(a.type === "passing" && a.phase === "auto")
-    );
-    const baseTs = endOfPhase("auto", filtered);
-    const newActions: LocationAction[] = [];
-    for (let i = 0; i < Math.max(0, value); i++) {
-      newActions.push({ type: "passing", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "auto" });
-    }
-    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
-  };
-
   const setTeleopPasses = (value: number) => {
     if (!matchData) return;
     const filtered = matchData.locationActions.filter(
@@ -610,6 +592,19 @@ function MatchEditStats() {
     const newActions: LocationAction[] = [];
     for (let i = 0; i < Math.max(0, value); i++) {
       newActions.push({ type: "passing", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "teleop" });
+    }
+    setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
+  };
+
+  const setTeleopShootPasses = (value: number) => {
+    if (!matchData) return;
+    const filtered = matchData.locationActions.filter(
+      (a) => !(a.type === "shootPassing" && a.phase === "teleop")
+    );
+    const baseTs = endOfPhase("teleop", filtered);
+    const newActions: LocationAction[] = [];
+    for (let i = 0; i < Math.max(0, value); i++) {
+      newActions.push({ type: "shootPassing", timestamp: baseTs + i * 100, coords: [0.5, 0.5], phase: "teleop" });
     }
     setMatchData({ ...matchData, locationActions: [...filtered, ...newActions] });
   };
@@ -772,94 +767,17 @@ function MatchEditStats() {
                       </Button>
                     </div>
                   </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Input
-                      type="number"
-                      value={teleopIntakes}
-                      onChange={(e) =>
-                        setTeleopIntakes(parseInt(e.target.value) || 0)
-                      }
-                      className="h-8 w-16 text-center bg-background border-border"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeleopIntakes(teleopIntakes + 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 3L9 7H3L6 3Z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTeleopIntakes(teleopIntakes - 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 9L3 5H9L6 9Z" />
-                        </svg>
-                      </Button>
-                    </div>
+                  {/* Teleop intake removed — intake is auto-only */}
+                  <div className="flex items-center justify-center">
+                    <span className="text-sm text-muted-foreground">—</span>
                   </div>
                 </div>
 
-                {/* Passes Row */}
+                {/* Ground Passing Row (teleop only) */}
                 <div className="grid grid-cols-3 gap-4 items-center">
-                  <div className="text-sm text-foreground">Passing</div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Input
-                      type="number"
-                      value={autoPasses}
-                      onChange={(e) =>
-                        setAutoPasses(parseInt(e.target.value) || 0)
-                      }
-                      className="h-8 w-16 text-center bg-background border-border"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAutoPasses(autoPasses + 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 3L9 7H3L6 3Z" />
-                        </svg>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setAutoPasses(autoPasses - 1)}
-                        className="h-4.5 w-7 p-0 flex items-center justify-center"
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
-                          <path d="M6 9L3 5H9L6 9Z" />
-                        </svg>
-                      </Button>
-                    </div>
+                  <div className="text-sm text-foreground">Ground Pass</div>
+                  <div className="flex items-center justify-center">
+                    <span className="text-sm text-muted-foreground">—</span>
                   </div>
                   <div className="flex items-center justify-center gap-2">
                     <Input
@@ -877,12 +795,7 @@ function MatchEditStats() {
                         onClick={() => setTeleopPasses(teleopPasses + 1)}
                         className="h-4.5 w-7 p-0 flex items-center justify-center"
                       >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
+                        <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
                           <path d="M6 3L9 7H3L6 3Z" />
                         </svg>
                       </Button>
@@ -892,12 +805,47 @@ function MatchEditStats() {
                         onClick={() => setTeleopPasses(teleopPasses - 1)}
                         className="h-4.5 w-7 p-0 flex items-center justify-center"
                       >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 12 12"
-                          fill="currentColor"
-                        >
+                        <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
+                          <path d="M6 9L3 5H9L6 9Z" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Shoot Passing Row (teleop only) */}
+                <div className="grid grid-cols-3 gap-4 items-center">
+                  <div className="text-sm text-foreground">Shoot Pass</div>
+                  <div className="flex items-center justify-center">
+                    <span className="text-sm text-muted-foreground">—</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <Input
+                      type="number"
+                      value={teleopShootPasses}
+                      onChange={(e) =>
+                        setTeleopShootPasses(parseInt(e.target.value) || 0)
+                      }
+                      className="h-8 w-16 text-center bg-background border-border"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopShootPasses(teleopShootPasses + 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
+                          <path d="M6 3L9 7H3L6 3Z" />
+                        </svg>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTeleopShootPasses(teleopShootPasses - 1)}
+                        className="h-4.5 w-7 p-0 flex items-center justify-center"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
                           <path d="M6 9L3 5H9L6 9Z" />
                         </svg>
                       </Button>

@@ -36,20 +36,11 @@ const AUTO_END_MS = 20_000;
 
 
 const ACTION_STYLE: Record<string, { fill: string; shape: "circle" | "square" | "diamond" | "triangle" | "star" }> = {
-  ground_intake: { fill: "#22c55e", shape: "circle" },
   groundIntake: { fill: "#22c55e", shape: "circle" },
   passing: { fill: "#3b82f6", shape: "square" },
+  shootPassing: { fill: "#f97316", shape: "square" },
   shoot: { fill: "#ef4444", shape: "diamond" },
-  station_intake: { fill: "#a855f7", shape: "square" },
-  stocking: { fill: "#f59e0b", shape: "diamond" },
   stationStocked: { fill: "#f59e0b", shape: "diamond" },
-  fuelScore1: { fill: "#eab308", shape: "circle" },
-  fuelScore2: { fill: "#eab308", shape: "circle" },
-  fuelScore5: { fill: "#eab308", shape: "square" },
-  fuelScore8: { fill: "#eab308", shape: "diamond" },
-  climb_L1: { fill: "#06b6d4", shape: "triangle" },
-  climb_L2: { fill: "#06b6d4", shape: "triangle" },
-  climb_L3: { fill: "#06b6d4", shape: "triangle" },
   autoClimbL1: { fill: "#06b6d4", shape: "triangle" },
   teleopClimbL1: { fill: "#06b6d4", shape: "triangle" },
   teleopClimbL2: { fill: "#06b6d4", shape: "triangle" },

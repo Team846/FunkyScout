@@ -759,7 +759,7 @@ export async function upsertEventTeamDataRows(
            team_name=COALESCE(excluded.team_name, event_team_data.team_name),
            name=COALESCE(excluded.name, event_team_data.name),
            uid=COALESCE(excluded.uid, event_team_data.uid),
-           assigned=COALESCE(excluded.assigned, event_team_data.assigned),
+           assigned=excluded.assigned,
            timestamp=excluded.timestamp,
            last_modified=excluded.last_modified, deleted_at=excluded.deleted_at`,
           [

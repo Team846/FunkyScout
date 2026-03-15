@@ -11,7 +11,13 @@ export const Route = createFileRoute("/pit")({
 
 export function Pit() {
   const navigate = useNavigate();
-  const { teams, loading, scoutedTeams, teamAssignments } = useTeamData();
+  const { teams, loading, scoutedTeams, teamAssignments, refresh } = useTeamData();
+
+  // Pull fresh assignments from Supabase on open — avoids showing up to 5min stale data
+  // (TeamDataContext polls every 5min; this makes the pit page always up-to-date on navigate)
+  useEffect(() => {
+    refresh();
+  }, []);
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -42,7 +48,7 @@ export function Pit() {
     return null;
   };
 
-  const filteredTeams = teams.filter((team: { num: number; name: string; key: string }) =>
+  const filteredTeams = teams.filter((team: { num: number; name: string; key: string; rank: number }) =>
     `${team.num} ${team.name}`.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -96,7 +102,7 @@ export function Pit() {
             className="h-10 w-10 rounded-full bg-primary p-0"
             size="icon"
             onClick={() => {
-              const team = teams.find((t: { key: string; num: number; name: string }) => t.key === selectedTeam);
+              const team = teams.find((t: { key: string; num: number; name: string; rank: number }) => t.key === selectedTeam);
               if (!team) return;
 
               navigate({
@@ -125,7 +131,7 @@ export function Pit() {
 
         {showDropdown && filteredTeams.length > 0 && (
           <div className="absolute left-0 right-0 top-full mt-3 z-50 max-h-60 overflow-y-auto rounded-2xl bg-background  shadow-lg">
-            {filteredTeams.map((team: { key: string; num: number; name: string }) => {
+            {filteredTeams.map((team: { key: string; num: number; name: string; rank: number }) => {
               const badge = getTeamBadge(team.key);
               return (
                 <div
@@ -201,7 +207,7 @@ export function Pit() {
 
         return (
           <div className="flex flex-col">
-            {assignedTeams.map((team: { key: string; num: number; name: string }) => {
+            {assignedTeams.map((team: { key: string; num: number; name: string; rank: number }) => {
               const badge = getTeamBadge(team.key);
               return (
                 <div
@@ -221,7 +227,7 @@ export function Pit() {
                         <span> | {team.name}</span>
                       </p>
                       {team.rank > 0 && (
-                        <p className="mt-1 text-sm text-border">Rank {team.rank}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Rank {team.rank}</p>
                       )}
                     </div>
                     {badge && (

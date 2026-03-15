@@ -505,6 +505,7 @@ const PANEL_FIELD_H = 318;
 const PANEL_ACTION_STYLE: Record<string, { fill: string; shape: string }> = {
   groundIntake:   { fill: "#22c55e", shape: "circle" },
   passing:        { fill: "#3b82f6", shape: "square" },
+  shootPassing:   { fill: "#f97316", shape: "square" },
   stationIntake:  { fill: "#a855f7", shape: "square" },
   stationStocked: { fill: "#f59e0b", shape: "diamond" },
   fuelScore1:     { fill: "#eab308", shape: "circle" },

@@ -14,7 +14,7 @@
 // Category 1: Location Actions with User-Selected Field Position
 // ============================================================================
 
-export type LocationActionType = 'groundIntake' | 'passing' | 'shoot' | 'camp' | 'disrupt';
+export type LocationActionType = 'groundIntake' | 'passing' | 'shootPassing' | 'shoot' | 'camp' | 'disrupt';
 
 export interface LocationAction {
   type: LocationActionType;

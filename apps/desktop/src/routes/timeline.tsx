@@ -27,6 +27,7 @@ const FIELD_ACTION_STYLE: Record<string, { fill: string; shape: "circle" | "squa
   ground_intake:  { fill: "#22c55e", shape: "circle" },
   groundIntake:   { fill: "#22c55e", shape: "circle" },
   passing:        { fill: "#3b82f6", shape: "square" },
+  shootPassing:   { fill: "#f97316", shape: "square" },
   shoot:          { fill: "#ef4444", shape: "diamond" },
   station_intake: { fill: "#a855f7", shape: "square" },
   stocking:       { fill: "#f59e0b", shape: "diamond" },
@@ -35,6 +36,7 @@ const FIELD_ACTION_STYLE: Record<string, { fill: string; shape: "circle" | "squa
   teleopClimbL1:  { fill: "#06b6d4", shape: "triangle" },
   teleopClimbL2:  { fill: "#06b6d4", shape: "triangle" },
   teleopClimbL3:  { fill: "#06b6d4", shape: "triangle" },
+  climbFail:      { fill: "#ef4444", shape: "circle" },
   disable:        { fill: "#78716c", shape: "star" },
   defend:         { fill: "#f59e0b", shape: "star" },
   dropped:        { fill: "#78716c", shape: "circle" },
@@ -116,6 +118,23 @@ function buildFieldWaypoints(
   const isEpoch = [...autoActs, ...teleopActs].some((a) => a.timestamp > 1e12);
   const NO_BLOB = new Set(["defend", "teleopDefend", "autoDefend", "disable", "teleopDisable", "autoDisable"]);
 
+  function getFailedClimbTs(acts: MatchAction[]): Set<number> {
+    const failed = new Set<number>();
+    acts.forEach((a, i) => {
+      if (a.enabled === true && (a.actionId.startsWith("teleopClimb") || a.actionId === "autoClimbL1")) {
+        for (let j = i + 1; j < acts.length; j++) {
+          if (acts[j].actionId === a.actionId && acts[j].enabled === false) {
+            failed.add(a.timestamp);
+            break;
+          }
+        }
+      }
+    });
+    return failed;
+  }
+  const failedAutoClimbTs = getFailedClimbTs(autoActs);
+  const failedTeleopClimbTs = getFailedClimbTs(teleopActs);
+
   function climbY(isAuto: boolean): number {
     const pm = dataRaw!.postMatch;
     const o = isAuto ? pm?.autoClimbOrientation : pm?.teleopClimbOrientation;
@@ -128,10 +147,12 @@ function buildFieldWaypoints(
       pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.enabled !== false ? "block" : undefined });
     } else if (a.actionId === "autoClimbL1") {
       const d = fieldToDisplay(0.05, climbY(true), alliance);
-      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
+      const climbId = failedAutoClimbTs.has(a.timestamp) ? "climbFail" : (a.enabled !== false ? a.actionId : undefined);
+      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: climbId });
     } else if (a.actionId.startsWith("teleopClimb")) {
       const d = fieldToDisplay(0.05, climbY(false), alliance);
-      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: a.enabled !== false ? a.actionId : undefined });
+      const climbId = failedTeleopClimbTs.has(a.timestamp) ? "climbFail" : (a.enabled !== false ? a.actionId : undefined);
+      pts.push({ x: d.x, y: d.y, timestamp: ts, actionId: climbId });
     } else if (NO_BLOB.has(a.actionId)) {
       const last = pts[pts.length - 1]!;
       pts.push({ x: last.x, y: last.y, timestamp: ts });
@@ -217,6 +238,7 @@ const ACTION_COLORS: Record<string, string> = {
   groundIntake:   "#4ade80",
   shoot:          "#60a5fa",
   passing:        "#ecc04e",
+  shootPassing:   "#f97316",
   stationIntake:  "#a78bfa",
   stationStocked: "#a78bfa",
   camp:           "#f97316",
@@ -231,12 +253,14 @@ const ACTION_COLORS: Record<string, string> = {
   teleopClimbL3:  "#22d3ee",
   autoDisable:    "#6b7280",
   teleopDisable:  "#6b7280",
+  climbFail:      "#ef4444",
 };
 
 const ACTION_LABELS: Record<string, string> = {
   groundIntake:   "Ground Intake",
   shoot:          "Shoot",
-  passing:        "Passing",
+  passing:        "Ground Passing",
+  shootPassing:   "Shoot Passing",
   stationIntake:  "Station Intake",
   stationStocked: "Station Stocked",
   camp:           "Camp",
@@ -251,6 +275,7 @@ const ACTION_LABELS: Record<string, string> = {
   teleopClimbL3:  "Climb L3",
   autoDisable:    "Auto Disable",
   teleopDisable:  "Disable",
+  climbFail:      "Climb Fail",
 };
 
 const SHIFT_SEGMENTS = [
@@ -738,20 +763,28 @@ function TimelinePage() {
 
   type RawItem = Omit<ActionItem, "ordinal">;
 
+  const isClimbActionId = (id: string) => id.startsWith("teleopClimb") || id === "autoClimbL1";
+
   // Build raw items (no ordinals yet) — skip hold-end events, compute hold durations
   const buildRawItems = (raw: MatchAction[], phase: "auto" | "teleop"): RawItem[] =>
     raw
       .map((a, i): RawItem | null => {
         if (a.enabled === false) return null; // hold end — skip
         let holdDurationS: number | undefined;
+        let isFailed = false;
         if (a.enabled === true) {
           // Find the matching hold-end for this action
           for (let j = i + 1; j < raw.length; j++) {
             if (raw[j].actionId === a.actionId && raw[j].enabled === false) {
               holdDurationS = (raw[j].timestamp - a.timestamp) / 1000;
+              if (isClimbActionId(a.actionId)) isFailed = true;
               break;
             }
           }
+        }
+        // A climb followed by enabled:false is a failed climb — show as climbFail, not a hold card
+        if (isFailed) {
+          return { actionId: "climbFail", seconds: toSec(a.timestamp), phase, holdDurationS: undefined };
         }
         return { actionId: a.actionId, seconds: toSec(a.timestamp), phase, holdDurationS };
       })

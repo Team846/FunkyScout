@@ -255,19 +255,11 @@ export function ScoutingPage() {
 
         // Get all match data (actual scouting submissions)
         const allMatchData = await getEventMatchData(currentEvent);
-        const now = Date.now();
 
         // Filter to past matches that have been scouted
         const pastScoutedMatches = allMatchData.filter((m) => {
           // Must have actual scouting data and not be deleted
           if (!m.name || m.deleted_at) return false;
-
-          // If we have timing data, only show matches that have already happened.
-          // If est_time is unavailable (offline, not yet synced), show the match
-          // anyway — we can't determine if it's past, so err on the side of showing it.
-          const matchData = tbaSchedule[m.match];
-          const matchTime = matchData?.est_time ? matchData.est_time * 1000 : null;
-          if (matchTime !== null && matchTime > now) return false;
 
           // Permission check
           if (isAdmin) return true; // Admins see all scouted matches
