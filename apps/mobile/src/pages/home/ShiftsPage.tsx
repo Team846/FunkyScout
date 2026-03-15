@@ -47,24 +47,50 @@ const formatRelativeTime = (timestamp: number): string => {
     }
     return `in ${days}d`;
   } else {
-    // Past
+    // Past — within the 2-minute buffer the match is still happening, show "Now"
+    if (minutes < 2) return "Now";
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
   }
 };
 
+// Raw shift entry before time-based splitting
+interface RawShift {
+  match: string;
+  matchLabel: string;
+  team: string;
+  teamNumber: string;
+  alliance: "red" | "blue";
+  time: number | null;
+}
+
+function splitShifts(rawShifts: RawShift[]): { combined: ShiftDisplay[]; nextIdx: number } {
+  const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
+  const effectiveNow = Date.now() - UPCOMING_BUFFER_MS;
+  const withLabels = rawShifts.map((s) => ({
+    ...s,
+    timeLabel: s.time ? formatRelativeTime(s.time) : "Unknown",
+  }));
+  const past = withLabels.filter((s) => s.time && s.time <= effectiveNow).sort((a, b) => (a.time || 0) - (b.time || 0));
+  const upcoming = withLabels.filter((s) => !s.time || s.time > effectiveNow).sort((a, b) => (a.time || 0) - (b.time || 0));
+  const combined = [...past, ...upcoming];
+  return { combined, nextIdx: past.length < combined.length ? past.length : -1 };
+}
+
 export function ShiftsPage() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
   const { tbaSchedule } = useCompetition();
   const userData = getLocalUserData();
+  const [rawShifts, setRawShifts] = useState<RawShift[]>([]);
   const [shifts, setShifts] = useState<ShiftDisplay[]>([]);
   const [nextShiftIdx, setNextShiftIdx] = useState<number>(-1);
   const [initialLoading, setInitialLoading] = useState(true);
   const hasScrolled = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
+  // DB fetch — only re-run when event/user/schedule changes
   useEffect(() => {
     if (!currentEvent) {
       setInitialLoading(false);
@@ -83,18 +109,9 @@ export function ShiftsPage() {
         if (assignments.length > 0) {
           console.log("[ShiftsPage] First assignment:", assignments[0]);
         }
-        const now = Date.now();
-        // 2-min buffer: a match is only "past" if it was scheduled >2min ago
-        const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
-        const effectiveNow = now - UPCOMING_BUFFER_MS;
-
-        // Map assignments to display format with match times
-        const shiftsWithTimes = assignments.map((assignment) => {
+        const raw: RawShift[] = assignments.map((assignment) => {
           const matchData = tbaSchedule[assignment.match];
-          const matchTime = matchData?.est_time
-            ? matchData.est_time * 1000
-            : null;
-
+          const matchTime = matchData?.est_time ? matchData.est_time * 1000 : null;
           return {
             match: assignment.match,
             matchLabel: getMatchLabel(assignment.match),
@@ -102,29 +119,31 @@ export function ShiftsPage() {
             teamNumber: assignment.team.replace("frc", ""),
             alliance: assignment.alliance,
             time: matchTime,
-            timeLabel: matchTime ? formatRelativeTime(matchTime) : "Unknown",
           };
         });
-
-        // past: scheduled >2min ago, sorted ascending (oldest at top, most recent just above next)
-        const past = shiftsWithTimes
-          .filter((s) => s.time && s.time <= effectiveNow)
-          .sort((a, b) => (a.time || 0) - (b.time || 0));
-        // upcoming: no time or within 2-min buffer, sorted ascending (next match first)
-        const upcoming = shiftsWithTimes
-          .filter((s) => !s.time || s.time > effectiveNow)
-          .sort((a, b) => (a.time || 0) - (b.time || 0));
-        const combined = [...past, ...upcoming];
-        setShifts(combined);
-        setNextShiftIdx(past.length < combined.length ? past.length : -1);
-        hasScrolled.current = false; // allow re-scroll on data refresh
+        setRawShifts(raw);
       })
       .catch((error) => {
         console.error("Failed to load shifts:", error);
-        setShifts([]);
+        setRawShifts([]);
       })
       .finally(() => setInitialLoading(false));
   }, [currentEvent, userData.name, tbaSchedule]);
+
+  // Re-split past/upcoming every 30s so the highlight advances without a poll
+  useEffect(() => {
+    function recompute() {
+      const { combined, nextIdx } = splitShifts(rawShifts);
+      setNextShiftIdx((prev) => {
+        if (prev !== nextIdx) hasScrolled.current = false;
+        return nextIdx;
+      });
+      setShifts(combined);
+    }
+    recompute();
+    const interval = setInterval(recompute, 30_000);
+    return () => clearInterval(interval);
+  }, [rawShifts]);
 
   // Auto-scroll to the next shift once when data loads.
   // home.tsx uses min-h-dvh so the window is the scroll container (not CommandList).

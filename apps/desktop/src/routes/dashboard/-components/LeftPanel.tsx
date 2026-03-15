@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Info, Trophy, Zap, BarChart3 } from "lucide-react";
 import { useTabContext } from "../../../contexts/TabContext";
@@ -25,6 +25,11 @@ export function LeftPanel({ schedule, tbaSchedule, matchData, profiles }: LeftPa
   const { tabs, setActiveTab, addTab } = useTabContext();
   const navigate = useNavigate();
   const { homeTeam } = useDesktopEvent();
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setClockTick((t) => t + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
 
   //  next/last match from tbaSchedule (Nexus-overlaid times) so it updates
   // in lockstep with the upcoming list — same threshold, same data source.
@@ -38,7 +43,7 @@ export function LeftPanel({ schedule, tbaSchedule, matchData, profiles }: LeftPa
     const nextIdx = teamMatches.findIndex(([, tba]) => tba.est_time != null && tba.est_time > now - 120);
     if (nextIdx !== -1) return teamMatches[nextIdx][0];
     return teamMatches[teamMatches.length - 1]?.[0] ?? null;
-  }, [homeTeam, tbaSchedule]);
+  }, [homeTeam, tbaSchedule, clockTick]);
 
   // Match Progress: unique qual matches with actual scores / total unique qual matches
   const matchProgress = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ExternalLink, Edit2, Calendar } from "lucide-react";
 import {
@@ -155,6 +155,12 @@ export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
   const [showEditTeam, setShowEditTeam] = useState(false);
   const [editTeamInput, setEditTeamInput] = useState("");
   const [savingTeam, setSavingTeam] = useState(false);
+  const [clockTick, setClockTick] = useState(0);
+
+  useEffect(() => {
+    const i = setInterval(() => setClockTick((t) => t + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
 
   const handleMatchClick = (matchKey: string) => {
     addTab("/matches", getMatchLabel(matchKey), { match: matchKey }, `match-${matchKey}`);
@@ -199,7 +205,7 @@ export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
       keys.sort((a, b) => matchSortKey(a) - matchSortKey(b));
     }
     return keys.slice(0, 5);
-  }, [tbaSchedule]);
+  }, [tbaSchedule, clockTick]);
 
   // Next/last match for home team — derived from tbaSchedule so it updates in
   // lockstep with the upcoming list (same data source).
@@ -239,7 +245,7 @@ export function RightPanel({ tbaTeams, tbaSchedule }: RightPanelProps) {
       nextMatch: firstUnplayedIdx >= 0 ? sorted[firstUnplayedIdx][0] : null,
       lastMatch: lastPlayedIdx >= 0 ? sorted[lastPlayedIdx][0] : null,
     };
-  }, [homeTeamKey, tbaSchedule]);
+  }, [homeTeamKey, tbaSchedule, clockTick]);
 
   return (
     <>

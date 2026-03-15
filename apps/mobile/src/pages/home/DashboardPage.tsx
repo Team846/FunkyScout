@@ -67,6 +67,32 @@ const formatTimeAgo = (timestamp: number) => {
   return `${days}d ago`;
 };
 
+const formatRelativeShiftTime = (timestamp: number | null): string => {
+  if (!timestamp) return "";
+  const now = Date.now();
+  const diff = timestamp - now;
+  const absDiff = Math.abs(diff);
+  const minutes = Math.floor(absDiff / (1000 * 60));
+  const hours = Math.floor(absDiff / (1000 * 60 * 60));
+  if (diff > 0) {
+    if (minutes < 60) return `in ${minutes}m`;
+    const remainingMins = minutes % 60;
+    return remainingMins > 0 ? `in ${hours}h ${remainingMins}m` : `in ${hours}h`;
+  } else {
+    // Within 2-minute buffer the match is still happening, show "Now"
+    if (minutes < 2) return "Now";
+    if (minutes < 60) return `${minutes}m ago`;
+    return `${hours}h ago`;
+  }
+};
+
+const getQualNumber = (matchKey: string): number | null => {
+  const parts = matchKey.split("_");
+  if (parts.length < 2) return null;
+  const qmMatch = parts[1].match(/^qm(\d+)$/i);
+  return qmMatch ? Number(qmMatch[1]) : null;
+};
+
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -93,6 +119,18 @@ export function DashboardPage() {
     untilBreak: 0,
   });
   const [picklistSelectorOpen, setPicklistSelectorOpen] = useState(false);
+  const [clockTick, setClockTick] = useState(0);
+
+  // Raw shift data from DB — avoids re-fetching every 30s
+  type RawShiftEntry = { assignment: { match: string; team: string; alliance: "red" | "blue" }; matchTime: number | null };
+  const [rawDashShifts, setRawDashShifts] = useState<RawShiftEntry[]>([]);
+  const [dashShiftsDone, setDashShiftsDone] = useState(0);
+
+  // Tick every 30s so time-sensitive displays refresh without a poll
+  useEffect(() => {
+    const i = setInterval(() => setClockTick((t) => t + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
 
   const OUR_TEAM = 846;
 
@@ -280,192 +318,51 @@ export function DashboardPage() {
         setMatchLoading(false);
         setInitialMatchLoading(false);
       });
-  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds]);
+  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds, clockTick]);
 
-  // Fetch next shift for current user
+  // DB fetch — expensive, only re-runs when event/user/schedule changes
   useEffect(() => {
     if (!currentEvent || !userData.name) {
       setShiftLoading(false);
       setInitialShiftLoading(false);
       return;
     }
-
-    // Only show loading on initial load, not on background refreshes
-    const isInitialLoad = initialShiftLoading;
-    if (isInitialLoad) {
-      setShiftLoading(true);
-    }
+    if (initialShiftLoading) setShiftLoading(true);
 
     const fetchShiftData = async () => {
       try {
-        const now = Date.now();
-
-        // Use locally stored UID — avoids a Supabase auth.getSession() call that
-        // can hang when offline trying to refresh an expired token.
         const currentUid = userData.uid || undefined;
-
         const { getEventMatchData } = await import("@lib/db");
 
-        let shiftsActuallyDone = 0;
+        let done = 0;
         try {
           const allMatchData = await getEventMatchData(currentEvent);
-          console.log("[DashboardPage] Counting shifts done:", {
-            totalMatches: allMatchData.length,
-            currentUid,
-            event: currentEvent,
-          });
-
-          // Count matches user actually scouted (not deleted, belongs to user)
-          // Same logic as "Edit Past Matches" but without time filtering
-          const scoutedMatches = allMatchData.filter((m) => {
-            // Must have actual scouting data and not be deleted
-            if (!m.name || m.deleted_at) return false;
-            // Must be scouted by current user
-            return m.uid === currentUid;
-          });
-
-          shiftsActuallyDone = scoutedMatches.length;
-          console.log("[DashboardPage] Shifts actually done:", shiftsActuallyDone, scoutedMatches);
-        } catch (error) {
-          console.error("Failed to count completed shifts:", error);
+          done = allMatchData.filter((m) => m.name && !m.deleted_at && m.uid === currentUid).length;
+          console.log("[DashboardPage] Shifts actually done:", done);
+        } catch (e) {
+          console.error("Failed to count completed shifts:", e);
         }
 
-        // Now fetch scheduled assignments (prefer uid - name can change)
         const assignments = currentUid
           ? await getUserEventScheduleAssignments(currentEvent, currentUid, true)
           : await getUserEventScheduleAssignments(currentEvent, userData.name || "", false);
-        // Both paths read from local SQLite — works offline.
 
         if (assignments.length === 0) {
-          // User has no scheduled assignments, but may have completed shifts
-          setNextShift(null);
-          setShiftStats({ done: shiftsActuallyDone, left: 0, untilBreak: 0 });
+          setRawDashShifts([]);
+          setDashShiftsDone(done);
           return;
         }
 
-        // Map assignments to include match times
         const shiftsWithTimes = assignments.map((assignment) => {
           const matchData = tbaSchedule[assignment.match];
-          const matchTime = matchData?.est_time
-            ? matchData.est_time * 1000
-            : null;
-
-          return {
-            assignment,
-            matchTime,
-          };
+          return { assignment, matchTime: matchData?.est_time ? matchData.est_time * 1000 : null };
         });
 
-        const futureShiftsCount = shiftsWithTimes.filter(
-          (s) => s.matchTime && s.matchTime > now
-        ).length;
-
-        const getQualNumber = (matchKey: string): number | null => {
-          const parts = matchKey.split("_");
-          if (parts.length < 2) return null;
-          const matchPart = parts[1];
-          const qmMatch = matchPart.match(/^qm(\d+)$/i);
-          return qmMatch ? Number(qmMatch[1]) : null;
-        };
-
-        const upcomingQualMatches = Object.entries(tbaSchedule)
-          .map(([matchKey, matchData]) => {
-            const qualNum = getQualNumber(matchKey);
-            const matchTime = matchData?.est_time
-              ? matchData.est_time * 1000
-              : null;
-            return { matchKey, qualNum, matchTime };
-          })
-          .filter(
-            (m) =>
-              m.qualNum !== null &&
-              m.matchTime !== null &&
-              (m.matchTime as number) >= now
-          )
-          .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
-
-        const assignedMatches = new Set(assignments.map((a) => a.match));
-        let untilBreak = 0;
-        for (const match of upcomingQualMatches) {
-          if (assignedMatches.has(match.matchKey)) {
-            untilBreak += 1;
-          } else {
-            break;
-          }
-        }
-
-        setShiftStats({
-          done: shiftsActuallyDone,
-          left: futureShiftsCount,
-          untilBreak,
-        });
-
-        // Find next upcoming shift (2-minute buffer so shift stays "upcoming" briefly after est time)
-        const SHIFT_BUFFER_MS = 2 * 60 * 1000;
-        const upcomingShifts = shiftsWithTimes
-          .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
-          .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
-
-        let shiftToDisplay;
-        let isPast = false;
-
-        if (upcomingShifts.length > 0) {
-          // Use next upcoming shift
-          shiftToDisplay = upcomingShifts[0];
-        } else {
-          // Use most recent past shift
-          const pastShifts = shiftsWithTimes
-            .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
-            .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
-
-          if (pastShifts.length > 0) {
-            shiftToDisplay = pastShifts[0];
-            isPast = true;
-          } else {
-            // Fallback to first shift if no time data
-            shiftToDisplay = shiftsWithTimes[0];
-          }
-        }
-
-        if (shiftToDisplay) {
-          const { assignment, matchTime } = shiftToDisplay;
-
-          // Helper to format relative time
-          const formatRelativeTime = (timestamp: number | null): string => {
-            if (!timestamp) return ""; // Return empty string instead of "Unknown"
-            const diff = timestamp - now;
-            const absDiff = Math.abs(diff);
-            const minutes = Math.floor(absDiff / (1000 * 60));
-            const hours = Math.floor(absDiff / (1000 * 60 * 60));
-
-            if (diff > 0) {
-              // Future
-              if (minutes < 60) return `in ${minutes}m`;
-              const remainingMins = minutes % 60;
-              return remainingMins > 0
-                ? `in ${hours}h ${remainingMins}m`
-                : `in ${hours}h`;
-            } else {
-              // Past
-              if (minutes < 60) return `${minutes}m ago`;
-              return `${hours}h ago`;
-            }
-          };
-
-          setNextShift({
-            matchLabel: getMatchLabel(assignment.match),
-            matchKey: assignment.match,
-            teamNumber: assignment.team.replace("frc", ""),
-            teamKey: assignment.team,
-            alliance: assignment.alliance,
-            timeLabel: formatRelativeTime(matchTime),
-            isPastShift: isPast,
-          });
-        }
+        setRawDashShifts(shiftsWithTimes);
+        setDashShiftsDone(done);
       } catch (error) {
         console.error("Failed to load shift data:", error);
-        setNextShift(null);
-        setShiftStats({ done: 0, left: 0, untilBreak: 0 });
+        setRawDashShifts([]);
       }
     };
 
@@ -474,6 +371,72 @@ export function DashboardPage() {
       setInitialShiftLoading(false);
     });
   }, [currentEvent, userData.name, tbaSchedule]);
+
+  // 30s recompute — no DB queries, just re-splits raw data using current clock
+  useEffect(() => {
+    function recompute() {
+      const now = Date.now();
+      const SHIFT_BUFFER_MS = 2 * 60 * 1000;
+
+      if (rawDashShifts.length === 0) {
+        setShiftStats({ done: dashShiftsDone, left: 0, untilBreak: 0 });
+        setNextShift(null);
+        return;
+      }
+
+      const futureShiftsCount = rawDashShifts.filter((s) => s.matchTime && s.matchTime > now).length;
+
+      const upcomingQualMatches = Object.entries(tbaSchedule)
+        .map(([matchKey, md]) => ({ matchKey, qualNum: getQualNumber(matchKey), matchTime: md?.est_time ? md.est_time * 1000 : null }))
+        .filter((m) => m.qualNum !== null && m.matchTime !== null && (m.matchTime as number) >= now)
+        .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
+
+      const assignedMatches = new Set(rawDashShifts.map((s) => s.assignment.match));
+      let untilBreak = 0;
+      for (const match of upcomingQualMatches) {
+        if (assignedMatches.has(match.matchKey)) untilBreak += 1;
+        else break;
+      }
+
+      setShiftStats({ done: dashShiftsDone, left: futureShiftsCount, untilBreak });
+
+      const upcomingShifts = rawDashShifts
+        .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
+        .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
+
+      let shiftToDisplay: RawShiftEntry | undefined;
+      let isPast = false;
+
+      if (upcomingShifts.length > 0) {
+        shiftToDisplay = upcomingShifts[0];
+      } else {
+        const pastShifts = rawDashShifts
+          .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
+          .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
+        if (pastShifts.length > 0) { shiftToDisplay = pastShifts[0]; isPast = true; }
+        else shiftToDisplay = rawDashShifts[0];
+      }
+
+      if (shiftToDisplay) {
+        const { assignment, matchTime } = shiftToDisplay;
+        setNextShift({
+          matchLabel: getMatchLabel(assignment.match),
+          matchKey: assignment.match,
+          teamNumber: assignment.team.replace("frc", ""),
+          teamKey: assignment.team,
+          alliance: assignment.alliance,
+          timeLabel: formatRelativeShiftTime(matchTime),
+          isPastShift: isPast,
+        });
+      } else {
+        setNextShift(null);
+      }
+    }
+
+    recompute();
+    const interval = setInterval(recompute, 30_000);
+    return () => clearInterval(interval);
+  }, [rawDashShifts, dashShiftsDone, tbaSchedule]);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden">

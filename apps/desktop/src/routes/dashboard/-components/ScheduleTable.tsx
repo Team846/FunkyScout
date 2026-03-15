@@ -1,4 +1,4 @@
-import { useMemo, useRef, useImperativeHandle, forwardRef } from "react";
+import { useMemo, useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
 import type { ScheduleEntry, TBAMatchData } from "../../../contexts/DesktopCompetitionDataContext";
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
 import {
@@ -137,6 +137,11 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
   ) {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const { q25, q75 } = useEpaColors(tbaTeams);
+    const [clockTick, setClockTick] = useState(0);
+    useEffect(() => {
+      const i = setInterval(() => setClockTick((t) => t + 1), 30_000);
+      return () => clearInterval(i);
+    }, []);
 
     const matchRows = useMemo(() => {
     // Get unique match keys
@@ -179,7 +184,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
         hasPrediction,
       };
     });
-  }, [schedule, tbaSchedule]);
+  }, [schedule, tbaSchedule, clockTick]);
 
   const filteredRows = useMemo(() => {
     if (!searchQuery.trim()) return matchRows;

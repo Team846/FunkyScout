@@ -45,6 +45,11 @@ export function Match() {
   const [matchQuery, setMatchQuery] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [currentUserUid] = useState<string>(() => getLocalUserData().uid);
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setClockTick((t) => t + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
   const matchInputRef = useRef<HTMLInputElement>(null);
 
   // Get unique matches from schedule
