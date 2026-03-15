@@ -140,7 +140,7 @@ function computeDesktopVerifications(
     (m.data_raw as Record<string, Record<string, unknown>> | null)?.postMatch ?? {};
   const observed = {
     bump:             matches.some(m => pm(m).bump),
-    trough:           matches.some(m => pm(m).through),
+    trough:           matches.some(m => pm(m).trough),
     ground:           matches.some(m => pm(m).canGround),
     outpost:          matches.some(m => pm(m).canStation),
     passing:          matches.some(m => pm(m).canPass),
