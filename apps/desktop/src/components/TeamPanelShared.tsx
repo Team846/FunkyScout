@@ -88,6 +88,8 @@ interface PitData {
   movement?: { bump?: boolean; trough?: boolean };
   intake?: { ground?: boolean; outpost?: boolean };
   fuel?: { passing?: boolean; capacity?: string };
+  weight?: string;
+  driveType?: string;
   autoClimb?: { level?: string | null; orientation?: string[] };
   teleopClimb?: { level?: string[]; orientation?: string[] };
   autos?: Array<{
@@ -120,6 +122,7 @@ interface DesktopVerifications {
   ground: CapabilityState;
   outpost: CapabilityState;
   passing: CapabilityState;
+  shootWhileMoving: boolean;
   autoClimbObserved: boolean;
   autoClimbOrientations: Set<string>;
   teleopL1: boolean;
@@ -136,11 +139,12 @@ function computeDesktopVerifications(
   const pm = (m: MatchScoutingData) =>
     (m.data_raw as Record<string, Record<string, unknown>> | null)?.postMatch ?? {};
   const observed = {
-    bump:    matches.some(m => pm(m).bump),
-    trough:  matches.some(m => pm(m).trough),
-    ground:  matches.some(m => pm(m).canGround),
-    outpost: matches.some(m => pm(m).canStation),
-    passing: matches.some(m => pm(m).canPass),
+    bump:             matches.some(m => pm(m).bump),
+    trough:           matches.some(m => pm(m).through),
+    ground:           matches.some(m => pm(m).canGround),
+    outpost:          matches.some(m => pm(m).canStation),
+    passing:          matches.some(m => pm(m).canPass),
+    shootWhileMoving: matches.some(m => pm(m).shootWhileMove),
   };
 
   const autoClimbOrientations = new Set(
@@ -162,6 +166,7 @@ function computeDesktopVerifications(
     ground:  capState(pit.intake?.ground ?? false, observed.ground),
     outpost: capState(pit.intake?.outpost ?? false, observed.outpost),
     passing: capState(pit.fuel?.passing ?? false, observed.passing),
+    shootWhileMoving: observed.shootWhileMoving,
     autoClimbObserved: tbaEntries.some(e => e.auto_climb != null),
     autoClimbOrientations,
     teleopL1: tbaEntries.some(e => e.teleop_climb === "L1"),
@@ -1633,6 +1638,9 @@ export function FullTeamPanel({
                         </p>
                       </div>
                       <CapabilityRow label="Passing" state={pit.fuel?.passing ? verifs.passing : "faded"} noBullet />
+                      {verifs.shootWhileMoving && (
+                        <span className="text-[10px] font-semibold text-chart-2 leading-tight">Shoot Moving</span>
+                      )}
                     </div>
                   </div>
                   {/* Moving card */}
@@ -1641,6 +1649,18 @@ export function FullTeamPanel({
                     <div className="space-y-1.5 flex flex-col items-center flex-1">
                       <CapabilityRow label="Trench" state={pit.movement?.trough ? verifs.trough : "faded"} noBullet />
                       <CapabilityRow label="Bump" state={pit.movement?.bump ? verifs.bump : "faded"} noBullet />
+                      {pit.weight && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Wt:</p>
+                          <p className="text-xs text-foreground">{pit.weight}lb</p>
+                        </div>
+                      )}
+                      {pit.driveType && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Drive:</p>
+                          <p className="text-xs text-foreground break-words">{pit.driveType}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {/* Intake card */}
@@ -3288,6 +3308,9 @@ export function ExpandedTeamPanel({
                         <p className={`text-[10px] break-words ${pit.fuel?.capacity ? "text-foreground" : "text-muted-foreground/70"}`}>{pit.fuel?.capacity || "—"}</p>
                       </div>
                       <CapabilityRow label="Pass" state={pit.fuel?.passing ? verifs.passing : "faded"} noBullet />
+                      {verifs.shootWhileMoving && (
+                        <span className="text-[10px] font-semibold text-chart-2 leading-tight">Shoot Mvg</span>
+                      )}
                     </div>
                   </div>
                   {/* Moving */}
@@ -3296,6 +3319,18 @@ export function ExpandedTeamPanel({
                     <div className="space-y-2.5 flex flex-col items-center flex-1">
                       <CapabilityRow label="Trench" state={pit.movement?.trough ? verifs.trough : "faded"} noBullet />
                       <CapabilityRow label="Bump" state={pit.movement?.bump ? verifs.bump : "faded"} noBullet />
+                      {pit.weight && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Wt:</p>
+                          <p className="text-[10px] text-foreground">{pit.weight}lb</p>
+                        </div>
+                      )}
+                      {pit.driveType && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Drive:</p>
+                          <p className="text-[10px] text-foreground break-words">{pit.driveType}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {/* Intake */}
