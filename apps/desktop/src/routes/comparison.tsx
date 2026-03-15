@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTabContext } from "../contexts/TabContext";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   X,
   Search,
@@ -59,6 +59,8 @@ interface ComparisonUIState {
   graphMetrics: string[];
   sortKey: string;
   searchTeam: string;
+  scrollY: number;
+  statOverviewMetric: string;
 }
 let _compUIState: ComparisonUIState | null = null;
 
@@ -465,14 +467,22 @@ function ComparisonPage() {
   );
   const [showCompPickerFor, setShowCompPickerFor] = useState<number | null>(null);
   const [showGraphPicker, setShowGraphPicker] = useState(false);
-  const [statOverviewMetric, setStatOverviewMetric] = useState("overview");
+  const [statOverviewMetric, setStatOverviewMetric] = useState(() => _compUIState?.statOverviewMetric ?? "overview");
   const [showPercentiles, setShowPercentiles] = useState<Record<string, boolean>>({});
   const [searchTeam, setSearchTeam] = useState(() => _compUIState?.searchTeam ?? "");
   const [sortKey, setSortKey] = useState(() => _compUIState?.sortKey ?? "rank");
   const [sortOpen, setSortOpen] = useState(false);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
   // Persist UI state synchronously on every render so a tab switch mid-flight
   // never reads stale data (useEffect fires after paint, too late if unmounting).
-  _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics, sortKey, searchTeam };
+  _compUIState = { displayTeams, graphTeams, comparisonMetrics: compMetrics, graphMetrics, sortKey, searchTeam, scrollY: _compUIState?.scrollY ?? 0, statOverviewMetric };
+
+  // Restore sidebar scroll on mount
+  useEffect(() => {
+    if (sidebarScrollRef.current && _compUIState?.scrollY) {
+      sidebarScrollRef.current.scrollTop = _compUIState.scrollY;
+    }
+  }, []);
 
   // ── Sorted + filtered team list ──
   const sortedTeams = useMemo(() => {
@@ -653,7 +663,11 @@ function ComparisonPage() {
         </div>
 
         {/* Team list */}
-        <div className="flex-1 overflow-y-auto py-2 px-3 space-y-2.5">
+        <div
+          ref={sidebarScrollRef}
+          className="flex-1 overflow-y-auto py-2 px-3 space-y-2.5"
+          onScroll={(e) => { if (_compUIState) _compUIState.scrollY = (e.currentTarget as HTMLDivElement).scrollTop; }}
+        >
           {filteredTeams.map((team) => (
             <ComparisonSidebarCard
               key={team.key}

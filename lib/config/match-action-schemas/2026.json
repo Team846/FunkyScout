@@ -6,13 +6,19 @@
       "id": "groundIntake",
       "label": "Intake",
       "category": "userPlaced",
-      "phase": "both"
+      "phase": "auto"
     },
     {
       "id": "passing",
-      "label": "Passing",
+      "label": "Ground Passing",
       "category": "userPlaced",
-      "phase": "both"
+      "phase": "teleop"
+    },
+    {
+      "id": "shootPassing",
+      "label": "Shoot Passing",
+      "category": "userPlaced",
+      "phase": "teleop"
     },
     {
       "id": "dropped",

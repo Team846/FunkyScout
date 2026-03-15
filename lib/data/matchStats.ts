@@ -21,7 +21,8 @@ import type {
  */
 interface ActionCounts {
   intakes: number;
-  passes: number;
+  passes: number;      // ground passes (passing action)
+  shootPasses: number; // shoot passes (shootPassing action)
   shoots: number;
   stocking: number;
   camps: number;    // defend-mode: camp placements on opponent field
@@ -370,6 +371,7 @@ function countActions(actions: MatchAction[]): ActionCounts {
   const counts: ActionCounts = {
     intakes: 0,
     passes: 0,
+    shootPasses: 0,
     shoots: 0,
     stocking: 0,
     camps: 0,
@@ -379,6 +381,7 @@ function countActions(actions: MatchAction[]): ActionCounts {
   for (const action of actions) {
     if (action.actionId === "groundIntake") counts.intakes++;
     else if (action.actionId === "passing") counts.passes++;
+    else if (action.actionId === "shootPassing") counts.shootPasses++;
     else if (action.actionId === "shoot") counts.shoots++;
     else if (action.actionId === "stationStocked") counts.stocking++;
     else if (action.actionId === "camp") counts.camps++;
@@ -577,15 +580,17 @@ function calculateAverageActions(matchStats: MatchStats[]) {
   return {
     auto: {
       intakes: avg(matchStats.map((s) => s.auto.intakes)),
-      passes: avg(matchStats.map((s) => s.auto.passes)),
+      passes: 0,
+      shootPasses: 0,
       shoots: avg(matchStats.map((s) => s.auto.shoots)),
       stocking: avg(matchStats.map((s) => s.auto.stocking)),
       camps: avg(matchStats.map((s) => s.auto.camps)),
       disrupts: avg(matchStats.map((s) => s.auto.disrupts)),
     },
     teleop: {
-      intakes: avg(matchStats.map((s) => s.teleop.intakes)),
+      intakes: 0,
       passes: avg(matchStats.map((s) => s.teleop.passes)),
+      shootPasses: avg(matchStats.map((s) => s.teleop.shootPasses)),
       shoots: avg(matchStats.map((s) => s.teleop.shoots)),
       stocking: avg(matchStats.map((s) => s.teleop.stocking)),
       camps: avg(matchStats.map((s) => s.teleop.camps)),
@@ -696,11 +701,10 @@ function calculateConsistencyScores(matchStats: MatchStats[]) {
   const actionCounts = matchStats.map(
     (s) =>
       s.auto.intakes +
-      s.auto.passes +
       s.auto.shoots +
       s.auto.stocking +
-      s.teleop.intakes +
       s.teleop.passes +
+      s.teleop.shootPasses +
       s.teleop.shoots +
       s.teleop.stocking
   );
@@ -884,22 +888,22 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
   // Auto
   { key: "auto_shoots",         label: "Auto Shoots",         group: "Auto",    getValue: (s) => s.auto.shoots,   normalize: relativeNorm },
   { key: "auto_intakes",        label: "Auto Intakes",        group: "Auto",    getValue: (s) => s.auto.intakes,  normalize: relativeNorm },
-  { key: "auto_passes",         label: "Auto Passes",         group: "Auto",    getValue: (s) => s.auto.passes,   normalize: relativeNorm },
   {
     key: "auto_total_actions", label: "Auto Total Actions", group: "Auto",
-    getValue: (s) => s.auto.intakes + s.auto.passes + s.auto.shoots + s.auto.stocking,
+    getValue: (s) => s.auto.intakes + s.auto.shoots + s.auto.stocking,
     normalize: relativeNorm,
   },
 
   // Teleop
-  { key: "teleop_shoots",       label: "Teleop Shoots",       group: "Teleop",  getValue: (s) => s.teleop.shoots,    normalize: relativeNorm },
-  { key: "teleop_intakes",      label: "Teleop Intakes",      group: "Teleop",  getValue: (s) => s.teleop.intakes,   normalize: relativeNorm },
-  { key: "teleop_passes",       label: "Teleop Passes",       group: "Teleop",  getValue: (s) => s.teleop.passes,    normalize: relativeNorm },
-  { key: "teleop_camps",        label: "Camps",               group: "Teleop",  getValue: (s) => s.teleop.camps,     normalize: relativeNorm },
-  { key: "teleop_disrupts",     label: "Disrupts",            group: "Teleop",  getValue: (s) => s.teleop.disrupts,  normalize: relativeNorm },
+  { key: "teleop_shoots",        label: "Teleop Shoots",         group: "Teleop",  getValue: (s) => s.teleop.shoots,                            normalize: relativeNorm },
+  { key: "teleop_passes",        label: "Teleop Ground Passes",  group: "Teleop",  getValue: (s) => s.teleop.passes,                            normalize: relativeNorm },
+  { key: "teleop_shoot_passes",  label: "Teleop Shoot Passes",   group: "Teleop",  getValue: (s) => s.teleop.shootPasses,                       normalize: relativeNorm },
+  { key: "teleop_total_passes",  label: "Teleop Total Passes",   group: "Teleop",  getValue: (s) => s.teleop.passes + s.teleop.shootPasses,     normalize: relativeNorm },
+  { key: "teleop_camps",         label: "Camps",                 group: "Teleop",  getValue: (s) => s.teleop.camps,                             normalize: relativeNorm },
+  { key: "teleop_disrupts",      label: "Disrupts",              group: "Teleop",  getValue: (s) => s.teleop.disrupts,                          normalize: relativeNorm },
   {
     key: "teleop_total_actions", label: "Teleop Total Actions", group: "Teleop",
-    getValue: (s) => s.teleop.intakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
+    getValue: (s) => s.teleop.passes + s.teleop.shootPasses + s.teleop.shoots + s.teleop.stocking,
     normalize: relativeNorm,
   },
 
@@ -910,15 +914,10 @@ export const GRAPHABLE_STATS: GraphableStat[] = [
     normalize: relativeNorm,
   },
   {
-    key: "total_intakes", label: "Total Intakes", group: "Combined",
-    getValue: (s) => s.auto.intakes + s.teleop.intakes,
-    normalize: relativeNorm,
-  },
-  {
     key: "total_actions", label: "Total Actions", group: "Combined",
     getValue: (s) =>
-      s.auto.intakes + s.auto.passes + s.auto.shoots + s.auto.stocking +
-      s.teleop.intakes + s.teleop.passes + s.teleop.shoots + s.teleop.stocking,
+      s.auto.intakes + s.auto.shoots + s.auto.stocking +
+      s.teleop.passes + s.teleop.shootPasses + s.teleop.shoots + s.teleop.stocking,
     normalize: relativeNorm,
   },
   {

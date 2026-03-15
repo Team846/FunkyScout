@@ -1,4 +1,4 @@
-import { useMemo, useRef, useImperativeHandle, forwardRef } from "react";
+import { useMemo, useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
 import type { ScheduleEntry, TBAMatchData } from "../../../contexts/DesktopCompetitionDataContext";
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
 import {
@@ -9,6 +9,7 @@ import {
 
 export interface ScheduleTableHandle {
   scrollToLastCompleted: () => void;
+  scrollToCurrentMatch: () => void;
 }
 
 interface ScheduleTableProps {
@@ -136,6 +137,11 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
   ) {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const { q25, q75 } = useEpaColors(tbaTeams);
+    const [clockTick, setClockTick] = useState(0);
+    useEffect(() => {
+      const i = setInterval(() => setClockTick((t) => t + 1), 30_000);
+      return () => clearInterval(i);
+    }, []);
 
     const matchRows = useMemo(() => {
     // Get unique match keys
@@ -156,6 +162,11 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
       const hasPrediction = predictedRed != null && predictedBlue != null;
 
       const estTime = tba?.est_time ?? entries[0]?.est_time;
+      // Match is considered completed if it has actual scores, OR if its estimated
+      // time was more than 2 minutes ago (mirrors RightPanel's time-based logic so
+      // the yellow line stays in sync with the "current match" indicator).
+      const isLikelyCompleted =
+        hasActualScore || (estTime != null && estTime > 0 && estTime < Date.now() / 1000 - 120);
 
       return {
         matchKey,
@@ -167,12 +178,13 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
         redScore,
         blueScore,
         hasActualScore,
+        isLikelyCompleted,
         predictedRed,
         predictedBlue,
         hasPrediction,
       };
     });
-  }, [schedule, tbaSchedule]);
+  }, [schedule, tbaSchedule, clockTick]);
 
   const filteredRows = useMemo(() => {
     if (!searchQuery.trim()) return matchRows;
@@ -183,10 +195,12 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
     });
   }, [matchRows, searchQuery]);
 
-  // Find the last completed match index for scrolling
+  // Find the last completed match index for scrolling and yellow line placement.
+  // Uses isLikelyCompleted (time-based) so it stays in sync with the RightPanel
+  // "current match" indicator even before TBA posts actual scores.
   const lastCompletedIndex = useMemo(() => {
     for (let i = filteredRows.length - 1; i >= 0; i--) {
-      if (filteredRows[i].hasActualScore) return i;
+      if (filteredRows[i].isLikelyCompleted) return i;
     }
     return -1;
   }, [filteredRows]);
@@ -201,7 +215,20 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
         targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     },
-  }), [lastCompletedIndex]);
+    scrollToCurrentMatch: () => {
+      if (!scrollContainerRef.current || filteredRows.length === 0) return;
+      const container = scrollContainerRef.current;
+      const rows = container.querySelectorAll("[data-match-row]");
+      // Target: first upcoming (after last completed); if none completed, first row
+      const targetIdx = lastCompletedIndex === -1
+        ? 0
+        : Math.min(lastCompletedIndex + 1, filteredRows.length - 1);
+      const targetRow = rows[targetIdx] as HTMLElement;
+      if (targetRow) {
+        targetRow.scrollIntoView({ behavior: "instant", block: "center" });
+      }
+    },
+  }), [lastCompletedIndex, filteredRows.length]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">

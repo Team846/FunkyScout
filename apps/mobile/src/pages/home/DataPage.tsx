@@ -74,8 +74,12 @@ export function DataPage() {
   const [teamData, setTeamData] = useState<EventTeamData[]>([]);
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
   const [initialMatchLoading, setInitialMatchLoading] = useState(true);
-  const [sortField, setSortField] = useState<SortField>("rank");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortField, setSortField] = useState<SortField>(
+    () => (sessionStorage.getItem("dataPage_sortField") as SortField | null) ?? "rank"
+  );
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
+    () => (sessionStorage.getItem("dataPage_sortDir") as "asc" | "desc" | null) ?? "asc"
+  );
 
   const OUR_TEAM = 846;
 
@@ -296,7 +300,7 @@ export function DataPage() {
           <div className="flex items-center gap-2">
             <Select
               value={sortField}
-              onValueChange={(val) => setSortField(val as SortField)}
+              onValueChange={(val) => { setSortField(val as SortField); sessionStorage.setItem("dataPage_sortField", val); }}
             >
               <SelectTrigger className="h-9 w-36 bg-muted border-0 text-xs">
                 <SelectValue />
@@ -313,7 +317,7 @@ export function DataPage() {
             <button
               type="button"
               onClick={() =>
-                setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
+                setSortDirection((prev) => { const next = prev === "asc" ? "desc" : "asc"; sessionStorage.setItem("dataPage_sortDir", next); return next; })
               }
               className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted hover:bg-accent transition-colors"
             >

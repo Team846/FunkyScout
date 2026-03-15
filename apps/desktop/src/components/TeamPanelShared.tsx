@@ -20,6 +20,7 @@ import {
   ArrowLeftRight,
   Eye,
   EyeOff,
+  Activity,
 } from "lucide-react";
 import { TauriYouTubeEmbed } from "./TauriYouTubeEmbed";
 import {
@@ -504,6 +505,7 @@ const PANEL_FIELD_H = 318;
 const PANEL_ACTION_STYLE: Record<string, { fill: string; shape: string }> = {
   groundIntake:   { fill: "#22c55e", shape: "circle" },
   passing:        { fill: "#3b82f6", shape: "square" },
+  shootPassing:   { fill: "#f97316", shape: "square" },
   stationIntake:  { fill: "#a855f7", shape: "square" },
   stationStocked: { fill: "#f59e0b", shape: "diamond" },
   fuelScore1:     { fill: "#eab308", shape: "circle" },
@@ -921,8 +923,10 @@ export interface FullTeamPanelProps {
   graphedMetrics?: string[];
 }
 
-// Module-level: shared stat selection when not controlled by parent
+// Module-level: shared stat/match selection when not controlled by parent
 let _statOverviewMetricKey = "overview";
+let _matchOverviewMetricKey = "epa";
+let _matchOverviewOpen = false;
 
 export function FullTeamPanel({
   teamKey,
@@ -1031,10 +1035,10 @@ export function FullTeamPanel({
   const [matchRecapOpen, setMatchRecapOpen] = useState(true);
   const [statOverviewOpen, setStatOverviewOpen] = useState(true);
   const [showStatOverviewPicker, setShowStatOverviewPicker] = useState(false);
-  const [matchOverviewOpen, setMatchOverviewOpen] = useState(false);
+  const [matchOverviewOpen, setMatchOverviewOpen] = useState(() => _matchOverviewOpen);
   const [showMatchPicker, setShowMatchPicker] = useState(false);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
-  const [matchOverviewMetric, setMatchOverviewMetric] = useState("epa");
+  const [matchOverviewMetric, setMatchOverviewMetric] = useState(() => _matchOverviewMetricKey);
   const [showMatchOverviewMetricPicker, setShowMatchOverviewMetricPicker] = useState(false);
   // ── Match Overview video/replay ─────────────────────────────────────────────
   const [excludingMatch, setExcludingMatch] = useState(false);
@@ -1909,21 +1913,35 @@ export function FullTeamPanel({
                       >
                         <div className="flex items-center justify-between px-3 py-2">
                           
-                          <p className="text-base font-medium text-primary">
+                          <p className="text-base truncate font-medium text-primary">
                             {matchLabel} — {scouterName}
                           </p>
-                          <button
-                            type="button"
-                            title="Open in matches view"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              addTab("/matches", getMatchLabel(m.match), { match: m.match }, `match-${m.match}`);
-                              navigate({ to: "/matches", search: { match: m.match } });
-                            }}
-                            className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                          >
-                            <ArrowUpRight className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              title="Open action timeline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addTab("/timeline", `Timeline · ${getMatchLabel(m.match)}`, { match: m.match, team: teamKey, event: currentEvent ?? "" }, `timeline-${m.match}-${teamKey}`);
+                                navigate({ to: "/timeline", search: { match: m.match, team: teamKey, event: currentEvent ?? "" } });
+                              }}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                            >
+                              <Activity className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Open in matches view"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addTab("/matches", getMatchLabel(m.match), { match: m.match }, `match-${m.match}`);
+                                navigate({ to: "/matches", search: { match: m.match } });
+                              }}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                            >
+                              <ArrowUpRight className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                         <div className="flex gap-1.5 px-2 pb-2 h-[185px] shrink-0 overflow-hidden">
                           <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col overflow-hidden">
@@ -2198,7 +2216,7 @@ export function FullTeamPanel({
             <div className="rounded-lg overflow-hidden">
               <button
                 type="button"
-                onClick={() => setMatchOverviewOpen((o) => !o)}
+                onClick={() => setMatchOverviewOpen((o) => { _matchOverviewOpen = !o; return !o; })}
                 className="w-full flex items-center justify-between px-3 py-2 bg-muted/10 hover:bg-muted/20 transition-colors text-left"
               >
                 <p className="text-base font-semibold text-primary">Match Overview</p>
@@ -2239,15 +2257,30 @@ export function FullTeamPanel({
                         </>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      title="Open in matches view"
-                      onClick={openInMatches}
-                      disabled={!effectiveMatchKey}
-                      className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-30"
-                    >
-                      <ArrowUpRight className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        title="Open action timeline"
+                        onClick={() => {
+                          if (!effectiveMatchKey) return;
+                          addTab("/timeline", `Timeline · ${getMatchLabel(effectiveMatchKey)}`, { match: effectiveMatchKey, team: teamKey, event: currentEvent ?? "" }, `timeline-${effectiveMatchKey}-${teamKey}`);
+                          navigate({ to: "/timeline", search: { match: effectiveMatchKey, team: teamKey, event: currentEvent ?? "" } });
+                        }}
+                        disabled={!effectiveMatchKey}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-30"
+                      >
+                        <Activity className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Open in matches view"
+                        onClick={openInMatches}
+                        disabled={!effectiveMatchKey}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-30"
+                      >
+                        <ArrowUpRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   {selectedMatch && (
                     <div className="flex gap-2 h-[190px] overflow-hidden">
@@ -2571,6 +2604,7 @@ export function FullTeamPanel({
                           <MetricPicker
                             activeMetrics={[matchOverviewMetric]}
                             onSelect={(k) => {
+                              _matchOverviewMetricKey = k;
                               setMatchOverviewMetric(k);
                               setShowMatchOverviewMetricPicker(false);
                             }}
@@ -2751,7 +2785,7 @@ export function ExpandedTeamPanel({
   // ── Match Overview state ───────────────────────────────────────────────────
   const [showMatchPicker, setShowMatchPicker] = useState(false);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
-  const [matchOverviewMetric, setMatchOverviewMetric] = useState("epa");
+  const [matchOverviewMetric, setMatchOverviewMetric] = useState(() => _matchOverviewMetricKey);
   const [showMatchOverviewMetricPicker, setShowMatchOverviewMetricPicker] = useState(false);
   const [excludingMatch, setExcludingMatch] = useState(false);
   const [matchViewMode, setMatchViewMode] = useState<"video" | "field">("video");
@@ -3464,18 +3498,32 @@ export function ExpandedTeamPanel({
                   >
                     <div className="flex items-center justify-between px-3 py-2">
                       <p className="text-base font-medium text-primary">{matchLabel} — {scouterName}</p>
-                      <button
-                        type="button"
-                        title="Open in matches view"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          addTab("/matches", getMatchLabel(m.match), { match: m.match }, `match-${m.match}`);
-                          navigate({ to: "/matches", search: { match: m.match } });
-                        }}
-                        className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                      >
-                        <ArrowUpRight className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          title="Open action timeline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTab("/timeline", `Timeline · ${getMatchLabel(m.match)}`, { match: m.match, team: teamKey, event: currentEvent ?? "" }, `timeline-${m.match}-${teamKey}`);
+                            navigate({ to: "/timeline", search: { match: m.match, team: teamKey, event: currentEvent ?? "" } });
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        >
+                          <Activity className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Open in matches view"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTab("/matches", getMatchLabel(m.match), { match: m.match }, `match-${m.match}`);
+                            navigate({ to: "/matches", search: { match: m.match } });
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        >
+                          <ArrowUpRight className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex gap-1.5 px-2 pb-2 h-[185px] shrink-0 overflow-hidden">
                       <div className="flex-1 min-w-0 rounded border border-muted-foreground/60 px-1.5 py-2 flex flex-col overflow-hidden">
@@ -3718,6 +3766,19 @@ export function ExpandedTeamPanel({
                 </div>
                 <button
                   type="button"
+                  title="Open action timeline"
+                  onClick={() => {
+                    if (!effectiveMatchKey) return;
+                    addTab("/timeline", `Timeline · ${getMatchLabel(effectiveMatchKey)}`, { match: effectiveMatchKey, team: teamKey, event: currentEvent ?? "" }, `timeline-${effectiveMatchKey}-${teamKey}`);
+                    navigate({ to: "/timeline", search: { match: effectiveMatchKey, team: teamKey, event: currentEvent ?? "" } });
+                  }}
+                  disabled={!effectiveMatchKey}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-30"
+                >
+                  <Activity className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
                   title="Open in matches view"
                   onClick={openInMatches}
                   disabled={!effectiveMatchKey}
@@ -3794,7 +3855,7 @@ export function ExpandedTeamPanel({
                         <div className="fixed inset-0 z-40" onClick={() => setShowMatchOverviewMetricPicker(false)} />
                         <MetricPicker
                           activeMetrics={[matchOverviewMetric]}
-                          onSelect={(k) => { setMatchOverviewMetric(k); setShowMatchOverviewMetricPicker(false); }}
+                          onSelect={(k) => { _matchOverviewMetricKey = k; setMatchOverviewMetric(k); setShowMatchOverviewMetricPicker(false); }}
                           onClose={() => setShowMatchOverviewMetricPicker(false)}
                         />
                       </>

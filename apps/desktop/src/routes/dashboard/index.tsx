@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import supabase from "@lib/supabase/supabase";
 import { getLocalUserData } from "@lib/supabase/user";
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Search, ArrowDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shadcn/ui/components/tabs.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
@@ -71,6 +71,14 @@ function DashboardPage() {
   const [activeTab, setActiveTab] = useState(() => _dashboardUIState?.activeTab ?? "schedule");
   // Persist UI state synchronously on every render
   _dashboardUIState = { activeTab, scheduleSearch, rankingsSearch };
+
+  // Auto-scroll schedule table to the current match whenever the schedule tab is active
+  // and data is loaded — fires on mount, on tab switch, and when schedule first loads.
+  useEffect(() => {
+    if (activeTab === "schedule" && schedule.length > 0) {
+      setTimeout(() => scheduleTableRef.current?.scrollToCurrentMatch(), 50);
+    }
+  }, [activeTab, schedule.length]);
 
   const homeTeamKey = `frc${homeTeam}`;
 

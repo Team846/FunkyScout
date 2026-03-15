@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Command,
@@ -47,21 +47,50 @@ const formatRelativeTime = (timestamp: number): string => {
     }
     return `in ${days}d`;
   } else {
-    // Past
+    // Past — within the 2-minute buffer the match is still happening, show "Now"
+    if (minutes < 2) return "Now";
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
   }
 };
 
+// Raw shift entry before time-based splitting
+interface RawShift {
+  match: string;
+  matchLabel: string;
+  team: string;
+  teamNumber: string;
+  alliance: "red" | "blue";
+  time: number | null;
+}
+
+function splitShifts(rawShifts: RawShift[]): { combined: ShiftDisplay[]; nextIdx: number } {
+  const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
+  const effectiveNow = Date.now() - UPCOMING_BUFFER_MS;
+  const withLabels = rawShifts.map((s) => ({
+    ...s,
+    timeLabel: s.time ? formatRelativeTime(s.time) : "Unknown",
+  }));
+  const past = withLabels.filter((s) => s.time && s.time <= effectiveNow).sort((a, b) => (a.time || 0) - (b.time || 0));
+  const upcoming = withLabels.filter((s) => !s.time || s.time > effectiveNow).sort((a, b) => (a.time || 0) - (b.time || 0));
+  const combined = [...past, ...upcoming];
+  return { combined, nextIdx: past.length < combined.length ? past.length : -1 };
+}
+
 export function ShiftsPage() {
   const navigate = useNavigate();
   const { currentEvent } = useEvent();
   const { tbaSchedule } = useCompetition();
   const userData = getLocalUserData();
+  const [rawShifts, setRawShifts] = useState<RawShift[]>([]);
   const [shifts, setShifts] = useState<ShiftDisplay[]>([]);
+  const [nextShiftIdx, setNextShiftIdx] = useState<number>(-1);
   const [initialLoading, setInitialLoading] = useState(true);
+  const hasScrolled = useRef(false);
+  const listRef = useRef<HTMLDivElement>(null);
 
+  // DB fetch — only re-run when event/user/schedule changes
   useEffect(() => {
     if (!currentEvent) {
       setInitialLoading(false);
@@ -80,15 +109,9 @@ export function ShiftsPage() {
         if (assignments.length > 0) {
           console.log("[ShiftsPage] First assignment:", assignments[0]);
         }
-        const now = Date.now();
-
-        // Map assignments to display format with match times
-        const shiftsWithTimes = assignments.map((assignment) => {
+        const raw: RawShift[] = assignments.map((assignment) => {
           const matchData = tbaSchedule[assignment.match];
-          const matchTime = matchData?.est_time
-            ? matchData.est_time * 1000
-            : null;
-
+          const matchTime = matchData?.est_time ? matchData.est_time * 1000 : null;
           return {
             match: assignment.match,
             matchLabel: getMatchLabel(assignment.match),
@@ -96,25 +119,50 @@ export function ShiftsPage() {
             teamNumber: assignment.team.replace("frc", ""),
             alliance: assignment.alliance,
             time: matchTime,
-            timeLabel: matchTime ? formatRelativeTime(matchTime) : "Unknown",
           };
         });
-
-        // Show all shifts: upcoming first (sorted by time), then past (most recent first)
-        const upcoming = shiftsWithTimes
-          .filter((s) => !s.time || s.time > now)
-          .sort((a, b) => (a.time || 0) - (b.time || 0));
-        const past = shiftsWithTimes
-          .filter((s) => s.time && s.time <= now)
-          .sort((a, b) => (b.time || 0) - (a.time || 0));
-        setShifts([...past, ...upcoming]);
+        setRawShifts(raw);
       })
       .catch((error) => {
         console.error("Failed to load shifts:", error);
-        setShifts([]);
+        setRawShifts([]);
       })
       .finally(() => setInitialLoading(false));
   }, [currentEvent, userData.name, tbaSchedule]);
+
+  // Re-split past/upcoming every 30s so the highlight advances without a poll
+  useEffect(() => {
+    function recompute() {
+      const { combined, nextIdx } = splitShifts(rawShifts);
+      setNextShiftIdx((prev) => {
+        if (prev !== nextIdx) hasScrolled.current = false;
+        return nextIdx;
+      });
+      setShifts(combined);
+    }
+    recompute();
+    const interval = setInterval(recompute, 30_000);
+    return () => clearInterval(interval);
+  }, [rawShifts]);
+
+  // Auto-scroll to the next shift once when data loads.
+  // home.tsx uses min-h-dvh so the window is the scroll container (not CommandList).
+  useEffect(() => {
+    if (nextShiftIdx >= 0 && !hasScrolled.current && shifts.length > 0) {
+      hasScrolled.current = true;
+      setTimeout(() => {
+        const container = listRef.current;
+        if (!container) return;
+        const items = container.querySelectorAll('[role="option"]');
+        const targetItem = items[nextShiftIdx] as HTMLElement;
+        if (!targetItem) return;
+        const itemRect = targetItem.getBoundingClientRect();
+        const absoluteTop = itemRect.top + window.scrollY;
+        const targetScrollY = absoluteTop - window.innerHeight / 2 + targetItem.offsetHeight / 2;
+        window.scrollTo({ top: targetScrollY, behavior: "smooth" });
+      }, 250);
+    }
+  }, [nextShiftIdx, shifts.length]);
 
   if (!currentEvent) {
     return (
@@ -131,14 +179,16 @@ export function ShiftsPage() {
           className="text-foreground text-md placeholder-border"
           placeholder="Search shifts..."
         />
-        <CommandList className="mt-5 flex h-full flex-1 min-h-0 max-h-none flex-col gap-4 overflow-y-auto">
+        <CommandList ref={listRef} className="mt-5 flex h-full flex-1 min-h-0 max-h-none flex-col gap-4 overflow-y-auto">
           <CommandEmpty>
             {initialLoading ? "Loading shifts..." : "No shifts assigned."}
           </CommandEmpty>
-          {shifts.map((shift, idx) => (
+          {shifts.map((shift, idx) => {
+            const isNext = idx === nextShiftIdx;
+            return (
             <CommandItem
               key={`${shift.match}-${shift.team}-${idx}`}
-              className="rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer"
+              className={`rounded-2xl bg-muted px-6 py-6 mb-3 last:mb-0 data-[selected]:bg-muted min-h-[80px] cursor-pointer border-2 ${isNext ? "border-primary/67" : "border-transparent"}`}
               onSelect={() =>
                 navigate({
                   to: "/match_start",
@@ -193,7 +243,8 @@ export function ShiftsPage() {
                 </svg>
               </div>
             </CommandItem>
-          ))}
+            );
+          })}
         </CommandList>
       </Command>
     </div>

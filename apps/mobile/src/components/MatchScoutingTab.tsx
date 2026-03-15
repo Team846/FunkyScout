@@ -301,7 +301,7 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
           <p className="text-base font-semibold text-primary mb-3">TELEOP</p>
           <div className="flex flex-col gap-3">
               <p className="text-sm">Avg Shoots: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.shoots.toFixed(1)}</span></p>
-              <p className="text-sm">Avg Intakes: <span className="font-bold text-primary">{aggregateStats?.averages.teleop.intakes.toFixed(1)}</span></p>
+              <p className="text-sm">Avg Total Passes: <span className="font-bold text-primary">{(aggregateStats?.averages.teleop.passes + aggregateStats?.averages.teleop.shootPasses).toFixed(1)}</span></p>
             </div>
           </div>)}
       </div>
@@ -370,14 +370,6 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
     return null;
   }
 
-  const autoScore =
-    matchStats.auto.intakes +
-    matchStats.auto.passes +
-    matchStats.auto.shoots;
-  const teleopScore =
-    matchStats.teleop.intakes +
-    matchStats.teleop.passes +
-    matchStats.teleop.shoots;
   const climbLevel = matchStats.climb.level || "None";
 
   const handleEdit = () => {
@@ -437,8 +429,7 @@ function MatchDataCard({ data, teamKey, teamAutos }: { data: EventMatchData; tea
             Teleop Actions: 
           </p>
           <p className="text-xs text-muted-foreground mb-1">Shoots: <span className="text-primary">{matchStats.teleop.shoots}</span></p>
-
-          <p className="text-xs text-muted-foreground mb-1">Intakes: <span className="text-primary">{matchStats.teleop.intakes}</span></p>
+          <p className="text-xs text-muted-foreground mb-1">Total Passes: <span className="text-primary">{matchStats.teleop.passes + matchStats.teleop.shootPasses}</span></p>
         </div>
         <div className="rounded-lg bg-background p-3">
           <p className="text-xs text-muted-foreground mb-1">Auto Climb</p>

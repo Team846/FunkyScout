@@ -76,6 +76,9 @@ export const Route = createFileRoute("/picklist-open")({
 interface PicklistUIState {
   selectedTeams: string[];
   activeMetrics: string[];
+  searchTeam: string;
+  statOverviewMetric: string;
+  scrollY: number;
 }
 const _picklistUIState = new Map<string, PicklistUIState>();
 
@@ -674,10 +677,14 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     Record<string, boolean>
   >({});
   const [showMetricPicker, setShowMetricPicker] = useState(false);
-  const [statOverviewMetric, setStatOverviewMetric] = useState("overview");
+  const [statOverviewMetric, setStatOverviewMetric] = useState(
+    () => _picklistUIState.get(picklistId)?.statOverviewMetric ?? "overview",
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
-  const [searchTeam, setSearchTeam] = useState("");
+  const [searchTeam, setSearchTeam] = useState(
+    () => _picklistUIState.get(picklistId)?.searchTeam ?? "",
+  );
   const [excludedToBottom, setExcludedToBottom] = useState(false);
   const [picklistType, setPicklistType] = useState<PicklistType>("private");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -686,7 +693,13 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
 
   // Persist UI state synchronously on every render (useEffect fires after paint,
   // too late if the component unmounts before it runs).
-  _picklistUIState.set(picklistId, { selectedTeams, activeMetrics });
+  _picklistUIState.set(picklistId, {
+    selectedTeams,
+    activeMetrics,
+    searchTeam,
+    statOverviewMetric,
+    scrollY: _picklistUIState.get(picklistId)?.scrollY ?? 0,
+  });
 
   // ── Selected picklist ──
   const selectedPicklist = picklists.find((p) => p.id === picklistId);
@@ -747,6 +760,15 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   // ── Auto-save newly created empty picklists ──
   // When a picklist has no entries (just created), push the merged initial
   // team list to Supabase so other clients see it without waiting for a drag.
+  const teamListScrollRef = useRef<HTMLDivElement>(null);
+
+  // Restore scroll position on mount
+  useEffect(() => {
+    const saved = _picklistUIState.get(picklistId)?.scrollY;
+    if (teamListScrollRef.current && saved) teamListScrollRef.current.scrollTop = saved;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const autoSavedPicklistRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPicklist || !currentEvent || !picklistId) return;
@@ -1060,7 +1082,14 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
         {/* Main content area - flex column to match right side */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Team list - aligned with team view section */}
-          <div className="flex-[3] overflow-y-auto py-2 px-3 space-y-2.5 ">
+          <div
+            ref={teamListScrollRef}
+            className="flex-[3] overflow-y-auto py-2 px-3 space-y-2.5 "
+            onScroll={(e) => {
+              const state = _picklistUIState.get(picklistId);
+              if (state) state.scrollY = (e.currentTarget as HTMLDivElement).scrollTop;
+            }}
+          >
             <DndContext
               sensors={sidebarSensors}
               collisionDetection={closestCenter}

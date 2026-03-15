@@ -46,199 +46,154 @@ export function ScoutingPage() {
     timestamp: number | string | null;
   }>>([]);
   const [pastMatchesLoading, setPastMatchesLoading] = useState(true);
-    // Fetch next shift for current user
-    useEffect(() => {
-      if (!currentEvent || !userData.name) {
-        setShiftLoading(false);
-        setInitialShiftLoading(false);
+
+  // Raw shift data from DB — avoids re-fetching every 30s
+  type ScoutRawShiftEntry = { assignment: { match: string; team: string; alliance: "red" | "blue" }; matchTime: number | null };
+  const [rawScoutShifts, setRawScoutShifts] = useState<ScoutRawShiftEntry[]>([]);
+  const [scoutShiftsDone, setScoutShiftsDone] = useState(0);
+
+  // DB fetch — expensive, only re-runs when event/user/schedule changes
+  useEffect(() => {
+    if (!currentEvent || !userData.name) {
+      setShiftLoading(false);
+      setInitialShiftLoading(false);
+      return;
+    }
+    if (initialShiftLoading) setShiftLoading(true);
+
+    const fetchShiftData = async () => {
+      try {
+        const currentUid = getLocalUserData().uid;
+
+        let done = 0;
+        try {
+          const allMatchData = await getEventMatchData(currentEvent);
+          done = allMatchData.filter((m) => m.name && !m.deleted_at && m.uid === currentUid).length;
+          console.log("[ScoutingPage] Shifts actually done:", done);
+        } catch (error) {
+          console.error("Failed to count completed shifts:", error);
+        }
+
+        const assignments = currentUid
+          ? await getUserEventScheduleAssignments(currentEvent, currentUid, true)
+          : await getUserEventScheduleAssignments(currentEvent, userData.name || "", false);
+
+        if (assignments.length === 0) {
+          setRawScoutShifts([]);
+          setScoutShiftsDone(done);
+          return;
+        }
+
+        const shiftsWithTimes = assignments.map((assignment) => {
+          const matchData = tbaSchedule[assignment.match];
+          return { assignment, matchTime: matchData?.est_time ? matchData.est_time * 1000 : null };
+        });
+
+        setRawScoutShifts(shiftsWithTimes);
+        setScoutShiftsDone(done);
+      } catch (error) {
+        console.error("Failed to load shift data:", error);
+        setRawScoutShifts([]);
+      }
+    };
+
+    fetchShiftData().finally(() => {
+      setShiftLoading(false);
+      setInitialShiftLoading(false);
+    });
+  }, [currentEvent, userData.name, tbaSchedule]);
+
+  // 30s recompute — no DB queries, just re-splits raw data using current clock
+  useEffect(() => {
+    const getQualNumber = (matchKey: string): number | null => {
+      const parts = matchKey.split("_");
+      if (parts.length < 2) return null;
+      const qmMatch = parts[1].match(/^qm(\d+)$/i);
+      return qmMatch ? Number(qmMatch[1]) : null;
+    };
+
+    const formatRelativeTime = (timestamp: number | null): string => {
+      if (!timestamp) return "";
+      const now2 = Date.now();
+      const diff = timestamp - now2;
+      const absDiff = Math.abs(diff);
+      const minutes = Math.floor(absDiff / (1000 * 60));
+      const hours = Math.floor(absDiff / (1000 * 60 * 60));
+      if (diff > 0) {
+        if (minutes < 60) return `in ${minutes}m`;
+        const remainingMins = minutes % 60;
+        return remainingMins > 0 ? `in ${hours}h ${remainingMins}m` : `in ${hours}h`;
+      } else {
+        // Within 2-minute buffer the match is still happening, show "Now"
+        if (minutes < 2) return "Now";
+        if (minutes < 60) return `${minutes}m ago`;
+        return `${hours}h ago`;
+      }
+    };
+
+    function recompute() {
+      const now = Date.now();
+      const SHIFT_BUFFER_MS = 2 * 60 * 1000;
+
+      if (rawScoutShifts.length === 0) {
+        setShiftStats({ done: scoutShiftsDone, left: 0, untilBreak: 0 });
+        setNextShift(null);
         return;
       }
-  
-      // Only show loading on initial load, not on background refreshes
-      const isInitialLoad = initialShiftLoading;
-      if (isInitialLoad) {
-        setShiftLoading(true);
+
+      const futureShiftsCount = rawScoutShifts.filter((s) => s.matchTime && s.matchTime > now).length;
+
+      const upcomingQualMatches = Object.entries(tbaSchedule)
+        .map(([matchKey, md]) => ({ matchKey, qualNum: getQualNumber(matchKey), matchTime: md?.est_time ? md.est_time * 1000 : null }))
+        .filter((m) => m.qualNum !== null && m.matchTime !== null && (m.matchTime as number) >= now)
+        .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
+
+      const assignedMatches = new Set(rawScoutShifts.map((s) => s.assignment.match));
+      let untilBreak = 0;
+      for (const match of upcomingQualMatches) {
+        if (assignedMatches.has(match.matchKey)) untilBreak += 1;
+        else break;
       }
-  
-      const fetchShiftData = async () => {
-        try {
 
-          // Count ACTUAL completed match scouting submissions FIRST (doesn't depend on assignments)
-          const currentUid = getLocalUserData().uid;
+      setShiftStats({ done: scoutShiftsDone, left: futureShiftsCount, untilBreak });
 
-          let shiftsActuallyDone = 0;
-          try {
-            const allMatchData = await getEventMatchData(currentEvent);
-            console.log("[ScoutingPage] Counting shifts done:", {
-              totalMatches: allMatchData.length,
-              currentUid,
-              event: currentEvent,
-            });
+      const upcomingShifts = rawScoutShifts
+        .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
+        .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
 
-            // Count matches user actually scouted (not deleted, belongs to user)
-            // Same logic as "Edit Past Matches" but without time filtering
-            const scoutedMatches = allMatchData.filter((m) => {
-              // Must have actual scouting data and not be deleted
-              if (!m.name || m.deleted_at) return false;
-              // Must be scouted by current user
-              return m.uid === currentUid;
-            });
+      let shiftToDisplay: ScoutRawShiftEntry | undefined;
+      let isPast = false;
 
-            shiftsActuallyDone = scoutedMatches.length;
-            console.log("[ScoutingPage] Shifts actually done:", shiftsActuallyDone, scoutedMatches);
-          } catch (error) {
-            console.error("Failed to count completed shifts:", error);
-          }
+      if (upcomingShifts.length > 0) {
+        shiftToDisplay = upcomingShifts[0];
+      } else {
+        const pastShifts = rawScoutShifts
+          .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
+          .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
+        if (pastShifts.length > 0) { shiftToDisplay = pastShifts[0]; isPast = true; }
+        else shiftToDisplay = rawScoutShifts[0];
+      }
 
-          // Now fetch scheduled assignments (prefer uid - name can change, entries keep old name)
-          const assignments = currentUid
-            ? await getUserEventScheduleAssignments(currentEvent, currentUid, true)
-            : await getUserEventScheduleAssignments(currentEvent, userData.name || "", false);
+      if (shiftToDisplay) {
+        const { assignment, matchTime } = shiftToDisplay;
+        setNextShift({
+          matchLabel: getMatchLabel(assignment.match),
+          matchKey: assignment.match,
+          teamNumber: assignment.team.replace("frc", ""),
+          teamKey: assignment.team,
+          alliance: assignment.alliance,
+          timeLabel: formatRelativeTime(matchTime),
+          isPastShift: isPast,
+        });
+      } else {
+        setNextShift(null);
+      }
+    }
 
-          if (assignments.length === 0) {
-            // User has no scheduled assignments, but may have completed shifts
-            setNextShift(null);
-            setShiftStats({ done: shiftsActuallyDone, left: 0, untilBreak: 0 });
-            return;
-          }
-  
-          if (assignments.length === 0) {
-            setNextShift(null);
-            setShiftStats({ done: 0, left: 0, untilBreak: 0 });
-            return;
-          }
-  
-          const now = Date.now();
-          // Map assignments to include match times
-          const shiftsWithTimes = assignments.map((assignment) => {
-            const matchData = tbaSchedule[assignment.match];
-            const matchTime = matchData?.est_time
-              ? matchData.est_time * 1000
-              : null;
-            return {
-              assignment,
-              matchTime,
-            };
-          });
-  
-          const futureShiftsCount = shiftsWithTimes.filter(
-            (s) => s.matchTime && s.matchTime > now
-          ).length;
-  
-          const getQualNumber = (matchKey: string): number | null => {
-            const parts = matchKey.split("_");
-            if (parts.length < 2) return null;
-            const matchPart = parts[1];
-            const qmMatch = matchPart.match(/^qm(\d+)$/i);
-            return qmMatch ? Number(qmMatch[1]) : null;
-          };
-  
-          const upcomingQualMatches = Object.entries(tbaSchedule)
-            .map(([matchKey, matchData]) => {
-              const qualNum = getQualNumber(matchKey);
-              const matchTime = matchData?.est_time
-                ? matchData.est_time * 1000
-                : null;
-              return { matchKey, qualNum, matchTime };
-            })
-            .filter(
-              (m) =>
-                m.qualNum !== null &&
-                m.matchTime !== null &&
-                (m.matchTime as number) >= now
-            )
-            .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
-  
-          const assignedMatches = new Set(assignments.map((a) => a.match));
-          let untilBreak = 0;
-          for (const match of upcomingQualMatches) {
-            if (assignedMatches.has(match.matchKey)) {
-              untilBreak += 1;
-            } else {
-              break;
-            }
-          }
-  
-          setShiftStats({
-            done: shiftsActuallyDone,
-            left: futureShiftsCount,
-            untilBreak,
-          });
-  
-          // Find next upcoming shift (2-minute buffer so shift stays "upcoming" briefly after est time)
-          const SHIFT_BUFFER_MS = 2 * 60 * 1000;
-          const upcomingShifts = shiftsWithTimes
-            .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
-            .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
-
-          let shiftToDisplay;
-          let isPast = false;
-
-          if (upcomingShifts.length > 0) {
-            // Use next upcoming shift
-            shiftToDisplay = upcomingShifts[0];
-          } else {
-            // Use most recent past shift
-            const pastShifts = shiftsWithTimes
-              .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
-              .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
-  
-            if (pastShifts.length > 0) {
-              shiftToDisplay = pastShifts[0];
-              isPast = true;
-            } else {
-              // Fallback to first shift if no time data
-              shiftToDisplay = shiftsWithTimes[0];
-            }
-          }
-  
-          if (shiftToDisplay) {
-            const { assignment, matchTime } = shiftToDisplay;
-  
-            // Helper to format relative time
-            const formatRelativeTime = (timestamp: number | null): string => {
-              if (!timestamp) return ""; // Return empty string instead of "Unknown"
-              const diff = timestamp - now;
-              const absDiff = Math.abs(diff);
-              const minutes = Math.floor(absDiff / (1000 * 60));
-              const hours = Math.floor(absDiff / (1000 * 60 * 60));
-  
-              if (diff > 0) {
-                // Future
-                if (minutes < 60) return `in ${minutes}m`;
-                const remainingMins = minutes % 60;
-                return remainingMins > 0
-                  ? `in ${hours}h ${remainingMins}m`
-                  : `in ${hours}h`;
-              } else {
-                // Past
-                if (minutes < 60) return `${minutes}m ago`;
-                return `${hours}h ago`;
-              }
-            };
-  
-            setNextShift({
-              matchLabel: getMatchLabel(assignment.match),
-              matchKey: assignment.match,
-              teamNumber: assignment.team.replace("frc", ""),
-              teamKey: assignment.team,
-              alliance: assignment.alliance,
-              timeLabel: formatRelativeTime(matchTime),
-              isPastShift: isPast,
-            });
-          }
-        } catch (error) {
-          console.error("Failed to load shift data:", error);
-          setNextShift(null);
-          setShiftStats({ done: 0, left: 0, untilBreak: 0 });
-        }
-      };
-  
-      fetchShiftData().finally(() => {
-        setShiftLoading(false);
-        setInitialShiftLoading(false);
-      });
-    }, [currentEvent, userData.name, tbaSchedule]);
+    recompute();
+    const interval = setInterval(recompute, 30_000);
+    return () => clearInterval(interval);
+  }, [rawScoutShifts, scoutShiftsDone, tbaSchedule]);
 
   // Fetch past matches that user has actually scouted (or all if admin)
   useEffect(() => {
@@ -255,19 +210,11 @@ export function ScoutingPage() {
 
         // Get all match data (actual scouting submissions)
         const allMatchData = await getEventMatchData(currentEvent);
-        const now = Date.now();
 
         // Filter to past matches that have been scouted
         const pastScoutedMatches = allMatchData.filter((m) => {
           // Must have actual scouting data and not be deleted
           if (!m.name || m.deleted_at) return false;
-
-          // If we have timing data, only show matches that have already happened.
-          // If est_time is unavailable (offline, not yet synced), show the match
-          // anyway — we can't determine if it's past, so err on the side of showing it.
-          const matchData = tbaSchedule[m.match];
-          const matchTime = matchData?.est_time ? matchData.est_time * 1000 : null;
-          if (matchTime !== null && matchTime > now) return false;
 
           // Permission check
           if (isAdmin) return true; // Admins see all scouted matches

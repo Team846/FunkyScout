@@ -10,7 +10,10 @@ const RootLayout = () => {
   }, []);
 
   useEffect(() => {
-    window.scrollTo(0, 0);
+    // Only reset scroll when navigating away from /home (not on tab switches within home)
+    if (!location.startsWith("/home")) {
+      window.scrollTo(0, 0);
+    }
   }, [location]);
 
   return (

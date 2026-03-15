@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import { Maximize2 } from "lucide-react";
@@ -54,6 +55,8 @@ export const Route = createFileRoute("/shifts")({
 interface ShiftsUIState {
   scouterSearch: string;
   teamSearch: string;
+  activeTab: "by-scouter" | "by-team";
+  scrollY: number;
 }
 let _shiftsUIState: ShiftsUIState | null = null;
 
@@ -468,8 +471,17 @@ function ShiftViewerPage() {
 
   const [scouterSearch, setScouterSearch] = useState(() => _shiftsUIState?.scouterSearch ?? "");
   const [teamSearch, setTeamSearch] = useState(() => _shiftsUIState?.teamSearch ?? "");
-  // Persist UI state synchronously on every render
-  _shiftsUIState = { scouterSearch, teamSearch };
+  const [activeTab, setActiveTab] = useState<"by-scouter" | "by-team">(() => _shiftsUIState?.activeTab ?? "by-scouter");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Persist UI state synchronously on every render (scrollY preserved from last known value)
+  _shiftsUIState = { scouterSearch, teamSearch, activeTab, scrollY: _shiftsUIState?.scrollY ?? 0 };
+
+  // Restore scroll position on mount
+  useEffect(() => {
+    if (scrollRef.current && _shiftsUIState?.scrollY) {
+      scrollRef.current.scrollTop = _shiftsUIState.scrollY;
+    }
+  }, []);
 
   // Pending changes — lifted from individual rows so one Save covers everything
   const [dirtyRatings, setDirtyRatings] = useState<Record<string, number>>({});
@@ -620,8 +632,14 @@ function ShiftViewerPage() {
   }
 
   return (
-    <div className="p-4 h-full overflow-y-auto">
-      <Tabs defaultValue="by-scouter" className="w-full">
+    <div
+      ref={scrollRef}
+      className="p-4 h-full overflow-y-auto"
+      onScroll={(e) => {
+        if (_shiftsUIState) _shiftsUIState.scrollY = (e.currentTarget as HTMLDivElement).scrollTop;
+      }}
+    >
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "by-scouter" | "by-team")} className="w-full">
         <TabsList>
           <TabsTrigger value="by-scouter">By Scouter</TabsTrigger>
           <TabsTrigger value="by-team">By Team</TabsTrigger>

@@ -1096,7 +1096,7 @@ function MatchPlay() {
             <div
               className={`flex flex-col justify-center items-center w-full h-full gap-2.5 transition-opacity duration-300 ${isDefending ? "opacity-0 pointer-events-none" : "opacity-100"}`}
             >
-              {/* Teleop only: Pass full width */}
+              {/* Teleop only: Ground Pass (full width) */}
               {!isAuto && (
                 <div
                   className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
@@ -1112,72 +1112,47 @@ function MatchPlay() {
                     <p
                       className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
                     >
-                      Pass
+                      Ground Pass
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* Intake + Pass (auto) - same layout as Stocking+Pass */}
-              <div
-                className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
-              >
+              {/* Teleop only: Shoot Pass (full width) */}
+              {!isAuto && (
                 <div
-                  onClick={() => startLocationAction("groundIntake")}
-                  className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                    pendingLocationAction === "groundIntake"
-                      ? "border-2 border-[#CDA745]"
-                      : "border-2 border-[#1E1E1E]"
-                  }`}
+                  className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
                 >
-                  <div className="flex items-center gap-2">
-                    {!isAuto && (
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="text-muted-foreground"
-                      >
-                        <g clipPath="url(#clip0_755_311)">
-                          <rect
-                            x="9"
-                            width="2"
-                            height="2.5"
-                            fill="currentColor"
-                          />
-                          <rect
-                            x="8"
-                            y="1"
-                            width="4"
-                            height="2"
-                            fill="currentColor"
-                          />
-                          <path
-                            d="M10 4H6.5L3 9.76L6.5 16"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          />
-                          <path
-                            d="M10 4H13.5L17 9.76L13.5 16"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          />
-                          <circle
-                            cx="10"
-                            cy="16"
-                            r="3.75"
-                            fill="currentColor"
-                          />
-                        </g>
-                        <defs>
-                          <clipPath id="clip0_755_311">
-                            <rect width="20" height="20" fill="white" />
-                          </clipPath>
-                        </defs>
-                      </svg>
-                    )}
+                  <div
+                    onClick={() => startLocationAction("shootPassing")}
+                    className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                      pendingLocationAction === "shootPassing"
+                        ? "border-2 border-[#CDA745]"
+                        : "border-2 border-[#1E1E1E]"
+                    }`}
+                  >
+                    <p
+                      className={`text-xs text-outfit truncate ${pendingLocationAction === "shootPassing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
+                    >
+                      Shoot Pass
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto only: Intake full width */}
+              {isAuto && (
+                <div
+                  className={`flex gap-2.5 w-full min-w-0 flex-1 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}
+                >
+                  <div
+                    onClick={() => startLocationAction("groundIntake")}
+                    className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
+                      pendingLocationAction === "groundIntake"
+                        ? "border-2 border-[#CDA745]"
+                        : "border-2 border-[#1E1E1E]"
+                    }`}
+                  >
                     <p
                       className={`text-xs text-outfit ${pendingLocationAction === "groundIntake" ? "text-[#CDA745]" : "text-muted-foreground"}`}
                     >
@@ -1185,24 +1160,7 @@ function MatchPlay() {
                     </p>
                   </div>
                 </div>
-
-                {isAuto && (
-                  <div
-                    onClick={() => startLocationAction("passing")}
-                    className={`flex flex-1 min-w-0 justify-center items-center gap-1 p-2 rounded-[15px] transition-all duration-75 cursor-pointer active:scale-[0.92] ${
-                      pendingLocationAction === "passing"
-                        ? "border-2 border-[#CDA745]"
-                        : "border-2 border-[#1E1E1E]"
-                    }`}
-                  >
-                    <p
-                      className={`text-xs text-outfit truncate ${pendingLocationAction === "passing" ? "text-[#CDA745]" : "text-muted-foreground"}`}
-                    >
-                      Pass
-                    </p>
-                  </div>
-                )}
-              </div>
+              )}
 
               <div
                 className={`flex gap-2.5 w-full flex-1 min-h-0 ${actionsDisabled ? "opacity-55 pointer-events-none" : ""}`}

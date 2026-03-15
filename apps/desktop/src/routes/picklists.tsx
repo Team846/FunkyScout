@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Search, Settings, Lock, Globe, AlignJustify } from "lucide-react";
 import { useTabContext } from "../contexts/TabContext";
 import { Input } from "@shadcn/ui/components/input.tsx";
@@ -30,6 +30,7 @@ interface PicklistsUIState {
   sortBy: SortBy;
   showOnlyMine: boolean;
   search: string;
+  scrollY: number;
 }
 let _picklistsUIState: PicklistsUIState | null = null;
 
@@ -65,8 +66,16 @@ function PicklistsPage() {
 
   // UI
   const [search, setSearch] = useState(() => _picklistsUIState?.search ?? "");
+  const listScrollRef = useRef<HTMLDivElement>(null);
   // Persist UI state synchronously on every render
-  _picklistsUIState = { sortBy, showOnlyMine, search };
+  _picklistsUIState = { sortBy, showOnlyMine, search, scrollY: _picklistsUIState?.scrollY ?? 0 };
+
+  // Restore scroll on mount
+  useEffect(() => {
+    if (listScrollRef.current && _picklistsUIState?.scrollY) {
+      listScrollRef.current.scrollTop = _picklistsUIState.scrollY;
+    }
+  }, []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -211,7 +220,11 @@ function PicklistsPage() {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto py-2 px-3 space-y-2.5">
+        <div
+          ref={listScrollRef}
+          className="flex-1 overflow-y-auto py-2 px-3 space-y-2.5"
+          onScroll={(e) => { if (_picklistsUIState) _picklistsUIState.scrollY = (e.currentTarget as HTMLDivElement).scrollTop; }}
+        >
           {filtered.length === 0 ? (
             <div className="flex items-center justify-center h-20 text-xs text-muted-foreground">
               No picklists found
