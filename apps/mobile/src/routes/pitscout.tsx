@@ -198,7 +198,7 @@ function AutosSection({
   };
 
   const editingEntry = entries.find((e) => e.id === editingAutoId);
-  const editingIndex = entries.findIndex((e) => e.id === editingAutoId) + 1;
+  const editingIndex = entries.findIndex((e) => e.id === editingAutoId);
 
   return (
     <div className="flex flex-col gap-3 ">
