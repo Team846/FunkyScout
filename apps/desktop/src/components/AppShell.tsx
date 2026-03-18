@@ -57,6 +57,7 @@ import { useDesktopSync } from "../contexts/DesktopSyncContext";
 import { useDesktopRealtime } from "../contexts/DesktopRealtimeContext";
 import { MatchPickerDialog } from "./MatchPickerDialog";
 import { TeamPickerDialog } from "./TeamPickerDialog";
+import { LinksDialog } from "./LinksDialog";
 import supabase from "@lib/supabase/supabase";
 import {
   getLocalUserData,
@@ -117,6 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [bootstrapMsg, setBootstrapMsg] = useState<string | null>(null);
   const [showMatchPicker, setShowMatchPicker] = useState(false);
   const [showTeamPicker, setShowTeamPicker] = useState(false);
+  const [showLinks, setShowLinks] = useState(false);
   // CSV Import
   const [showCsvDialog, setShowCsvDialog] = useState(false);
   const [csvEventKey, setCsvEventKey] = useState("");
@@ -210,6 +212,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         setShowTeamPicker(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Cmd+Shift+L (Mac) / Ctrl+Shift+L (Windows) to open quick links popup
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        setShowLinks(true);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -682,6 +696,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <MatchPickerDialog open={showMatchPicker} onOpenChange={setShowMatchPicker} />
       <TeamPickerDialog open={showTeamPicker} onOpenChange={setShowTeamPicker} />
+      <LinksDialog open={showLinks} onOpenChange={setShowLinks} />
 
       <div className="h-screen flex overflow-hidden bg-background">
         {/* Left Icon Sidebar */}

@@ -658,7 +658,7 @@ function ScoutPage() {
               value={driveType}
               onChange={(e) => setDriveType(e.target.value)}
               className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-              placeholder="(E.g. swerve, tank, etc.)"
+              placeholder="(E.g. swerve module type, tank drive)"
             />
             </div>
         </Section>
