@@ -9,7 +9,7 @@ import type { MatchScoutingData } from "../contexts/DesktopCompetitionDataContex
 import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
-import { Search, ChevronLeft, ChevronRight, Maximize2, ExternalLink } from "lucide-react";
+import { Activity, ExternalLink, Maximize2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { TauriYouTubeEmbed } from "../components/TauriYouTubeEmbed";
 import { fetchTBAData } from "@lib/tba/fetch";
 import React from "react";
@@ -471,6 +471,7 @@ function MatchPlaybackView({
   );
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [teamCardPage, setTeamCardPage] = useState<Record<string, "auto" | "teleop">>({});
   const [phase, setPhase] = useState<"auto" | "teleop" | "full">("full");
 
   // Reset progress to 0 when switching phase, entering match, or selecting a different team
@@ -478,7 +479,72 @@ function MatchPlaybackView({
     setProgress(0);
     setPlaying(false);
   }, [phase, matchKey, selectedTeam]);
+
+  useEffect(() => {
+    // Reset per-team paging when switching matches.
+    setTeamCardPage({});
+  }, [matchKey]);
   const [viewMode, setViewMode] = useState<"field" | "video">("field");
+
+  // Auto/Teleop metrics list should reflect what the event actually collected.
+  // We scan the event's `matchData` for actionIds that exist in stored submissions.
+  const availableAutoActionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of matchData) {
+      const raw = (m as any)?.data_raw as MatchDataRaw | undefined | null;
+      if (!raw?.autoActions) continue;
+      for (const a of raw.autoActions) {
+        if (a?.actionId) ids.add(a.actionId);
+      }
+    }
+    return ids;
+  }, [matchData]);
+
+  const availableTeleopActionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of matchData) {
+      const raw = (m as any)?.data_raw as MatchDataRaw | undefined | null;
+      if (!raw?.teleopActions) continue;
+      for (const a of raw.teleopActions) {
+        if (a?.actionId) ids.add(a.actionId);
+      }
+    }
+    return ids;
+  }, [matchData]);
+
+  const showAutoIntakes = availableAutoActionIds.has("groundIntake");
+  const showAutoPasses = availableAutoActionIds.has("passing");
+  const showAutoShootPasses = availableAutoActionIds.has("shootPassing");
+  const showAutoShoots = availableAutoActionIds.has("shoot");
+  const showAutoStocking = availableAutoActionIds.has("stationStocked");
+  const showAutoCamps = availableAutoActionIds.has("camp");
+  const showAutoDisrupts = availableAutoActionIds.has("disrupt");
+
+  const showTeleopIntakes = availableTeleopActionIds.has("groundIntake");
+  const showTeleopPasses = availableTeleopActionIds.has("passing");
+  const showTeleopShootPasses = availableTeleopActionIds.has("shootPassing");
+  const showTeleopShoots = availableTeleopActionIds.has("shoot");
+  const showTeleopStocking = availableTeleopActionIds.has("stationStocked");
+  const showTeleopCamps = availableTeleopActionIds.has("camp");
+  const showTeleopDisrupts = availableTeleopActionIds.has("disrupt");
+
+  function MetricCell({
+    show,
+    label,
+    value,
+  }: {
+    show: boolean;
+    label: string;
+    value: number | null | undefined;
+  }) {
+    if (!show) return null;
+    return (
+      <div className="flex justify-between gap-3">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="text-foreground tabular-nums">{value ?? "—"}</span>
+      </div>
+    );
+  }
 
   const tbaMatchKey = matchKey.includes("_") ? matchKey : currentEvent ? `${currentEvent}_${matchKey}` : matchKey;
   const matchVideoEntry = videoCache?.data?.find((m) => m.key === tbaMatchKey);
@@ -621,525 +687,618 @@ function MatchPlaybackView({
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-x-hidden">
       <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 min-h-0 flex">
-        {/* Three-column: left/right = full height; center = playback + field; all centered horizontally */}
-        <div className="flex flex-1 items-stretch justify-center gap-16 w-full max-w-[min(100%,1600px)] mx-auto min-h-0">
-          {/* Left column — full page height, team boxes centered */}
-          <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
+        {/* Circular layout container */}
+        <div className="relative flex-1 w-full max-w-[min(100%,1200px)] h-[min(860px,calc(100vh-170px))] mx-auto min-h-[680px]">
+          {/* Blue alliance cards */}
+          <div className="contents">
             {teamsInMatch
               .filter((s) => s.alliance === "blue")
-              .map((s) => {
+              .map((s, idx) => {
                 const md = teamDataByTeam.get(s.team);
                 const hasScoutedData = !!md?.data_raw;
                 const teamAutos = getTeamAutos(pitScoutingByTeam.get(s.team));
                 const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
-                const tbaClimb = climbForMatch[s.team]?.auto_climb ?? null;
-                const climbLabel = tbaClimb ?? "None";
                 const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
-                const autoShoots = matchStats?.auto?.shoots ?? null;
                 const isSelected = selectedTeam === s.team;
+                const page = teamCardPage[s.team] ?? "auto";
+                const bluePos =
+                  [
+                    { right: "2%", top: "8%" },
+                    { right: "2%", bottom: "8%" },
+                    { left: "50%", bottom: "1%", transform: "translateX(-50%)" },
+                  ][idx] ?? { right: "2%", top: "8%" };
                 return (
                   <div
                     key={s.team}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setSelectedTeam(s.team)}
-                    onKeyDown={(e) => e.key === "Enter" && setSelectedTeam(s.team)}
-                    className={`rounded-xl border-4 bg-blue-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-blue-500"}`}
-                    style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
+                    onClick={() => {
+                      // Clicking the card selects the team; Auto/Teleop is switched only via buttons.
+                      setSelectedTeam(s.team);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      setSelectedTeam(s.team);
+                    }}
+                    className={`absolute rounded-xl border-4 bg-blue-500/10 p-3 w-[min(260px,24vw)] h-[min(260px,24vw)] min-w-[220px] min-h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-blue-500"}`}
+                    style={isSelected ? { ...bluePos, borderColor: "hsl(var(--primary))" } : bluePos}
                   >
-                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
-                    {hasScoutedData ? (
-                      <>
-                        <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
-                          {drawing ? (
-                            <AutoPathPreview drawing={drawing} alliance="blue" className="w-full h-full max-w-full max-h-full" />
-                          ) : (description || (autoLabel && autoLabel !== "No auto data")) ? (
-                            <div className="w-full h-full overflow-y-auto flex items-start p-1.5">
-                              <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground w-full">
-                                <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-base font-semibold text-foreground shrink-0 truncate">
+                        Team {s.team.replace(/frc/i, "")}
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          title="Open action timeline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTab(
+                              "/timeline",
+                              `Timeline · ${getMatchLabel(matchKey)}`,
+                              { match: matchKey, team: s.team, event: currentEvent ?? "" },
+                              `timeline-${matchKey}-${s.team}`
+                            );
+                            navigate({
+                              to: "/timeline",
+                              search: { match: matchKey, team: s.team, event: currentEvent ?? "" },
+                            });
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        >
+                          <Activity className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Open team page"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTab(
+                              "/team",
+                              `Team ${s.team.replace(/frc/i, "")}`,
+                              { team: s.team },
+                              `team-${s.team}`
+                            );
+                            navigate({ to: "/team", search: { team: s.team } });
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-1 bg-muted/20 rounded-lg p-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTeamCardPage((prev) => ({ ...prev, [s.team]: "auto" }));
+                        }}
+                        className={`h-7 rounded-md text-xs font-medium transition-colors ${
+                          page === "auto" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTeamCardPage((prev) => ({ ...prev, [s.team]: "teleop" }));
+                        }}
+                        className={`h-7 rounded-md text-xs font-medium transition-colors ${
+                          page === "teleop" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Teleop
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-lg border border-border/40 bg-muted/10 p-2">
+                      {page === "auto" ? (
+                        <div className="flex flex-col gap-2 min-h-0">
+                          <div className="h-[95px] overflow-hidden rounded-md bg-background/30 border border-border/40">
+                            {hasScoutedData ? (
+                              drawing ? (
+                                <AutoPathPreview drawing={drawing} alliance="blue" className="w-full h-full max-w-full max-h-full" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center px-2 text-xs text-muted-foreground text-center">
+                                  {name ?? autoLabel}
+                                </div>
+                              )
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                                No match data
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-h-0">
+                            {/* Match-style pills (mirrors Teleop section layout) */}
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                  matchStats?.didDefend
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                Defend
+                              </span>
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                  matchStats?.wasDisabled
+                                    ? "bg-red-500 text-white"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                Disable
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                  matchStats?.climb.hasAutoClimb
+                                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {matchStats?.climb.hasAutoClimb
+                                  ? `Climb (A): Yes${
+                                      matchStats?.climb.autoClimbTime != null
+                                        ? ` (${Math.round(matchStats.climb.autoClimbTime)}s)`
+                                        : ""
+                                    }${
+                                      matchStats?.climb.autoClimbOrientation
+                                        ? ` · ${matchStats.climb.autoClimbOrientation}`
+                                        : ""
+                                    }`
+                                  : "Climb (A): None"}
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] font-semibold text-primary uppercase tracking-wide mb-1 mt-2">Auto actions</div>
+                            <div className="text-[11px] space-y-1">
+                              <MetricCell show={showAutoIntakes} label="Intakes" value={matchStats?.auto.intakes} />
+                              <MetricCell show={showAutoPasses} label="Passes" value={matchStats?.auto.passes} />
+                              <MetricCell
+                                show={showAutoShootPasses}
+                                label="Shoot passes"
+                                value={matchStats?.auto.shootPasses}
+                              />
+                              <MetricCell show={showAutoShoots} label="Shoots" value={matchStats?.auto.shoots} />
+                              <MetricCell show={showAutoStocking} label="Stocking" value={matchStats?.auto.stocking} />
+                              <MetricCell show={showAutoCamps} label="Camps" value={matchStats?.auto.camps} />
+                              <MetricCell show={showAutoDisrupts} label="Disrupts" value={matchStats?.auto.disrupts} />
+                            </div>
+
+                            <div className="mt-2 pt-2 border-t border-border/40 text-[11px]">
+                              <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">Total auto actions</span>
+                                <span className="text-foreground tabular-nums">{matchStats?.timeline.totalAutoActions ?? "—"}</span>
+                              </div>
+                              <div className="mt-1 flex justify-between gap-3">
+                                <span className="text-muted-foreground">Auto density</span>
+                                <span className="text-foreground tabular-nums">
+                                  {matchStats?.timeline.autoActionDensity != null ? matchStats.timeline.autoActionDensity.toFixed(2) : "—"}
+                                </span>
                               </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-center px-1 line-clamp-3">
-                              {name != null ? (
-                                <span className="text-primary">{name}</span>
-                              ) : (
-                                <span className="text-muted-foreground">{autoLabel}</span>
-                              )}
-                            </p>
-                          )}
+                          </div>
                         </div>
-                        {drawing && (
-                          <p className="text-xs truncate shrink-0 mt-1 text-center">
-                            {name != null ? (
-                              <>
-                                <span className="text-primary">{name}</span>
-                                {description != null && <span className="text-muted-foreground">: {description}</span>}
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground">{autoLabel}</span>
-                            )}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No match data</div>
-                    )}
-                    <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
-                      <span className="text-primary">Auto Climb:</span> {climbLabel}
-                      {hasScoutedData && autoShoots != null && (
-                        <>
-                          <span className="text-muted-foreground mx-1">|</span>
-                          <><span className="text-foreground">{autoShoots}</span> <span className="text-primary">shoots</span></>
-                        </>
+                      ) : (
+                        <div className="flex flex-col gap-2 min-h-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                matchStats?.didDefend ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              Defend
+                            </span>
+                            <span
+                              className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                matchStats?.wasDisabled ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              Disable
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                matchStats?.climb.level ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              Climb (T): {matchStats?.climb.level ?? "None"}
+                            </span>
+                          </div>
+                          <div className="min-h-0">
+                            <div className="text-[11px] font-semibold text-primary uppercase tracking-wide mb-1">Teleop stats</div>
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                              <MetricCell show={showTeleopIntakes} label="Intakes" value={matchStats?.teleop.intakes} />
+                              <MetricCell show={showTeleopPasses} label="Passes" value={matchStats?.teleop.passes} />
+                              <MetricCell
+                                show={showTeleopShootPasses}
+                                label="Shoot passes"
+                                value={matchStats?.teleop.shootPasses}
+                              />
+                              <MetricCell show={showTeleopShoots} label="Shoots" value={matchStats?.teleop.shoots} />
+                              <MetricCell
+                                show={showTeleopStocking}
+                                label="Stocking"
+                                value={matchStats?.teleop.stocking}
+                              />
+                              <MetricCell show={showTeleopCamps} label="Camps" value={matchStats?.teleop.camps} />
+                              <MetricCell show={showTeleopDisrupts} label="Disrupts" value={matchStats?.teleop.disrupts} />
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-border/40 text-[11px]">
+                              {(() => {
+                                const r = matchStats?.ratings;
+                                const fmt = (v: number | null | undefined) => (v != null ? v.toFixed(1) : "—");
+                                if (!r) {
+                                  return (
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground font-medium">Ratings</span>
+                                      <span className="text-foreground tabular-nums">—</span>
+                                    </div>
+                                  );
+                                }
+                                const vals = [r.ground, r.shooting, r.passing, r.driver].filter((v): v is number => v != null);
+                                const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+                                const overallText = overall != null ? overall.toFixed(1) : "—";
+                                return (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground font-medium">Ratings</span>
+                                      <span className="text-primary bg-primary/10 border border-primary/15 px-2 py-0.5 rounded tabular-nums">
+                                        Overall: {overallText}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Ground:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.ground)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Shooting:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.shooting)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Passing:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.passing)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Driver:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.driver)}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </p>
+                    </div>
                   </div>
                 );
               })}
           </div>
 
-        {/* Center column — playback + field/video only, at top */}
-        <div className="flex flex-col shrink-0 self-start gap-3" style={{ width: fieldContainerWidth }}>
-          {/* Score bar — always visible above phase buttons */}
-          <div className="flex items-center justify-between px-20 py-2 rounded-lg bg-muted/30 border border-border font-bold">
-            <div className={`flex items-center gap-12 ${blueScore !== null && redScore !== null && blueScore < redScore ? "opacity-40" : ""}`}>
-              <span className="text-xl text-blue-400 font-regular">{matchRP.blue !== null ? `${matchRP.blue}rp` : "—"}</span>
-              <span className="text-3xl font-regular text-blue-400">{blueScore !== null ? blueScore : "—"}</span>
-            </div>
-            <div className="text-center">
-              <span className="text-sm text-muted-foreground">{getMatchLabel(matchKey)}</span>
-            </div>
-            <div className={`flex items-center gap-12 ${redScore !== null && blueScore !== null && redScore < blueScore ? "opacity-40" : ""}`}>
-              <span className="text-3xl font-regular text-red-400">{redScore !== null ? redScore : "—"}</span>
-              <span className="text-xl font-regular text-red-400">{matchRP.red !== null ? `${matchRP.red}rp` : "—"}</span>
-            </div>
-          </div>
-          {/* Phase filter + playback — hidden when viewing video */}
-          {viewMode === "field" && (
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2 justify-center">
-              {(["auto", "teleop", "full"] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPhase(p)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                    phase === p ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {p === "full" ? "Full Match" : p === "auto" ? "Auto" : "Teleop"}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-3 rounded-lg p-3 bg-muted/50">
-              <button
-                type="button"
-                onClick={() => {
-                  if (progress >= 1) {
-                    setProgress(0);
-                    lastProgressRef.current = 0;
-                    setPlaying(true);
-                  } else {
-                    setPlaying((p) => !p);
-                  }
-                }}
-                disabled={!canPlay}
-                className="flex items-center justify-center size-9 rounded-full bg-primary text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-              >
-                {playing ? (
-                  <svg className="size-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-                ) : (
-                  <svg className="size-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                )}
-              </button>
-              <div className="flex-1 relative h-2 rounded-full bg-muted overflow-visible flex items-center">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-75"
-                  style={{ width: `${Math.min(progress * 100, 98)}%` }}
-                />
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 size-3 rounded-full bg-primary border-2 border-background shadow-sm z-20 pointer-events-none transition-[left] duration-75"
-                  style={{ left: `calc(${Math.min(progress * 100, 98)}% - 6px)` }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.001}
-                  value={progress}
-                  onChange={(e) => {
-                    setProgress(parseFloat(e.target.value));
-                    setPlaying(false);
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                />
-              </div>
-              <select
-                value={speed}
-                onChange={(e) => setSpeed(Number(e.target.value))}
-                className="bg-background border border-border rounded px-2 py-1 text-sm shrink-0"
-              >
-                {[0.25, 0.5, 1, 2, 4].map((s) => (
-                  <option key={s} value={s}>{s}x</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          )}
-          {/* Field / Video */}
-          <div className="flex items-center justify-center gap-2 min-w-0">
-          <button
-            type="button"
-            onClick={() => setViewMode("field")}
-            className={`p-2 rounded-lg transition-colors ${viewMode === "field" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
-            aria-label="Show field"
-          >
-            <ChevronLeft className="size-6" />
-          </button>
-          <div
-            className="relative flex-1 flex justify-center"
-            style={{ width: fieldContainerWidth, maxWidth: "100%", minHeight: (FIELD_HEIGHT / FIELD_WIDTH) * fieldContainerWidth }}
-          >
-            {viewMode === "field" ? (
-              <div className="relative inline-block w-full" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
-            <img src="/fullfield.svg" alt="Field" className="w-full h-auto block" />
-            <svg
-              className="absolute inset-0 w-full h-full"
-              viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
-              preserveAspectRatio="xMidYMid meet"
+          {/* Center light gray triangle — opens TBA match video */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <button
+              type="button"
+              title={youtubeId ? "Open match video (TBA)" : "No TBA video available"}
+              onClick={() => {
+                if (!youtubeId) return;
+                openUrl(`https://www.youtube.com/watch?v=${youtubeId}`);
+              }}
+              disabled={!youtubeId}
+              className={`flex items-center justify-center w-[100px] h-[100px] transition-colors ${
+                youtubeId
+                  ? "cursor-pointer opacity-90 hover:opacity-100"
+                  : "cursor-not-allowed opacity-40"
+              }`}
+              aria-label="Open match video"
             >
-              <defs>
-                <style>{`@keyframes robotBlockPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.7); opacity: 0; } }`}</style>
-              </defs>
-              {/* X at selected team's start position */}
-              {selectedTeam && (() => {
-                const s = teamsWithData.find((t) => t.team === selectedTeam);
-                if (!s) return null;
-                const raw = teamDataByTeam.get(s.team)?.data_raw as MatchDataRaw | undefined;
-                const start = raw ? parseStartPosition(raw) : { x: 0.5, y: 0.9 };
-                const disp = toDisplayCoords(start.x, start.y, s.alliance);
-                const { x, y } = normToSvg(disp.x, disp.y);
-                const size = 12;
-                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-                return (
-                  <g stroke="#94a3b8" strokeWidth={3} strokeLinecap="round">
-                    <line x1={x - size} y1={y - size} x2={x + size} y2={y + size} />
-                    <line x1={x + size} y1={y - size} x2={x - size} y2={y + size} />
-                  </g>
-                );
-              })()}
-              {/* Action blobs for selected team — render before team markers so numbers stay on top */}
-              {selectedTeam &&
-                waypoints.map((wp, i) => {
-                  if (i === 0 || !wp.actionId) return null;
-                  // Waypoints carry full-field display coords — use directly
-                  const { x, y } = normToSvg(wp.x, wp.y);
-                  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-                  const style = getStyle(wp.actionId);
-                  const label = getActionLabel(wp.actionId, schema);
-                  return (
-                    <Tooltip key={i}>
-                      <TooltipTrigger asChild>
-                        <g style={{ cursor: "help" }}>
-                          <ActionBlobShape x={x} y={y} style={style} />
-                        </g>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="bg-muted text-foreground border border-border [&>svg]:fill-muted [&>svg]:bg-muted">
-                        {label}
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              {/* Team markers: rendered last so numbers stay on top of action blobs */}
-              {teamsWithData.map((s) => {
-                const raw = teamDataByTeam.get(s.team)?.data_raw as MatchDataRaw | undefined;
-                const start = raw ? parseStartPosition(raw) : { x: 0.5, y: 0.9 };
-                const isSelected = selectedTeam === s.team;
-                const showAtCurrent = isSelected && currentPosition;
-                // Waypoints carry full-field display coords; fall back to converted start position
-                const pos = showAtCurrent ? currentPosition! : toDisplayCoords(start.x, start.y, s.alliance);
-                const defending = isSelected && isDefendingNow;
-                const blocking = isSelected && isBlockingNow;
-                const { x, y } = normToSvg(pos.x, pos.y);
-                const num = s.team.replace(/frc/i, "");
-                const allianceFill = s.alliance === "red" ? "#ef4444" : "#3b82f6";
-                const fill = allianceFill;
-                const stroke = defending ? "#000000" : isSelected ? "#fff" : "transparent";
-                const strokeWidth = defending ? 3 : isSelected ? 4 : 0;
-                const size = isSelected ? 44 : 38;
-                if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-                return (
-                  <g
-                    key={s.team}
-                    className="cursor-pointer"
-                    onClick={() => setSelectedTeam(s.team)}
-                  >
-                    {/* Pulsing ring on robot when actively blocking */}
-                    {blocking && (
-                      <rect
-                        x={x - size / 2}
-                        y={y - size / 2}
-                        width={size}
-                        height={size}
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth={3}
-                        rx={4}
-                        style={{
-                          animation: "robotBlockPulse 0.9s ease-out infinite",
-                          transformBox: "fill-box",
-                          transformOrigin: "center",
-                        }}
-                      />
-                    )}
-                    <rect
-                      x={x - size / 2}
-                      y={y - size / 2}
-                      width={size}
-                      height={size}
-                      fill={fill}
-                      stroke={stroke}
-                      strokeWidth={strokeWidth}
-                      rx={4}
-                    />
-                    <text
-                      x={x}
-                      y={y}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fill="#fff"
-                      stroke="#000"
-                      strokeWidth={2}
-                      paintOrder="stroke"
-                      fontSize={11}
-                      fontWeight="bold"
-                    >
-                      {num}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-              </div>
-            ) : youtubeId ? (
-              <div className="flex flex-col gap-1.5" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
-                <div ref={videoContainerRef} className="relative bg-black rounded-lg overflow-hidden w-full" style={{ aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
-                  <TauriYouTubeEmbed youtubeId={youtubeId} />
-                </div>
-                <div className="flex justify-end gap-1.5">
-                  <button
-                    type="button"
-                    title="Open in browser"
-                    onClick={() => openUrl(`https://www.youtube.com/watch?v=${youtubeId}`)}
-                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors"
-                  >
-                    <ExternalLink className="size-3.5" />
-                    Open
-                  </button>
-                  <button
-                    type="button"
-                    title="Pop out video"
-                    onClick={() => {
-                      const label = `match-video-${Date.now()}`;
-                      const url = `https://www.youtube.com/watch?v=${youtubeId}`;
-                      console.log("[Video] Creating popup window", { label, url });
-                      try {
-                        const win = new WebviewWindow(label, {
-                          url,
-                          title: "Match Video",
-                          width: 1280,
-                          height: 720,
-                          resizable: true,
-                          center: true,
-                        });
-                        win.once("tauri://created", () => console.log("[Video] Popup created successfully"));
-                        win.once("tauri://error", (e) => console.error("[Video] Popup creation error", e));
-                      } catch (err) {
-                        console.error("[Video] WebviewWindow constructor threw", err);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-muted text-muted-foreground hover:text-foreground text-xs transition-colors"
-                  >
-                    <Maximize2 className="size-3.5" />
-                    Pop Out
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center rounded-lg border border-border bg-muted/30 text-muted-foreground text-sm" style={{ width: fieldContainerWidth, maxWidth: "100%", aspectRatio: `${FIELD_WIDTH} / ${FIELD_HEIGHT}` }}>
-                No video available for this match
-              </div>
-            )}
+              <svg width="72" height="72" viewBox="0 0 24 24" fill="currentColor" className="text-muted-foreground">
+                <path d="M9 18L19 12L9 6V18Z" />
+              </svg>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setViewMode("video")}
-            className={`p-2 rounded-lg transition-colors ${viewMode === "video" ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
-            aria-label="Show video"
-          >
-            <ChevronRight className="size-6" />
-          </button>
-          </div>
-          {/* Team Stats Grid */}
-        <div className="mt-4 rounded-xl border-2 border-border bg-muted/20 p-4" style={{ width: fieldContainerWidth, maxWidth: "100%" }}>
-          <div className="grid grid-cols-6 gap-3">
-            {/* Headers */}
-            <div className="col-span-3 text-center">
-              <h3 className="text-sm font-semibold text-blue-500 mb-2">Blue Alliance</h3>
-            </div>
-            <div className="col-span-3 text-center">
-              <h3 className="text-sm font-semibold text-red-500 mb-2">Red Alliance</h3>
-            </div>
 
-            {/* Generate 3 rows */}
-            {[0, 1, 2].map((rowIdx) => (
-              <React.Fragment key={rowIdx}>
-                {/* Blue team in this row */}
-                {teamsInMatch
-                  .filter((s) => s.alliance === "blue")
-                  .slice(rowIdx, rowIdx + 1)
-                  .map((s) => {
-                    const teamNum = s.team.replace(/frc/i, "");
-                    const md = teamDataByTeam.get(s.team);
-                    const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
-                    const tbaClimbLevel = climbForMatch[s.team]?.teleop_climb ?? null;
-                    const climbedTeleop = tbaClimbLevel === "L1" || tbaClimbLevel === "L2" || tbaClimbLevel === "L3";
-                    return (
-                      <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-blue-500/30 p-3">
-                        <div className="flex items-center gap-2 flex-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                            <span className="text-md font-semibold text-muted-foreground hover:text-primary cursor-pointer" onClick={() => { addTab("/team", `Team ${s.team.replace(/frc/i, "")}`, { team: s.team }, `team-${s.team}`); navigate({ to: "/team", search: { team: s.team } }); }}>{teamNum}</span>
-                            </TooltipTrigger>
-                            <TooltipContent className = "bg-muted text-muted-foreground" >Team {teamNum} stats</TooltipContent>
-                          </Tooltip>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${matchStats?.didDefend ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                            Defend
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${matchStats?.wasDisabled ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                            Disable
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${climbedTeleop ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-muted text-muted-foreground"}`}>
-                            {tbaClimbLevel ?? "Climb"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                {/* Red team in this row */}
-                {teamsInMatch
-                  .filter((s) => s.alliance === "red")
-                  .slice(rowIdx, rowIdx + 1)
-                  .map((s) => {
-                    const teamNum = s.team.replace(/frc/i, "");
-                    const md = teamDataByTeam.get(s.team);
-                    const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
-                    const tbaClimbLevel = climbForMatch[s.team]?.teleop_climb ?? null;
-                    const climbedTeleop = tbaClimbLevel === "L1" || tbaClimbLevel === "L2" || tbaClimbLevel === "L3";
-                    return (
-                      <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-red-500/30 p-3">
-                        <div className="flex items-center gap-2 flex-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                            <span className="text-md font-semibold text-muted-foreground hover:text-primary cursor-pointer" onClick={() => { addTab("/team", `Team ${s.team.replace(/frc/i, "")}`, { team: s.team }, `team-${s.team}`); navigate({ to: "/team", search: { team: s.team } }); }}>{teamNum}</span>
-                            </TooltipTrigger>
-                            <TooltipContent className = "bg-muted text-muted-foreground">Team {teamNum} stats</TooltipContent>
-                          </Tooltip>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${matchStats?.didDefend ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                            Defend
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${matchStats?.wasDisabled ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                            Disable
-                          </span>
-                          <span className={`px-2 py-1 rounded text-xs min-w-[3.5rem] text-center ${climbedTeleop ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-muted text-muted-foreground"}`}>
-                            {tbaClimbLevel ?? "Climb"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-        </div>
-          {/* Right column — full page height, team boxes centered */}
-          <div className="flex flex-col justify-center items-center gap-8 w-[220px] shrink-0 py-4">
+          {/* Red alliance cards */}
+          <div className="contents">
             {teamsInMatch
               .filter((s) => s.alliance === "red")
-              .map((s) => {
+              .map((s, idx) => {
                 const md = teamDataByTeam.get(s.team);
                 const hasScoutedData = !!md?.data_raw;
                 const teamAutos = getTeamAutos(pitScoutingByTeam.get(s.team));
                 const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
-                const tbaClimb = climbForMatch[s.team]?.auto_climb ?? null;
-                const climbLabel = tbaClimb ?? "None";
                 const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
-                const autoShoots = matchStats?.auto?.shoots ?? null;
                 const isSelected = selectedTeam === s.team;
+                const page = teamCardPage[s.team] ?? "auto";
+                const redPos =
+                  [
+                    { left: "2%", top: "8%" },
+                    { left: "2%", bottom: "8%" },
+                    { left: "50%", top: "1%", transform: "translateX(-50%)" },
+                  ][idx] ?? { left: "2%", top: "8%" };
                 return (
                   <div
                     key={s.team}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setSelectedTeam(s.team)}
-                    onKeyDown={(e) => e.key === "Enter" && setSelectedTeam(s.team)}
-                    className={`rounded-xl border-4 bg-red-500/10 p-3 w-[220px] h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-red-500"}`}
-                    style={isSelected ? { borderColor: "hsl(var(--primary))" } : undefined}
+                    onClick={() => {
+                      // Clicking the card selects the team; Auto/Teleop is switched only via buttons.
+                      setSelectedTeam(s.team);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      setSelectedTeam(s.team);
+                    }}
+                    className={`absolute rounded-xl border-4 bg-red-500/10 p-3 w-[min(260px,24vw)] h-[min(260px,24vw)] min-w-[220px] min-h-[220px] flex flex-col flex-shrink-0 overflow-hidden cursor-pointer ${isSelected ? "" : "border-red-500"}`}
+                    style={isSelected ? { ...redPos, borderColor: "hsl(var(--primary))" } : redPos}
                   >
-                    <p className="text-base font-semibold text-foreground shrink-0 mb-1 truncate text-center">Team {s.team.replace(/frc/i, "")}</p>
-                    {hasScoutedData ? (
-                      <>
-                        <div className="w-full flex-1 min-h-0 overflow-hidden rounded flex items-center justify-center bg-muted/20">
-                          {drawing ? (
-                            <AutoPathPreview drawing={drawing} alliance="red" className="w-full h-full max-w-full max-h-full" />
-                          ) : (description || (autoLabel && autoLabel !== "No auto data")) ? (
-                            <div className="w-full h-full overflow-y-auto flex items-start p-1.5">
-                              <div className="px-2 py-1.5 rounded-lg bg-muted/60 border border-border text-sm text-center text-muted-foreground w-full">
-                                <span className="font-medium text-foreground">Notes:</span> {description || autoLabel}
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-base font-semibold text-foreground shrink-0 truncate">
+                        Team {s.team.replace(/frc/i, "")}
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          title="Open action timeline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTab(
+                              "/timeline",
+                              `Timeline · ${getMatchLabel(matchKey)}`,
+                              { match: matchKey, team: s.team, event: currentEvent ?? "" },
+                              `timeline-${matchKey}-${s.team}`
+                            );
+                            navigate({
+                              to: "/timeline",
+                              search: { match: matchKey, team: s.team, event: currentEvent ?? "" },
+                            });
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        >
+                          <Activity className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Open team page"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTab(
+                              "/team",
+                              `Team ${s.team.replace(/frc/i, "")}`,
+                              { team: s.team },
+                              `team-${s.team}`
+                            );
+                            navigate({ to: "/team", search: { team: s.team } });
+                          }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-1 bg-muted/20 rounded-lg p-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTeamCardPage((prev) => ({ ...prev, [s.team]: "auto" }));
+                        }}
+                        className={`h-7 rounded-md text-xs font-medium transition-colors ${
+                          page === "auto" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Auto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTeamCardPage((prev) => ({ ...prev, [s.team]: "teleop" }));
+                        }}
+                        className={`h-7 rounded-md text-xs font-medium transition-colors ${
+                          page === "teleop" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        Teleop
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-lg border border-border/40 bg-muted/10 p-2">
+                      {page === "auto" ? (
+                        <div className="flex flex-col gap-2 min-h-0">
+                          <div className="h-[95px] overflow-hidden rounded-md bg-background/30 border border-border/40">
+                            {hasScoutedData ? (
+                              drawing ? (
+                                <AutoPathPreview drawing={drawing} alliance="red" className="w-full h-full max-w-full max-h-full" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center px-2 text-xs text-muted-foreground text-center">
+                                  {name ?? autoLabel}
+                                </div>
+                              )
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                                No match data
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-h-0">
+                            {/* Match-style pills (mirrors Teleop section layout) */}
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                  matchStats?.didDefend
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                Defend
+                              </span>
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                  matchStats?.wasDisabled
+                                    ? "bg-red-500 text-white"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                Disable
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                  matchStats?.climb.hasAutoClimb
+                                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {matchStats?.climb.hasAutoClimb
+                                  ? `Climb (A): Yes${
+                                      matchStats?.climb.autoClimbTime != null
+                                        ? ` (${Math.round(matchStats.climb.autoClimbTime)}s)`
+                                        : ""
+                                    }${
+                                      matchStats?.climb.autoClimbOrientation
+                                        ? ` · ${matchStats.climb.autoClimbOrientation}`
+                                        : ""
+                                    }`
+                                  : "Climb (A): None"}
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] font-semibold text-primary uppercase tracking-wide mb-1 mt-2">Auto actions</div>
+                            <div className="text-[11px] space-y-1">
+                              <MetricCell show={showAutoIntakes} label="Intakes" value={matchStats?.auto.intakes} />
+                              <MetricCell show={showAutoPasses} label="Passes" value={matchStats?.auto.passes} />
+                              <MetricCell
+                                show={showAutoShootPasses}
+                                label="Shoot passes"
+                                value={matchStats?.auto.shootPasses}
+                              />
+                              <MetricCell show={showAutoShoots} label="Shoots" value={matchStats?.auto.shoots} />
+                              <MetricCell show={showAutoStocking} label="Stocking" value={matchStats?.auto.stocking} />
+                              <MetricCell show={showAutoCamps} label="Camps" value={matchStats?.auto.camps} />
+                              <MetricCell show={showAutoDisrupts} label="Disrupts" value={matchStats?.auto.disrupts} />
+                            </div>
+
+                            <div className="mt-2 pt-2 border-t border-border/40 text-[11px]">
+                              <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">Total auto actions</span>
+                                <span className="text-foreground tabular-nums">{matchStats?.timeline.totalAutoActions ?? "—"}</span>
+                              </div>
+                              <div className="mt-1 flex justify-between gap-3">
+                                <span className="text-muted-foreground">Auto density</span>
+                                <span className="text-foreground tabular-nums">
+                                  {matchStats?.timeline.autoActionDensity != null ? matchStats.timeline.autoActionDensity.toFixed(2) : "—"}
+                                </span>
                               </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-center px-1 line-clamp-3">
-                              {name != null ? (
-                                <span className="text-primary">{name}</span>
-                              ) : (
-                                <span className="text-muted-foreground">{autoLabel}</span>
-                              )}
-                            </p>
-                          )}
+                          </div>
                         </div>
-                        {drawing && (
-                          <p className="text-xs truncate shrink-0 mt-1 text-center">
-                            {name != null ? (
-                              <>
-                                <span className="text-primary">{name}</span>
-                                {description != null && <span className="text-muted-foreground">: {description}</span>}
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground">{autoLabel}</span>
-                            )}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No match data</div>
-                    )}
-                    <p className="text-sm font-medium text-foreground truncate shrink-0 mt-auto text-center">
-                      <span className="text-primary">Auto Climb:</span> {climbLabel}
-                      {hasScoutedData && autoShoots != null && (
-                        <>
-                          <span className="text-muted-foreground mx-1">|</span>
-                          <><span className="text-foreground">{autoShoots}</span> <span className="text-primary">shoots</span></>
-                        </>
+                      ) : (
+                        <div className="flex flex-col gap-2 min-h-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                matchStats?.didDefend ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              Defend
+                            </span>
+                            <span
+                              className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                matchStats?.wasDisabled ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              Disable
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-1 rounded text-[11px] font-medium flex-1 text-center ${
+                                matchStats?.climb.level ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              Climb (T): {matchStats?.climb.level ?? "None"}
+                            </span>
+                          </div>
+                          <div className="min-h-0">
+                            <div className="text-[11px] font-semibold text-primary uppercase tracking-wide mb-1">Teleop stats</div>
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                              <MetricCell show={showTeleopIntakes} label="Intakes" value={matchStats?.teleop.intakes} />
+                              <MetricCell show={showTeleopPasses} label="Passes" value={matchStats?.teleop.passes} />
+                              <MetricCell
+                                show={showTeleopShootPasses}
+                                label="Shoot passes"
+                                value={matchStats?.teleop.shootPasses}
+                              />
+                              <MetricCell show={showTeleopShoots} label="Shoots" value={matchStats?.teleop.shoots} />
+                              <MetricCell
+                                show={showTeleopStocking}
+                                label="Stocking"
+                                value={matchStats?.teleop.stocking}
+                              />
+                              <MetricCell show={showTeleopCamps} label="Camps" value={matchStats?.teleop.camps} />
+                              <MetricCell show={showTeleopDisrupts} label="Disrupts" value={matchStats?.teleop.disrupts} />
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-border/40 text-[11px]">
+                              {(() => {
+                                const r = matchStats?.ratings;
+                                const fmt = (v: number | null | undefined) => (v != null ? v.toFixed(1) : "—");
+                                if (!r) {
+                                  return (
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground font-medium">Ratings</span>
+                                      <span className="text-foreground tabular-nums">—</span>
+                                    </div>
+                                  );
+                                }
+                                const vals = [r.ground, r.shooting, r.passing, r.driver].filter((v): v is number => v != null);
+                                const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+                                const overallText = overall != null ? overall.toFixed(1) : "—";
+                                return (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground font-medium">Ratings</span>
+                                      <span className="text-primary bg-primary/10 border border-primary/15 px-2 py-0.5 rounded tabular-nums">
+                                        Overall: {overallText}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Ground:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.ground)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Shooting:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.shooting)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Passing:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.passing)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-muted-foreground">Driver:</span>
+                                      <span className="text-foreground tabular-nums">{fmt(r.driver)}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </p>
+                    </div>
                   </div>
                 );
               })}
