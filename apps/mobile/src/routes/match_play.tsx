@@ -485,7 +485,9 @@ function MatchPlay() {
       rect.width,
       rect.height
     );
-    
+    // Capture raw screen position before canonical transform — puff always appears at tap point
+    const tapX = normalizedX;
+    const tapY = normalizedY;
 
     // Convert tap coordinates to canonical red-alliance space.
     // Own field: flip both axes when rotated (180° rotation inverts x and y).
@@ -502,8 +504,6 @@ function MatchPlay() {
       normalizedX = 1 - normalizedX;
       normalizedY = 1 - normalizedY;
     }
-    
-    
 
     const newAction: LocationAction = {
       type: pendingLocationAction,
@@ -522,10 +522,8 @@ function MatchPlay() {
     setUndoStack([]);
 
     setPendingLocationAction(null);
-    
-    const displayX = isRotated ? 1 - normalizedX : normalizedX;
-    const displayY = isRotated ? 1 - normalizedY : normalizedY;
-    setPuffPos({ x: displayX, y: displayY });
+
+    setPuffPos({ x: tapX, y: tapY });
     setTimeout(() => setPuffPos(null), 600);
     vibrateTap();
   };

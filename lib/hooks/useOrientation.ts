@@ -75,12 +75,10 @@ export function useOrientation(preferredOrientation: 'landscape' | 'portrait') {
     landscapeQuery.addEventListener('change', checkOrientation);
     portraitQuery.addEventListener('change', checkOrientation);
 
+    // Only re-check on fullscreen change; do NOT unlock here.
+    // Unlocking on fullscreen exit would re-enable rotation and potentially
+    // trigger a false portrait detection on the next route's hook.
     const onFullscreenChange = () => {
-      if (!document.fullscreenElement && !(document as unknown as { webkitFullscreenElement?: Element }).webkitFullscreenElement) {
-        if ('orientation' in screen && 'unlock' in screen.orientation) {
-          screen.orientation.unlock();
-        }
-      }
       checkOrientation();
     };
 
@@ -88,13 +86,12 @@ export function useOrientation(preferredOrientation: 'landscape' | 'portrait') {
     document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 
     return () => {
-      if ('orientation' in screen && 'unlock' in screen.orientation) {
-        screen.orientation.unlock();
-      }
-      if (document.fullscreenElement ?? (document as unknown as { webkitFullscreenElement?: Element }).webkitFullscreenElement) {
-        const exitFs = document.exitFullscreen ?? (document as unknown as { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen;
-        exitFs?.call(document);
-      }
+      // Do NOT call screen.orientation.unlock() or exitFullscreen() here.
+      // When navigating between routes that share the same preferred orientation
+      // (e.g. match_start → match_play → match_end), exiting fullscreen triggers
+      // a brief viewport resize that fires a false portrait matchMedia event on
+      // the next route's hook, showing the "tap to rotate" prompt again.
+      // The lock and fullscreen stay alive across route changes intentionally.
       landscapeQuery.removeEventListener('change', checkOrientation);
       portraitQuery.removeEventListener('change', checkOrientation);
       document.removeEventListener('fullscreenchange', onFullscreenChange);

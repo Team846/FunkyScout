@@ -6,36 +6,46 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@shadcn/ui/components/dialog.tsx";
+import { useDesktopEvent } from "../contexts/DesktopEventContext";
 
 interface LinksDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const LINKS = [
-  {
-    label: "TBA Schedule",
-    description: "The Blue Alliance — Event Schedule",
-    href: "https://www.thebluealliance.com/event/2026orsal",
-  },
-  {
-    label: "TBA Rankings",
-    description: "The Blue Alliance — Event Rankings",
-    href: "https://www.thebluealliance.com/event/2026orsal#rankings",
-  },
-  {
-    label: "FunkyStats",
-    description: "Team 846 custom scouting stats app",
-    href: "https://fsm846.netlify.app/event26/orsal",
-  },
-  {
-    label: "Statbotics",
-    description: "Statbotics — Event Statistics",
-    href: "https://www.statbotics.io/event/2026orsal",
-  },
-];
+function buildLinks(eventKey: string | null) {
+  if (!eventKey) return [];
+  // eventKey format: "2026orsal" — year is first 4 chars, code is the rest
+  const year2 = eventKey.substring(2, 4);
+  const code = eventKey.substring(4);
+  return [
+    {
+      label: "TBA Schedule",
+      description: "The Blue Alliance — Event Schedule",
+      href: `https://www.thebluealliance.com/event/${eventKey}`,
+    },
+    {
+      label: "TBA Rankings",
+      description: "The Blue Alliance — Event Rankings",
+      href: `https://www.thebluealliance.com/event/${eventKey}#rankings`,
+    },
+    {
+      label: "FunkyStats",
+      description: "Team 846 custom scouting stats app",
+      href: `https://fsm846.netlify.app/event${year2}/${code}`,
+    },
+    {
+      label: "Statbotics",
+      description: "Statbotics — Event Statistics",
+      href: `https://www.statbotics.io/event/${eventKey}`,
+    },
+  ];
+}
 
 export function LinksDialog({ open, onOpenChange }: LinksDialogProps) {
+  const { currentEvent } = useDesktopEvent();
+  const links = buildLinks(currentEvent);
+
   const handleOpen = (href: string) => {
     openUrl(href).catch(() => {});
     onOpenChange(false);
@@ -49,7 +59,7 @@ export function LinksDialog({ open, onOpenChange }: LinksDialogProps) {
         </DialogHeader>
         <div className="flex-1 overflow-auto min-h-0 p-2 max-h-[60vh]">
           <div className="grid gap-1.5">
-            {LINKS.map((link) => (
+            {links.map((link) => (
               <button
                 key={link.href}
                 type="button"
