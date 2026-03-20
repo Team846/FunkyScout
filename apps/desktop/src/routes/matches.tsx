@@ -686,6 +686,19 @@ function MatchPlaybackView({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-x-hidden">
+      {(redScore !== null || blueScore !== null) && (
+        <div className="flex items-center justify-between px-[max(240px,30vw)] py-2 bg-background shrink-0">
+          <div className="flex flex-col items-center min-w-[60px]">
+            <span className="text-3xl font-bold text-red-400 tabular-nums">{redScore ?? "—"}</span>
+            {matchRP.red !== null && <span className="text-xs text-muted-foreground">{matchRP.red} RP</span>}
+          </div>
+          <span className="text-muted-foreground text-sm font-medium">vs</span>
+          <div className="flex flex-col items-center min-w-[60px]">
+            <span className="text-3xl font-bold text-blue-400 tabular-nums">{blueScore ?? "—"}</span>
+            {matchRP.blue !== null && <span className="text-xs text-muted-foreground">{matchRP.blue} RP</span>}
+          </div>
+        </div>
+      )}
       <div className="flex-1 overflow-auto overflow-x-hidden px-4 pt-2 pb-4 min-h-0 flex">
         {/* Circular layout container */}
         <div className="relative flex-1 w-full max-w-[min(100%,1200px)] h-[min(860px,calc(100vh-170px))] mx-auto min-h-[680px]">
@@ -976,6 +989,12 @@ function MatchPlaybackView({
                                 );
                               })()}
                             </div>
+                            {(md as any)?.data_raw?.notes && (
+                              <div className="mt-2 pt-2 border-t border-border/40">
+                                <div className="text-[11px] font-semibold text-primary uppercase tracking-wide mb-1">Notes</div>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed break-words">{(md as any).data_raw.notes}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1295,6 +1314,12 @@ function MatchPlaybackView({
                                 );
                               })()}
                             </div>
+                            {(md as any)?.data_raw?.notes && (
+                              <div className="mt-2 pt-2 border-t border-border/40">
+                                <div className="text-[11px] font-semibold text-primary uppercase tracking-wide mb-1">Notes</div>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed break-words">{(md as any).data_raw.notes}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
