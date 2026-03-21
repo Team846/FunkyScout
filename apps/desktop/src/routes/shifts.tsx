@@ -7,7 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { ArrowLeftRight, Maximize2, Search } from "lucide-react";
+import { ArrowLeftRight, Maximize2, RotateCcw, Search, Trash2 } from "lucide-react";
 import { Card } from "@shadcn/ui/components/card.tsx";
 import {
   Tabs,
@@ -130,12 +130,18 @@ function MatchCardSmall({
   type,
   onMatchClick,
   onReassignClick,
+  onVisualSwapDrop,
+  dragPositionKey,
 }: {
   card: MatchCard;
   type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
   onMatchClick?: (matchKey: string) => void;
   /** Called when the reassign icon is clicked — opens scouter picker */
   onReassignClick?: (matchKey: string, team: string) => void;
+  /** Visual-only swap callback on mouse release over another card */
+  onVisualSwapDrop?: (sourceKey: string, targetKey: string | null) => void;
+  /** Stable slot key (row + index) for deterministic visual swapping */
+  dragPositionKey?: string;
 }) {
   const allianceBorder =
     card.alliance === "red"
@@ -144,20 +150,131 @@ function MatchCardSmall({
   const isTeam = type === "team-past" || type === "team-next";
   const matchTime = formatMatchTime(card.estTime);
   const allowReassign = type === "scouter-next";
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
+  const [dragSize, setDragSize] = useState({ w: 180, h: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragPointerOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const sourceRectRef = useRef<DOMRect | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const hoverTargetElRef = useRef<HTMLElement | null>(null);
+  const hoverTargetKeyRef = useRef<string | null>(null);
+  const draggedRef = useRef(false);
 
-  return (
-    <div
-      role={onMatchClick ? "button" : undefined}
-      tabIndex={onMatchClick ? 0 : undefined}
-      onClick={onMatchClick ? () => onMatchClick(card.matchKey) : undefined}
-      onKeyDown={onMatchClick ? (e) => e.key === "Enter" && onMatchClick(card.matchKey) : undefined}
-      className={`w-[180px] flex-shrink-0 border rounded-lg py-3 flex items-stretch gap-0 ${allianceBorder} ${
-        onMatchClick ? "cursor-pointer hover:opacity-90 hover:ring-2 hover:ring-primary/50 transition-all" : ""
-      } ${allowReassign ? "pl-1 pr-3" : "px-3"}`}
-      title={onMatchClick ? `View ${card.matchDisplay}` : undefined}
-    >
+  const beginVisualDrag = useCallback((clientX: number, clientY: number) => {
+    if (!allowReassign) return;
+    const rect = cardRef.current?.getBoundingClientRect();
+    const offsetX = rect ? clientX - rect.left : 16;
+    const offsetY = rect ? clientY - rect.top : 16;
+    dragPointerOffsetRef.current = { x: offsetX, y: offsetY };
+    if (rect) {
+      setDragSize({ w: rect.width, h: rect.height });
+      setDragPos({ x: rect.left, y: rect.top });
+      sourceRectRef.current = rect;
+    } else {
+      setDragPos({ x: clientX - offsetX, y: clientY - offsetY });
+      sourceRectRef.current = null;
+    }
+    draggedRef.current = false;
+    setIsDragging(true);
+  }, [allowReassign]);
+
+  useEffect(() => {
+    if (!isDragging || !dragPointerOffsetRef.current) return;
+    const pointerOffset = dragPointerOffsetRef.current;
+    const prevUserSelect = document.body.style.userSelect;
+    const prevWebkitUserSelect = (document.body.style as any).webkitUserSelect;
+    document.body.style.userSelect = "none";
+    (document.body.style as any).webkitUserSelect = "none";
+
+    const onMove = (e: MouseEvent) => {
+      e.preventDefault();
+      const dx = e.clientX - (dragPos.x + pointerOffset.x);
+      const dy = e.clientY - (dragPos.y + pointerOffset.y);
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) draggedRef.current = true;
+      const hoveredEl = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest?.(
+        "[data-shift-card-pos]"
+      ) as HTMLElement | null;
+      const ownKey = dragPositionKey ?? `${card.matchKey}|${card.team}`;
+      const hoveredKey = hoveredEl?.getAttribute("data-shift-card-pos");
+      const canSwapHover =
+        hoveredEl &&
+        hoveredKey &&
+        hoveredKey !== ownKey &&
+        hoveredEl.getAttribute("data-shift-card-type") === "scouter-next";
+
+      // Hover marks potential drop target and visually "lifts" that target.
+      if (canSwapHover) {
+        if (hoverTargetElRef.current && hoverTargetElRef.current !== hoveredEl) {
+          hoverTargetElRef.current.style.transform = "";
+          hoverTargetElRef.current.style.transition = "";
+          hoverTargetElRef.current.style.zIndex = "";
+          hoverTargetElRef.current.style.boxShadow = "";
+        }
+        hoverTargetElRef.current = hoveredEl!;
+        hoverTargetElRef.current.style.transition = "transform 120ms ease, box-shadow 120ms ease";
+        hoverTargetElRef.current.style.transform = "translateY(-4px) scale(1.02)";
+        hoverTargetElRef.current.style.zIndex = "40";
+        hoverTargetElRef.current.style.boxShadow = "0 8px 20px rgba(0,0,0,0.18)";
+        hoverTargetKeyRef.current = hoveredKey ?? null;
+      } else {
+        if (hoverTargetElRef.current) {
+          hoverTargetElRef.current.style.transform = "";
+          hoverTargetElRef.current.style.transition = "";
+          hoverTargetElRef.current.style.zIndex = "";
+          hoverTargetElRef.current.style.boxShadow = "";
+          hoverTargetElRef.current = null;
+        }
+        hoverTargetKeyRef.current = null;
+      }
+
+      setDragPos({
+        x: e.clientX - pointerOffset.x,
+        y: e.clientY - pointerOffset.y,
+      });
+    };
+    const endDrag = () => {
+      const ownKey = dragPositionKey ?? `${card.matchKey}|${card.team}`;
+      onVisualSwapDrop?.(ownKey, hoverTargetKeyRef.current);
+      if (hoverTargetElRef.current) {
+        hoverTargetElRef.current.style.transform = "";
+        hoverTargetElRef.current.style.transition = "";
+        hoverTargetElRef.current.style.zIndex = "";
+        hoverTargetElRef.current.style.boxShadow = "";
+        hoverTargetElRef.current = null;
+      }
+      setIsDragging(false);
+      setDragPos({ x: 0, y: 0 });
+      dragPointerOffsetRef.current = null;
+      sourceRectRef.current = null;
+      hoverTargetKeyRef.current = null;
+      // reset flag after click cycle to avoid immediate click-open.
+      setTimeout(() => {
+        draggedRef.current = false;
+      }, 0);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", endDrag);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", endDrag);
+      if (hoverTargetElRef.current) {
+        hoverTargetElRef.current.style.transform = "";
+        hoverTargetElRef.current.style.transition = "";
+        hoverTargetElRef.current.style.zIndex = "";
+        hoverTargetElRef.current.style.boxShadow = "";
+        hoverTargetElRef.current = null;
+      }
+      document.body.style.userSelect = prevUserSelect;
+      (document.body.style as any).webkitUserSelect = prevWebkitUserSelect;
+    };
+  }, [isDragging, dragPos.x, dragPos.y, card.matchKey, card.team, onVisualSwapDrop]);
+
+  const cardContent = (
+    <>
       {allowReassign && (
         <div
+          data-reassign-shift="true"
           className="flex-shrink-0 flex items-center justify-center w-6 text-muted-foreground hover:text-primary rounded transition-colors cursor-pointer"
           title="Reassign this shift to another scouter"
           aria-label="Reassign shift"
@@ -248,7 +365,61 @@ function MatchCardSmall({
           </div>
         )}
       </div>
+    </>
+  );
+
+  return (
+    <>
+    <div
+      ref={cardRef}
+      role={onMatchClick ? "button" : undefined}
+      tabIndex={onMatchClick ? 0 : undefined}
+      onClick={onMatchClick ? () => {
+        if (draggedRef.current) return;
+        onMatchClick(card.matchKey);
+      } : undefined}
+      onKeyDown={onMatchClick ? (e) => e.key === "Enter" && onMatchClick(card.matchKey) : undefined}
+      className={`w-[180px] flex-shrink-0 border rounded-lg py-3 flex items-stretch gap-0 ${allianceBorder} ${
+        onMatchClick ? "cursor-pointer hover:opacity-90 hover:ring-2 hover:ring-primary/50 transition-all" : ""
+      } ${allowReassign ? "pl-1 pr-3" : "px-3"}`}
+      data-shift-card-pos={dragPositionKey ?? `${card.matchKey}|${card.team}`}
+      data-shift-card-type={type}
+      style={{
+        visibility: isDragging ? "hidden" : undefined,
+      }}
+      onMouseDown={(e) => {
+        // Visual drag prototype: hold and drag card, then snap back.
+        if (!allowReassign) return;
+        // Ignore right/middle click.
+        if (e.button !== 0) return;
+        // Don't start card drag when clicking reassign icon.
+        const target = e.target as HTMLElement;
+        if (target.closest("[data-reassign-shift='true']")) return;
+        beginVisualDrag(e.clientX, e.clientY);
+      }}
+      title={onMatchClick ? `View ${card.matchDisplay}` : undefined}
+    >
+      {cardContent}
     </div>
+    {isDragging && (
+      <div
+        className={`fixed border rounded-lg py-3 flex items-stretch gap-0 ${allianceBorder} ${allowReassign ? "pl-1 pr-3" : "px-3"}`}
+        style={{
+          left: dragPos.x,
+          top: dragPos.y,
+          width: dragSize.w,
+          height: dragSize.h > 0 ? dragSize.h : undefined,
+          zIndex: 9999,
+          boxShadow: "0 14px 34px rgba(0,0,0,0.28)",
+          transform: "scale(1.03)",
+          opacity: 0.96,
+          pointerEvents: "none",
+        }}
+      >
+        {cardContent}
+      </div>
+    )}
+    </>
   );
 }
 
@@ -256,14 +427,18 @@ function MatchCardScroll({
   cards,
   type,
   alignRight,
+  ownerId,
   onMatchClick,
   onReassignClick,
+  onVisualSwapDrop,
 }: {
   cards: MatchCard[];
   type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
   alignRight?: boolean;
+  ownerId?: string;
   onMatchClick?: (matchKey: string) => void;
   onReassignClick?: (matchKey: string, team: string) => void;
+  onVisualSwapDrop?: (sourceKey: string, targetKey: string | null) => void;
 }) {
   return (
     <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
@@ -273,13 +448,15 @@ function MatchCardScroll({
         {cards.length === 0 ? (
           <div className="text-sm text-muted-foreground/30 px-2">—</div>
         ) : (
-          cards.map((m) => (
+          cards.map((m, idx) => (
             <MatchCardSmall
-              key={`${m.matchKey}-${m.team}`}
+              key={type === "scouter-next" && ownerId ? `${ownerId}|${idx}` : `${m.matchKey}-${m.team}`}
               card={m}
               type={type}
               onMatchClick={onMatchClick}
               onReassignClick={onReassignClick}
+              onVisualSwapDrop={onVisualSwapDrop}
+              dragPositionKey={type === "scouter-next" && ownerId ? `${ownerId}|${idx}` : undefined}
             />
           ))
         )}
@@ -408,6 +585,7 @@ function ScouterRow({
   onExclude,
   onMatchClick,
   onReassignClick,
+  onVisualSwapDrop,
 }: {
   row: ScouterViewRow;
   rating: number | null;
@@ -415,6 +593,7 @@ function ScouterRow({
   onExclude: (uid: string) => void;
   onMatchClick?: (matchKey: string) => void;
   onReassignClick?: (matchKey: string, team: string) => void;
+  onVisualSwapDrop?: (sourceKey: string, targetKey: string | null) => void;
 }) {
   return (
     <div className="flex items-center gap-6">
@@ -428,8 +607,10 @@ function ScouterRow({
       <MatchCardScroll
         cards={row.nextMatches}
         type="scouter-next"
+        ownerId={row.uid}
         onMatchClick={onMatchClick}
         onReassignClick={onReassignClick}
+        onVisualSwapDrop={onVisualSwapDrop}
       />
     </div>
   );
@@ -474,7 +655,7 @@ function EmptyState({ children }: { children: ReactNode }) {
 
 function ShiftViewerPage() {
   const navigate = useNavigate();
-  const { addTab } = useTabContext();
+  const { addTab, activeTabId } = useTabContext();
   const { currentEvent } = useDesktopEvent();
   const { schedule, tbaClimbData, matchScoutingData, tbaSchedule, refresh: refreshCompetition } =
     useDesktopCompetitionData();
@@ -516,6 +697,11 @@ function ShiftViewerPage() {
   const [dirtyRatings, setDirtyRatings] = useState<Record<string, number>>({});
   const [dirtyPriorities, setDirtyPriorities] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
+  const [savingSwaps, setSavingSwaps] = useState(false);
+  // Visual-only swap map: positionKey (uid|idx) -> cardKey (matchKey|team)
+  const [visualSwapMap, setVisualSwapMap] = useState<Record<string, string>>({});
+  // Undo stack for pending (unsaved) visual swaps.
+  const [pendingSwapHistory, setPendingSwapHistory] = useState<Record<string, string>[]>([]);
 
   /** Reassign popup — open when switch icon is clicked on a shift card. */
   const [reassignTarget, setReassignTarget] = useState<{ matchKey: string; team: string } | null>(null);
@@ -558,11 +744,82 @@ function ShiftViewerPage() {
     setDirtyRatings({});
     setDirtyPriorities({});
     setReassignTarget(null);
+    setVisualSwapMap({});
+    setPendingSwapHistory([]);
   }, [currentEvent]);
+
+  // Ensure this route always starts from real schedule data.
+  useEffect(() => {
+    setVisualSwapMap({});
+    setPendingSwapHistory([]);
+  }, []);
+
+  // Swaps are intentionally ephemeral; leaving the Shifts page clears them.
+  useEffect(() => {
+    return () => {
+      setVisualSwapMap({});
+      setPendingSwapHistory([]);
+    };
+  }, []);
+
+  // In this app tabs can remain mounted; clear temporary swaps when Shifts is not active.
+  useEffect(() => {
+    if (activeTabId !== "shifts") {
+      setVisualSwapMap({});
+      setPendingSwapHistory([]);
+    }
+  }, [activeTabId]);
 
   const scouterRows = useMemo(
     () => buildScouterViewData({ schedule, matchData: matchScoutingData, profiles: userProfiles, tbaClimbData, tbaScheduleMap: tbaSchedule }),
     [schedule, matchScoutingData, userProfiles, tbaClimbData, tbaSchedule]
+  );
+
+  const baseScouterPositionMap = useMemo(() => {
+    const base: Record<string, string> = {};
+    for (const row of scouterRows) {
+      row.nextMatches.forEach((c, idx) => {
+        base[`${row.uid}|${idx}`] = `${c.matchKey}|${c.team}`;
+      });
+    }
+    return base;
+  }, [scouterRows]);
+
+  const applyVisualSwapMapToRows = useCallback((map: Record<string, string>) => {
+    if (Object.keys(map).length === 0) return scouterRows;
+    const byCardKey = new Map<string, MatchCard>();
+    for (const row of scouterRows) {
+      for (const c of row.nextMatches) byCardKey.set(`${c.matchKey}|${c.team}`, c);
+    }
+    return scouterRows.map((row) => ({
+      ...row,
+      nextMatches: row.nextMatches.map((c, idx) => {
+        const posKey = `${row.uid}|${idx}`;
+        const mappedCardKey = map[posKey];
+        if (!mappedCardKey) return c;
+        return byCardKey.get(mappedCardKey) ?? c;
+      }),
+    }));
+  }, [scouterRows]);
+
+  const mergedVisualPositionMap = useMemo(
+    () => ({ ...baseScouterPositionMap, ...visualSwapMap }),
+    [baseScouterPositionMap, visualSwapMap]
+  );
+
+  const visualScouterRows = useMemo(
+    () => applyVisualSwapMapToRows(mergedVisualPositionMap),
+    [applyVisualSwapMapToRows, mergedVisualPositionMap]
+  );
+
+  const pendingSwapPositionKeys = useMemo(
+    () =>
+      Object.keys(baseScouterPositionMap).filter(
+        (k) =>
+          mergedVisualPositionMap[k] &&
+          mergedVisualPositionMap[k] !== baseScouterPositionMap[k]
+      ),
+    [baseScouterPositionMap, mergedVisualPositionMap]
   );
 
   const teamRows = useMemo(
@@ -572,7 +829,7 @@ function ShiftViewerPage() {
 
   const filteredScouters = useMemo(
     () =>
-      scouterRows.filter((s) => {
+      visualScouterRows.filter((s) => {
         if (scouterSearch) {
           return s.name
             .toLowerCase()
@@ -580,9 +837,139 @@ function ShiftViewerPage() {
         }
         return true;
       }),
-    [scouterRows, scouterSearch]
+    [visualScouterRows, scouterSearch]
   );
 
+  const handleVisualSwapDrop = useCallback((sourceKey: string, targetKey: string | null) => {
+    if (!targetKey || targetKey === sourceKey) return;
+    setVisualSwapMap((prev) => {
+      const parsePosKey = (k: string) => {
+        const sep = k.lastIndexOf("|");
+        if (sep <= 0) return null;
+        return { uid: k.slice(0, sep), idx: Number(k.slice(sep + 1)) };
+      };
+
+      const next: Record<string, string> = { ...baseScouterPositionMap, ...prev };
+      const sourceCard = next[sourceKey];
+      const targetCard = next[targetKey];
+      if (!sourceCard || !targetCard) return prev;
+
+      const sourcePos = parsePosKey(sourceKey);
+      const targetPos = parsePosKey(targetKey);
+      if (!sourcePos || !targetPos) return prev;
+
+      // Only block same-scouter swaps; allow all cross-scouter swaps.
+      if (sourcePos.uid === targetPos.uid) {
+        return prev;
+      }
+
+      setPendingSwapHistory((history) => [...history, prev]);
+      next[sourceKey] = targetCard;
+      next[targetKey] = sourceCard;
+      return next;
+    });
+  }, [baseScouterPositionMap]);
+
+  const handleSaveSwaps = useCallback(async () => {
+    if (!currentEvent) return;
+    if (pendingSwapPositionKeys.length === 0) return;
+
+    const currentMap = { ...baseScouterPositionMap, ...visualSwapMap };
+    const getMatchKeyFromCardKey = (cardKey: string) => {
+      const sep = cardKey.lastIndexOf("|");
+      return sep > 0 ? cardKey.slice(0, sep) : cardKey;
+    };
+    const parseCardKey = (cardKey: string) => {
+      const sep = cardKey.lastIndexOf("|");
+      if (sep <= 0) return null;
+      return { matchKey: cardKey.slice(0, sep), teamKey: cardKey.slice(sep + 1) };
+    };
+    const duplicateCountForScouter = (uid: string, map: Record<string, string>) => {
+      const row = scouterRows.find((r) => r.uid === uid);
+      if (!row) return 0;
+      const seen = new Set<string>();
+      let duplicateCount = 0;
+      for (let idx = 0; idx < row.nextMatches.length; idx++) {
+        const posKey = `${uid}|${idx}`;
+        const cardKey = map[posKey];
+        if (!cardKey) continue;
+        const matchKey = getMatchKeyFromCardKey(cardKey);
+        if (seen.has(matchKey)) {
+          duplicateCount += 1;
+          continue;
+        }
+        seen.add(matchKey);
+      }
+      return duplicateCount;
+    };
+
+    // Block only if pending swaps introduce/worsen duplicate-match assignments.
+    // Existing baseline duplicates should not prevent saving unrelated swaps.
+    const touchedScouters = new Set(
+      pendingSwapPositionKeys
+        .map((k) => k.slice(0, k.lastIndexOf("|")))
+        .filter((uid) => uid.length > 0)
+    );
+    for (const uid of touchedScouters) {
+      const beforeCount = duplicateCountForScouter(uid, baseScouterPositionMap);
+      const afterCount = duplicateCountForScouter(uid, currentMap);
+      if (afterCount > beforeCount) {
+        toast.error("Cannot save: a scouter has two shifts from the same match.");
+        return;
+      }
+    }
+
+    // Incremental patch only for cards whose assigned scouter changed.
+    const changesByCard = new Map<string, { matchKey: string; teamKey: string; uid: string; name: string | null }>();
+    for (const posKey of pendingSwapPositionKeys) {
+      const currentCardKey = currentMap[posKey];
+      const baseCardKey = baseScouterPositionMap[posKey];
+      if (!currentCardKey || currentCardKey === baseCardKey) continue;
+      const parsed = parseCardKey(currentCardKey);
+      if (!parsed) continue;
+      const sep = posKey.lastIndexOf("|");
+      if (sep <= 0) continue;
+      const uid = posKey.slice(0, sep);
+      const name = scouterRows.find((r) => r.uid === uid)?.name ?? null;
+      changesByCard.set(`${parsed.matchKey}|${parsed.teamKey}`, {
+        matchKey: parsed.matchKey,
+        teamKey: parsed.teamKey,
+        uid,
+        name,
+      });
+    }
+    const changes = Array.from(changesByCard.values());
+    if (changes.length === 0) return;
+
+    setSavingSwaps(true);
+    try {
+      await assignShiftsDiff(currentEvent, changes);
+      await refreshCompetition();
+      setVisualSwapMap({});
+      setPendingSwapHistory([]);
+      toast.success(`Saved ${changes.length} swapped shift${changes.length === 1 ? "" : "s"}`);
+    } catch (e) {
+      console.error("[Shifts] Failed to save swaps:", e);
+      toast.error("Failed to save swapped shifts");
+    } finally {
+      setSavingSwaps(false);
+    }
+  }, [currentEvent, pendingSwapPositionKeys, baseScouterPositionMap, visualSwapMap, scouterRows, refreshCompetition]);
+
+  const handleRevertLastPendingSwap = useCallback(() => {
+    setPendingSwapHistory((history) => {
+      if (history.length === 0) return history;
+      const nextHistory = history.slice(0, -1);
+      const previousMap = history[history.length - 1] ?? {};
+      setVisualSwapMap(previousMap);
+      return nextHistory;
+    });
+  }, []);
+
+  const handleClearPendingSwaps = useCallback(() => {
+    setVisualSwapMap({});
+    setPendingSwapHistory([]);
+  }, []);
 
   const filteredTeams = useMemo(
     () =>
@@ -686,6 +1073,7 @@ function ShiftViewerPage() {
 
   const hasScouterChanges = Object.keys(dirtyRatings).length > 0;
   const hasTeamChanges = Object.keys(dirtyPriorities).length > 0;
+  const hasPendingSwaps = pendingSwapPositionKeys.length > 0;
 
   if (!currentEvent) {
     return (
@@ -727,6 +1115,40 @@ function ShiftViewerPage() {
             <p className="text-xs text-muted-foreground basis-full sm:basis-auto sm:ml-1">
               Click <ArrowLeftRight className="inline size-3 align-text-bottom opacity-70" /> on an upcoming shift to reassign it to another scouter.
             </p>
+            {hasPendingSwaps && (
+              <>
+                <Button
+                  size="sm"
+                  className="h-8 ml-auto"
+                  disabled={savingSwaps || saving}
+                  onClick={handleSaveSwaps}
+                >
+                  {savingSwaps ? "Saving swaps…" : `Save Swaps (${pendingSwapPositionKeys.length})`}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  disabled={savingSwaps || saving || pendingSwapHistory.length === 0}
+                  onClick={handleRevertLastPendingSwap}
+                  title="Revert last pending swap"
+                  aria-label="Revert last pending swap"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  disabled={savingSwaps || saving || pendingSwapPositionKeys.length === 0}
+                  onClick={handleClearPendingSwaps}
+                  title="Clear all pending swaps"
+                  aria-label="Clear all pending swaps"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
             {hasScouterChanges && (
               <>
                 <Button
@@ -767,6 +1189,7 @@ function ShiftViewerPage() {
                   onExclude={handleExcludeScouter}
                   onMatchClick={handleMatchClick}
                   onReassignClick={openReassignPopup}
+                  onVisualSwapDrop={handleVisualSwapDrop}
                 />
               ))}
             </div>
