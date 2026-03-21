@@ -9,12 +9,10 @@ import type { MatchScoutingData } from "../contexts/DesktopCompetitionDataContex
 import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
-import { Activity, ExternalLink, Maximize2, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { TauriYouTubeEmbed } from "../components/TauriYouTubeEmbed";
+import { Activity, Maximize2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchTBAData } from "@lib/tba/fetch";
 import React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
 import { fetchEventVideo } from "@lib/tba/video";
@@ -35,80 +33,7 @@ const FIELD_HEIGHT = 318;
 const AUTO_END_MS = 20_000;
 
 
-const ACTION_STYLE: Record<string, { fill: string; shape: "circle" | "square" | "diamond" | "triangle" | "star" }> = {
-  groundIntake: { fill: "#22c55e", shape: "circle" },
-  passing: { fill: "#3b82f6", shape: "square" },
-  shootPassing: { fill: "#f97316", shape: "square" },
-  shoot: { fill: "#ef4444", shape: "diamond" },
-  stationStocked: { fill: "#f59e0b", shape: "diamond" },
-  autoClimbL1: { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL1: { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL2: { fill: "#06b6d4", shape: "triangle" },
-  teleopClimbL3: { fill: "#06b6d4", shape: "triangle" },
-  disable: { fill: "#78716c", shape: "star" },
-  defend: { fill: "#f59e0b", shape: "star" },
-  dropped: { fill: "#78716c", shape: "circle" },
-};
-const DEFAULT_ACTION_STYLE = { fill: "#94a3b8", shape: "circle" as const };
 
-/** Render action blob shape at (x, y) with r=14 */
-function ActionBlobShape({
-  x,
-  y,
-  style,
-}: {
-  x: number;
-  y: number;
-  style: { fill: string; shape: string };
-}) {
-  const r = 14;
-  const fill = style.fill;
-  const opacity = 0.9;
-  if (style.shape === "triangle") {
-    const h = r * 1.2;
-    const points = `${x},${y - h} ${x - r},${y + h * 0.6} ${x + r},${y + h * 0.6}`;
-    return <polygon points={points} fill={fill} opacity={opacity} />;
-  }
-  if (style.shape === "star") {
-    const outer = r;
-    const inner = r * 0.4;
-    const points: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      const a1 = (i * 2 * Math.PI) / 5 - Math.PI / 2;
-      points.push(`${x + outer * Math.cos(a1)},${y + outer * Math.sin(a1)}`);
-      const a2 = ((i + 0.5) * 2 * Math.PI) / 5 - Math.PI / 2;
-      points.push(`${x + inner * Math.cos(a2)},${y + inner * Math.sin(a2)}`);
-    }
-    return <polygon points={points.join(" ")} fill={fill} opacity={opacity} />;
-  }
-  if (style.shape === "square") {
-    return <rect x={x - r} y={y - r} width={r * 2} height={r * 2} fill={fill} opacity={opacity} />;
-  }
-  if (style.shape === "diamond") {
-    const d = r * 1.2;
-    const points = `${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`;
-    return <polygon points={points} fill={fill} opacity={opacity} />;
-  }
-  return <circle cx={x} cy={y} r={r} fill={fill} opacity={opacity} />;
-}
-
-function getStyle(actionId: string) {
-  return ACTION_STYLE[actionId] ?? DEFAULT_ACTION_STYLE;
-}
-
-function getActionLabel(
-  actionId: string,
-  schema: ReturnType<typeof getMatchActionSchema>
-): string {
-  const def = getActionById(schema, actionId) ?? getActionById(schema, toCamelCase(actionId));
-  return def?.label ?? actionId;
-}
-
-function normToSvg(x: number, y: number) {
-  const ax = Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0.5;
-  const ay = Number.isFinite(y) ? Math.max(0, Math.min(1, y)) : 0.5;
-  return { x: ax * FIELD_WIDTH, y: ay * FIELD_HEIGHT };
-}
 
 interface Waypoint {
   x: number;
@@ -447,7 +372,6 @@ function MatchPlaybackView({
   teamDataByTeam,
   schema,
   videoCache,
-  tbaClimbData,
   pitScoutingByTeam,
   tbaSchedule,
 }: {
@@ -458,21 +382,15 @@ function MatchPlaybackView({
   teamDataByTeam: Map<string, (typeof matchData)[number]>;
   schema: ReturnType<typeof getMatchActionSchema>;
   videoCache: { data: { key: string; videos: { type: string; key: string }[] }[] } | null;
-  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>;
   pitScoutingByTeam: Map<string, PitScoutingData>;
   tbaSchedule: Record<string, { redScore: number | null; blueScore: number | null }>;
 }) {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const teamsInMatch = useMemo(() => schedule.filter((s) => s.match === matchKey), [schedule, matchKey]);
-  const teamsWithData = useMemo(
-    () => teamsInMatch.filter((s) => teamDataByTeam.get(s.team)?.data_raw),
-    [teamsInMatch, teamDataByTeam]
-  );
-
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [teamCardPage, setTeamCardPage] = useState<Record<string, "auto" | "teleop">>({});
-  const [phase, setPhase] = useState<"auto" | "teleop" | "full">("full");
+  const [phase] = useState<"auto" | "teleop" | "full">("full");
 
   // Reset progress to 0 when switching phase, entering match, or selecting a different team
   useEffect(() => {
@@ -484,7 +402,6 @@ function MatchPlaybackView({
     // Reset per-team paging when switching matches.
     setTeamCardPage({});
   }, [matchKey]);
-  const [viewMode, setViewMode] = useState<"field" | "video">("field");
 
   // Auto/Teleop metrics list should reflect what the event actually collected.
   // We scan the event's `matchData` for actionIds that exist in stored submissions.
@@ -550,13 +467,11 @@ function MatchPlaybackView({
   const matchVideoEntry = videoCache?.data?.find((m) => m.key === tbaMatchKey);
   const youtubeId = matchVideoEntry?.videos?.[0]?.key ?? null;
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [speed, _setSpeed] = useState(1);
   const [progress, setProgress] = useState(0);
   const rafRef = useRef<number | undefined>(undefined);
   const startTimeRef = useRef<number>(0);
   const lastProgressRef = useRef(0);
-  const videoContainerRef = useRef<HTMLDivElement>(null);
-
   const selectedRaw = selectedTeam ? (teamDataByTeam.get(selectedTeam)?.data_raw as MatchDataRaw | undefined) : null;
   const selAlliance = selectedTeam ? (teamsInMatch.find((t) => t.team === selectedTeam)?.alliance ?? "red") : "red";
   const waypoints = useMemo(
@@ -566,26 +481,6 @@ function MatchPlaybackView({
 
   const totalTime = waypoints.length >= 2 ? waypoints[waypoints.length - 1]!.timestamp : 0;
 
-  const currentPosition = useMemo(() => {
-    if (waypoints.length === 0) return null;
-    if (waypoints.length === 1 || progress >= 1) return waypoints[waypoints.length - 1]!;
-    const targetProgress = progress * totalTime;
-    let lastBefore = waypoints[0]!;
-    for (let i = 0; i < waypoints.length - 1; i++) {
-      const a = waypoints[i]!;
-      const b = waypoints[i + 1]!;
-      if (a.timestamp <= targetProgress) lastBefore = a;
-      if (targetProgress >= a.timestamp && targetProgress <= b.timestamp) {
-        const dt = b.timestamp - a.timestamp;
-        const t = dt <= 0 ? 1 : (targetProgress - a.timestamp) / dt;
-        const x = a.x + (b.x - a.x) * t;
-        const y = a.y + (b.y - a.y) * t;
-        return { x: Number.isFinite(x) ? x : a.x, y: Number.isFinite(y) ? y : a.y, timestamp: targetProgress };
-      }
-    }
-    // No interval covers targetProgress (gap between phases) — hold at last known position
-    return lastBefore;
-  }, [waypoints, progress, totalTime]);
 
   const tick = useCallback(() => {
     const elapsed = (performance.now() - startTimeRef.current) / 1000;
@@ -609,64 +504,6 @@ function MatchPlaybackView({
     };
   }, [playing, totalTime, tick]);
 
-  const canPlay = selectedTeam && waypoints.length >= 2;
-
-  // Detect if selected team is currently defending or blocking at the current playback time
-  const currentTimeMs = progress * totalTime;
-
-  // Compute the same t0 that buildWaypoints used for the active phase, so timing aligns exactly.
-  const { phaseT0, phaseIsEpoch } = useMemo(() => {
-    if (!selectedRaw) return { phaseT0: 0, phaseIsEpoch: false };
-    const autoActions = selectedRaw.autoActions ?? [];
-    const teleopActions = selectedRaw.teleopActions ?? [];
-    const allActions = [...autoActions, ...teleopActions];
-    const isEpoch = allActions.some((a) => a.timestamp > 1e12);
-    if (phase === "auto") {
-      const t0 = isEpoch && autoActions.length > 0 ? Math.min(...autoActions.map((a) => a.timestamp)) - 1 : 0;
-      return { phaseT0: t0, phaseIsEpoch: isEpoch };
-    }
-    if (phase === "teleop") {
-      const t0 = isEpoch && teleopActions.length > 0 ? Math.min(...teleopActions.map((a) => a.timestamp)) - 1 : 0;
-      return { phaseT0: t0, phaseIsEpoch: isEpoch };
-    }
-    const t0 = isEpoch && allActions.length > 0 ? Math.min(...allActions.map((a) => a.timestamp)) - 1 : 0;
-    return { phaseT0: t0, phaseIsEpoch: isEpoch };
-  }, [selectedRaw, phase]);
-
-  const isDefendingNow = useMemo(() => {
-    if (!selectedRaw) return false;
-    const allActions = [...(selectedRaw.autoActions ?? []), ...(selectedRaw.teleopActions ?? [])];
-    const defendActions = allActions
-      .filter((a) => a.actionId === "teleopDefend" || a.actionId === "defend")
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .map((a) => {
-        let ts = phaseIsEpoch ? a.timestamp - phaseT0 : a.timestamp;
-        if (!phaseIsEpoch && phase === "teleop") ts -= AUTO_END_MS;
-        return { ...a, ts };
-      });
-    const before = defendActions.filter((a) => a.ts <= currentTimeMs);
-    if (before.length === 0) return false;
-    return before[before.length - 1]!.enabled === true;
-  }, [selectedRaw, currentTimeMs, phaseT0, phaseIsEpoch, phase]);
-
-  const isBlockingNow = useMemo(() => {
-    if (!selectedRaw) return false;
-    const allActions = [...(selectedRaw.autoActions ?? []), ...(selectedRaw.teleopActions ?? [])];
-    const blockActions = allActions
-      .filter((a) => a.actionId === "block")
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .map((a) => {
-        let ts = phaseIsEpoch ? a.timestamp - phaseT0 : a.timestamp;
-        if (!phaseIsEpoch && phase === "teleop") ts -= AUTO_END_MS;
-        return { ...a, ts };
-      });
-    const before = blockActions.filter((a) => a.ts <= currentTimeMs);
-    if (before.length === 0) return false;
-    return before[before.length - 1]!.enabled === true;
-  }, [selectedRaw, currentTimeMs, phaseT0, phaseIsEpoch, phase]);
-
-  const fieldContainerWidth = Math.min(FIELD_WIDTH, 560);
-  const climbForMatch = tbaClimbData[tbaMatchKey] ?? {};
 
   // Scores from tbaSchedule (already fetched by desktop sync)
   const scheduleEntry = tbaSchedule[tbaMatchKey] ?? tbaSchedule[matchKey];
@@ -710,7 +547,7 @@ function MatchPlaybackView({
                 const md = teamDataByTeam.get(s.team);
                 const hasScoutedData = !!md?.data_raw;
                 const teamAutos = getTeamAutos(pitScoutingByTeam.get(s.team));
-                const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
+                const { label: autoLabel, drawing, name } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
                 const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
                 const isSelected = selectedTeam === s.team;
                 const page = teamCardPage[s.team] ?? "auto";
@@ -1035,7 +872,7 @@ function MatchPlaybackView({
                 const md = teamDataByTeam.get(s.team);
                 const hasScoutedData = !!md?.data_raw;
                 const teamAutos = getTeamAutos(pitScoutingByTeam.get(s.team));
-                const { label: autoLabel, drawing, name, description } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
+                const { label: autoLabel, drawing, name } = getMatchedAutoForTeam(hasScoutedData ? md : undefined, teamAutos, true);
                 const matchStats = md ? calculateSingleMatchStats(md as unknown as EventMatchData) : null;
                 const isSelected = selectedTeam === s.team;
                 const page = teamCardPage[s.team] ?? "auto";
@@ -1538,8 +1375,9 @@ function MatchPredictionView({
                           : null;
                         const pitData = pitScoutingByTeam.get(s.team);
                         const isPitScouted = !!(pitData?.name || pitData?.uid);
-                        const pitBump = isPitScouted ? !!(pitData.data?.bump) : null;
-                        const pitTrough = isPitScouted ? !!(pitData.data?.trough) : null;
+                        const pitMovement = pitData?.data?.movement as { bump?: boolean; trough?: boolean } | undefined;
+                        const pitBump = isPitScouted ? !!(pitMovement?.bump) : null;
+                        const pitTrough = isPitScouted ? !!(pitMovement?.trough) : null;
                         return (
                           <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-blue-500/30 p-3">
                             <div className="flex items-center gap-2 flex-1">
@@ -1576,8 +1414,9 @@ function MatchPredictionView({
                           : null;
                         const pitData = pitScoutingByTeam.get(s.team);
                         const isPitScouted = !!(pitData?.name || pitData?.uid);
-                        const pitBump = isPitScouted ? !!(pitData.data?.bump) : null;
-                        const pitTrough = isPitScouted ? !!(pitData.data?.trough) : null;
+                        const pitMovement = pitData?.data?.movement as { bump?: boolean; trough?: boolean } | undefined;
+                        const pitBump = isPitScouted ? !!(pitMovement?.bump) : null;
+                        const pitTrough = isPitScouted ? !!(pitMovement?.trough) : null;
                         return (
                           <div key={s.team} className="col-span-3 flex items-center gap-2 rounded-lg bg-background-500/10 border border-red-500/30 p-3">
                             <div className="flex items-center gap-2 flex-1">
@@ -1862,7 +1701,6 @@ function MatchesPage() {
         teamDataByTeam={teamDataByTeam}
         schema={schema}
         videoCache={videoCache}
-        tbaClimbData={tbaClimbData}
         pitScoutingByTeam={pitScoutingByTeam}
         tbaSchedule={tbaSchedule}
       />
@@ -1880,6 +1718,9 @@ function MatchesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
           />
         </div>
       </div>

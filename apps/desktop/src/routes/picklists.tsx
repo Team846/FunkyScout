@@ -214,6 +214,9 @@ function PicklistsPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search picklists..."
               className="pr-8 h-9 text-sm bg-transparent border-0 focus-visible:ring-0 placeholder:text-muted-foreground"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
             <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           </div>

@@ -28,9 +28,22 @@ pub async fn save_config(
     };
 
     // Update the shared event key so SyncService picks it up on the next sync cycle
+    let sync_trigger = {
+        let app_state = state.lock().unwrap();
+        app_state.sync_trigger.clone()
+    };
     if !config.event_key.is_empty() {
+        let prev = event_arc.read().unwrap().clone();
         *event_arc.write().unwrap() = config.event_key.clone();
         println!("[Config] Updated current_event_shared to: {}", config.event_key);
+        // Trigger an immediate sync when the event changes so local SQLite is
+        // populated before the user tries to use scheduler/teams for the new event.
+        if prev != config.event_key {
+            if let Some(tx) = sync_trigger {
+                let _ = tx.try_send(());
+                println!("[Config] Triggered immediate sync for new event: {}", config.event_key);
+            }
+        }
     }
 
     println!("[Config] Saved: {:?}", config);

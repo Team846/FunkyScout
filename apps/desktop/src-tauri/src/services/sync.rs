@@ -155,7 +155,7 @@ impl SyncService {
             }
         };
         if !user_profiles.is_empty() {
-            self.cache_user_profiles_to_sqlite(&user_profiles)
+            self.cache_user_profiles_to_sqlite(&user_profiles, profile_since.is_none())
                 .await
                 .context("Failed to cache user profiles to SQLite")?;
         }
@@ -939,7 +939,7 @@ impl SyncService {
 
     /// Cache user profiles to local SQLite
     /// Matches Supabase structure for offline support
-    async fn cache_user_profiles_to_sqlite(&self, profile_records: &[serde_json::Value]) -> Result<()> {
+    async fn cache_user_profiles_to_sqlite(&self, profile_records: &[serde_json::Value], full_sync: bool) -> Result<()> {
         if profile_records.is_empty() {
             return Ok(());
         }
@@ -960,23 +960,54 @@ impl SyncService {
                 chrono::Utc::now().timestamp_millis()
             };
 
+            // Propagate deletion: if deleted_at is set in Supabase, mark row deleted in SQLite
+            let deleted_at_ms: Option<i64> = record.get("deleted_at")
+                .and_then(|v| v.as_str())
+                .and_then(|ts_str| chrono::DateTime::parse_from_rfc3339(ts_str).ok())
+                .map(|dt| dt.timestamp_millis());
+
             sqlx::query(
-                "INSERT INTO user_profiles (uid, name, role, settings, last_modified)
-                 VALUES (?, ?, ?, ?, ?)
+                "INSERT INTO user_profiles (uid, name, role, settings, last_modified, deleted_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT(uid) DO UPDATE SET
                    name = excluded.name,
                    role = excluded.role,
                    settings = excluded.settings,
-                   last_modified = excluded.last_modified"
+                   last_modified = excluded.last_modified,
+                   deleted_at = excluded.deleted_at"
             )
             .bind(uid)
             .bind(name)
             .bind(role)
             .bind(&settings_json)
             .bind(last_modified)
+            .bind(deleted_at_ms)
             .execute(&self.sqlx_pool)
             .await
             .context(format!("Failed to cache user profile {} to SQLite", uid))?;
+        }
+
+        // On full sync: prune stale rows whose UIDs no longer exist in Supabase.
+        // Supabase uses hard deletes (rows are gone), not soft deleted_at, so the only
+        // way to clean up is to delete local rows absent from the full fetch result.
+        if full_sync {
+            let fetched_uids: Vec<&str> = profile_records
+                .iter()
+                .filter_map(|r| r.get("uid").and_then(|v| v.as_str()))
+                .collect();
+            if !fetched_uids.is_empty() {
+                let placeholders = fetched_uids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                let query_str = format!(
+                    "DELETE FROM user_profiles WHERE uid NOT IN ({})",
+                    placeholders
+                );
+                let mut query = sqlx::query(&query_str);
+                for uid in &fetched_uids {
+                    query = query.bind(*uid);
+                }
+                query.execute(&self.sqlx_pool).await.context("Failed to prune stale user profiles")?;
+                println!("[Sync] Pruned stale user profiles not present in Supabase");
+            }
         }
 
         println!("[Sync] Cached {} user profiles to SQLite", profile_records.len());
@@ -1324,6 +1355,31 @@ impl SyncService {
         Ok(())
     }
 
+    /// Enrich a Supabase FK violation error with the specific UID and name that caused it.
+    /// Parses the Supabase JSON error body (e.g. `{"code":"23503","details":"Key (uid)=(xxx)..."}`)
+    /// and cross-references against the assignments array to identify the offending scouter.
+    fn enrich_fk_error(err: anyhow::Error, assignments: &[serde_json::Value]) -> anyhow::Error {
+        let msg = err.to_string();
+        // Extract violating UID from Supabase error detail: "Key (uid)=(some-uuid) is not present..."
+        if let Some(start) = msg.find("Key (uid)=(") {
+            let rest = &msg[start + "Key (uid)=(".len()..];
+            if let Some(end) = rest.find(')') {
+                let bad_uid = &rest[..end];
+                // Find the name for this UID in the assignments
+                let name = assignments.iter()
+                    .find(|a| a.get("uid").and_then(|v| v.as_str()) == Some(bad_uid))
+                    .and_then(|a| a.get("name").and_then(|v| v.as_str()))
+                    .unwrap_or("unknown");
+                return anyhow::anyhow!(
+                    "FK violation — invalid user '{}' (uid: {}) no longer exists in Supabase. \
+                     Remove stale scouter from the scheduler list. Original error: {}",
+                    name, bad_uid, msg
+                );
+            }
+        }
+        err
+    }
+
     /// Returns true if the error string looks like a transient network connectivity issue
     /// (offline, DNS failure, TCP reset, etc.) rather than a server-level error.
     /// Network errors should NOT burn retries — the item stays pending until connectivity
@@ -1477,10 +1533,26 @@ impl SyncService {
         let name = payload.get("name").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
         let uid = payload.get("uid").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
 
-        println!("[SyncQueue] PUT_MATCH_DATA: event={}, match={}, team={}, alliance={}",
-            event, match_key, team, alliance);
+        println!("[SyncQueue] PUT_MATCH_DATA: event={}, match={}, team={}, alliance={}, scouter={}({})",
+            event, match_key, team, alliance,
+            name.unwrap_or("?"),
+            uid.unwrap_or("no-uid"));
 
-        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid).await?;
+        self.supabase.put_match_data(event, match_key, team, alliance, data_raw, name, uid).await
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("23503") || msg.contains("violates foreign key") {
+                    anyhow::anyhow!(
+                        "FK violation — scouter '{}' (uid: {}) is not a valid Supabase user. \
+                         Original error: {}",
+                        name.unwrap_or("?"),
+                        uid.unwrap_or("no-uid"),
+                        msg
+                    )
+                } else {
+                    e
+                }
+            })?;
 
         Ok(())
     }
@@ -1551,7 +1623,18 @@ impl SyncService {
             .clone();
 
         let count = assignments.len();
-        self.supabase.patch_assign_shifts(event, &assignments).await?;
+        // Log UIDs being pushed so FK failures are identifiable
+        let uid_summary: Vec<String> = assignments.iter()
+            .filter_map(|a| {
+                let uid = a.get("uid").and_then(|v| v.as_str())?;
+                let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                Some(format!("{}({})", name, &uid[..uid.len().min(8)]))
+            })
+            .collect();
+        println!("[Sync] ASSIGN_SHIFTS_BULK: {} rows, uids: [{}]", count, uid_summary.join(", "));
+
+        self.supabase.patch_assign_shifts(event, &assignments).await
+            .map_err(|e| Self::enrich_fk_error(e, &assignments))?;
         println!("[Sync] ✅ Bulk assigned {} shifts to Supabase (diff patch)", count);
         Ok(())
     }
@@ -1566,7 +1649,17 @@ impl SyncService {
             .clone();
 
         let count = assignments.len();
-        self.supabase.patch_assign_shifts(event, &assignments).await?;
+        let uid_summary: Vec<String> = assignments.iter()
+            .filter_map(|a| {
+                let uid = a.get("uid").and_then(|v| v.as_str())?;
+                let name = a.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                Some(format!("{}({})", name, &uid[..uid.len().min(8)]))
+            })
+            .collect();
+        println!("[Sync] ASSIGN_SHIFTS_DIFF: {} rows, uids: [{}]", count, uid_summary.join(", "));
+
+        self.supabase.patch_assign_shifts(event, &assignments).await
+            .map_err(|e| Self::enrich_fk_error(e, &assignments))?;
         println!("[Sync] ✅ Patched {} shifts in Supabase (incremental diff)", count);
         Ok(())
     }

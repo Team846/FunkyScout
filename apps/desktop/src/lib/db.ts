@@ -172,6 +172,15 @@ export async function cacheUserProfiles(profiles: UserProfile[]): Promise<void> 
 }
 
 /**
+ * Fetch user profiles directly from Supabase and refresh SQLite cache.
+ * Purges stale (deleted) entries by propagating deleted_at from Supabase.
+ * Returns fresh active profiles (deleted_at IS NULL).
+ */
+export async function refreshUserProfilesFromSupabase(): Promise<UserProfile[]> {
+  return invoke<UserProfile[]>("refresh_user_profiles_from_supabase");
+}
+
+/**
  * Pit scouting data from SQLite cache
  * Contains pit scouting JSONB data and scouter information
  */

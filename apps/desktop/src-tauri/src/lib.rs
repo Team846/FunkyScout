@@ -152,6 +152,7 @@ pub fn run() {
             commands::db::cache_schedule,
             commands::db::cache_picklists,
             commands::db::cache_user_profiles,
+            commands::db::refresh_user_profiles_from_supabase,
             commands::db::get_pit_scouting_data,
             commands::db::cache_pit_scouting_data,
             commands::db::get_match_scouting_data,

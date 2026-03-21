@@ -56,14 +56,16 @@ pub async fn get_teams(
     state: State<'_, Mutex<AppState>>,
     event: String,
 ) -> Result<Vec<TeamData>, String> {
-    let pool = {
+    let (pool, supabase) = {
         let app_state = state.lock().unwrap();
-        app_state
+        let pool = app_state
             .database
             .as_ref()
             .ok_or("Database not initialized")?
             .get_sqlx_pool()
-            .clone()
+            .clone();
+        let supabase = app_state.supabase_service.clone();
+        (pool, supabase)
     }; // MutexGuard dropped here
 
     let rows = sqlx::query(
@@ -76,6 +78,67 @@ pub async fn get_teams(
     .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to query teams: {}", e))?;
+
+    // If SQLite has no teams for this event, fall back to Supabase directly.
+    // This handles the case where the event was bootstrapped in Supabase but the
+    // background sync hasn't run yet (e.g. new event before schedule is out).
+    if rows.is_empty() {
+        println!("[get_teams] SQLite empty for event {}, falling back to Supabase", event);
+        match supabase.fetch_event_team_data(&event, None).await {
+            Ok(remote_rows) if !remote_rows.is_empty() => {
+                println!("[get_teams] Supabase returned {} teams, caching to SQLite", remote_rows.len());
+                // Ensure event_list entry exists (FK requirement)
+                let _ = sqlx::query(
+                    "INSERT INTO event_list (event, alias, date, last_modified)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(event) DO UPDATE SET last_modified = excluded.last_modified"
+                )
+                .bind(&event)
+                .bind(&event)
+                .bind("")
+                .bind(chrono::Utc::now().timestamp_millis())
+                .execute(&pool)
+                .await;
+
+                let mut results = Vec::with_capacity(remote_rows.len());
+                for record in &remote_rows {
+                    let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let team_name: Option<String> = record.get("team_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let data_json = record.get("data")
+                        .and_then(|v| v.as_object())
+                        .map(|obj| serde_json::Value::Object(obj.iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect::<serde_json::Map<_, _>>()).to_string())
+                        .unwrap_or_else(|| "{}".to_string());
+                    let _ = sqlx::query(
+                        "INSERT INTO event_team_data (event, team, team_name, data, last_modified)
+                         VALUES (?, ?, ?, json(?), ?)
+                         ON CONFLICT(event, team) DO UPDATE SET
+                           team_name = excluded.team_name,
+                           data = json_patch(COALESCE(event_team_data.data, '{}'), excluded.data),
+                           last_modified = excluded.last_modified"
+                    )
+                    .bind(&event)
+                    .bind(&team)
+                    .bind(&team_name)
+                    .bind(&data_json)
+                    .bind(chrono::Utc::now().timestamp_millis())
+                    .execute(&pool)
+                    .await;
+
+                    results.push(TeamData {
+                        event: event.clone(),
+                        team,
+                        team_name,
+                        data: record.get("data").cloned(),
+                        last_modified: chrono::Utc::now().timestamp_millis(),
+                    });
+                }
+                results.sort_by(|a, b| a.team.cmp(&b.team));
+                return Ok(results);
+            }
+            Ok(_) => {} // Supabase also returned empty — fall through to return empty
+            Err(e) => eprintln!("[get_teams] Supabase fallback failed: {}", e),
+        }
+    }
 
     Ok(rows
         .into_iter()
@@ -490,6 +553,111 @@ pub async fn cache_user_profiles(
     }
 
     Ok(())
+}
+
+/// Fetch user profiles directly from Supabase and refresh SQLite cache.
+/// Used by the scheduler on mount to purge stale (deleted) scouter entries.
+/// Performs a full (non-incremental) fetch so deleted_at propagates immediately.
+#[tauri::command]
+pub async fn refresh_user_profiles_from_supabase(
+    state: State<'_, Mutex<AppState>>,
+) -> Result<Vec<UserProfile>, String> {
+    let (pool, supabase) = {
+        let app_state = state.lock().unwrap();
+        let pool = app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone();
+        let supabase = app_state.supabase_service.clone();
+        (pool, supabase)
+    };
+
+    let remote_profiles = supabase
+        .fetch_user_profiles(None)
+        .await
+        .map_err(|e| format!("Failed to fetch user profiles from Supabase: {}", e))?;
+
+    for record in &remote_profiles {
+        let uid = record.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+        let name = record.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let role = record.get("role").and_then(|v| v.as_str()).unwrap_or("user");
+        let settings_json = record.get("settings").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string());
+        let last_modified = if let Some(ts_str) = record.get("last_modified").and_then(|v| v.as_str()) {
+            chrono::DateTime::parse_from_rfc3339(ts_str)
+                .map(|dt| dt.timestamp_millis())
+                .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+        } else {
+            chrono::Utc::now().timestamp_millis()
+        };
+        let deleted_at_ms: Option<i64> = record.get("deleted_at")
+            .and_then(|v| v.as_str())
+            .and_then(|ts_str| chrono::DateTime::parse_from_rfc3339(ts_str).ok())
+            .map(|dt| dt.timestamp_millis());
+
+        sqlx::query(
+            "INSERT INTO user_profiles (uid, name, role, settings, last_modified, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(uid) DO UPDATE SET
+               name = excluded.name,
+               role = excluded.role,
+               settings = excluded.settings,
+               last_modified = excluded.last_modified,
+               deleted_at = excluded.deleted_at"
+        )
+        .bind(uid)
+        .bind(name)
+        .bind(role)
+        .bind(&settings_json)
+        .bind(last_modified)
+        .bind(deleted_at_ms)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to cache user profile {}: {}", uid, e))?;
+    }
+
+    // Prune stale rows: Supabase hard-deletes users (no deleted_at), so delete any
+    // local SQLite rows whose UIDs are absent from the full Supabase fetch.
+    let fetched_uids: Vec<String> = remote_profiles
+        .iter()
+        .filter_map(|r| r.get("uid").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    if !fetched_uids.is_empty() {
+        let placeholders = fetched_uids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query_str = format!("DELETE FROM user_profiles WHERE uid NOT IN ({})", placeholders);
+        let mut query = sqlx::query(&query_str);
+        for uid in &fetched_uids {
+            query = query.bind(uid);
+        }
+        query.execute(&pool).await
+            .map_err(|e| format!("Failed to prune stale user profiles: {}", e))?;
+        println!("[refresh_user_profiles] Pruned stale profiles not present in Supabase");
+    }
+
+    println!("[refresh_user_profiles] Refreshed {} profiles from Supabase", remote_profiles.len());
+
+    // Return fresh active profiles from SQLite
+    let rows = sqlx::query(
+        "SELECT uid, name, role, settings, last_modified
+         FROM user_profiles
+         WHERE deleted_at IS NULL
+         ORDER BY name"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to query fresh user profiles: {}", e))?;
+
+    Ok(rows.into_iter().map(|row| {
+        let settings_str: Option<String> = row.try_get("settings").ok();
+        UserProfile {
+            uid: row.try_get("uid").unwrap_or_default(),
+            name: row.try_get("name").unwrap_or_default(),
+            role: row.try_get("role").unwrap_or_default(),
+            settings: settings_str.and_then(|s| serde_json::from_str(&s).ok()),
+            last_modified: row.try_get("last_modified").unwrap_or(0),
+        }
+    }).collect())
 }
 
 /// Pit scouting data from SQLite cache

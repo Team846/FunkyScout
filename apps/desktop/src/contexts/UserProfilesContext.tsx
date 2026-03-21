@@ -42,14 +42,14 @@ export function UserProfilesProvider({ children }: { children: ReactNode }) {
     fetchRef.current = fetchProfiles;
   }, [fetchProfiles]);
 
-  // Fetch on mount + refresh every 135s (aligned with DesktopTeamDataContext)
+  // Fetch on mount + refresh every 125s (aligned with DesktopTeamDataContext)
   useEffect(() => {
     fetchProfiles();
 
     const timer = setInterval(() => {
-      console.log("[UserProfiles] Post-sync SQLite refresh (135s)");
+      console.log("[UserProfiles] Post-sync SQLite refresh (125s)");
       fetchRef.current?.();
-    }, 135_000);
+    }, 125_000);
 
     return () => clearInterval(timer);
   }, [fetchProfiles]);

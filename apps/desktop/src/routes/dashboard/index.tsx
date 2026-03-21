@@ -124,6 +124,9 @@ function DashboardPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={searchPlaceholder}
                 className="h-8 pl-8 text-xs bg-secondary/50 border-secondary"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
               />
             </div>
 

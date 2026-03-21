@@ -267,20 +267,19 @@ export function DesktopCompetitionDataProvider({
     return () => timers.forEach(clearTimeout);
   }, [currentEvent, fetchData]);
 
-  // Every 120s: trigger a Rust sync then re-read SQLite once the sync has had time to write.
-  // This ensures Supabase changes (picklist edits, new scouting data) are visible within ~135s.
+  // Every 125s: trigger a Rust sync then re-read SQLite once the sync has had time to write.
   useEffect(() => {
     if (!currentEvent) return;
 
     const timer = setInterval(() => {
-      console.log("[DesktopCompetitionData] Triggering sync + SQLite refresh (120s)");
+      console.log("[DesktopCompetitionData] Triggering sync + SQLite refresh (125s)");
       invoke("trigger_sync_now").catch(console.error);
       // Re-read SQLite after the sync has had time to complete (~15s for TBA + Supabase pulls)
       setTimeout(() => {
-        console.log("[DesktopCompetitionData] Post-sync SQLite refresh (120s+15s)");
+        console.log("[DesktopCompetitionData] Post-sync SQLite refresh (125s+15s)");
         fetchDataRef.current?.();
       }, 15_000);
-    }, 120_000);
+    }, 125_000);
 
     return () => clearInterval(timer);
   }, [currentEvent]);

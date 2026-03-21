@@ -108,6 +108,9 @@ export function TeamPickerDialog({ open, onOpenChange }: TeamPickerDialogProps) 
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9 text-sm"
               autoFocus
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
         </DialogHeader>

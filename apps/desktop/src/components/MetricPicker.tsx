@@ -60,6 +60,9 @@ export function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerP
               placeholder="Search metrics..."
               className="w-full pl-8 pr-3 py-1.5 text-sm bg-card border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
               autoFocus
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
         </div>

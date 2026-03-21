@@ -932,6 +932,9 @@ export interface FullTeamPanelProps {
 let _statOverviewMetricKey = "overview";
 let _matchOverviewMetricKey = "epa";
 let _matchOverviewOpen = false;
+let _pitDataOpen = false;
+let _matchRecapOpen = true;
+let _statOverviewOpen = true;
 
 export function FullTeamPanel({
   teamKey,
@@ -1036,9 +1039,9 @@ export function FullTeamPanel({
   }, [pit]);
   const [autoIdx, setAutoIdx] = useState(0);
   const clampedAutoIdx = autos.length > 0 ? Math.min(autoIdx, autos.length - 1) : 0;
-  const [pitDataOpen, setPitDataOpen] = useState(false);
-  const [matchRecapOpen, setMatchRecapOpen] = useState(true);
-  const [statOverviewOpen, setStatOverviewOpen] = useState(true);
+  const [pitDataOpen, setPitDataOpen] = useState(() => _pitDataOpen);
+  const [matchRecapOpen, setMatchRecapOpen] = useState(() => _matchRecapOpen);
+  const [statOverviewOpen, setStatOverviewOpen] = useState(() => _statOverviewOpen);
   const [showStatOverviewPicker, setShowStatOverviewPicker] = useState(false);
   const [matchOverviewOpen, setMatchOverviewOpen] = useState(() => _matchOverviewOpen);
   const [showMatchPicker, setShowMatchPicker] = useState(false);
@@ -1610,7 +1613,7 @@ export function FullTeamPanel({
             <div className="rounded-lg overflow-hidden">
               <button
                 type="button"
-                onClick={() => setPitDataOpen((o) => !o)}
+                onClick={() => setPitDataOpen((o) => { _pitDataOpen = !o; return !o; })}
                 className="w-full flex items-center justify-between px-3 py-2 bg-muted/10 hover:bg-muted/20 transition-colors text-left"
               >
                 <p className="text-base font-semibold text-primary">Pit Data</p>
@@ -1658,7 +1661,7 @@ export function FullTeamPanel({
                       {pit.driveType && (
                         <div>
                           <p className="text-[10px] text-muted-foreground">Drive:</p>
-                          <p className="text-xs text-foreground break-words">{pit.driveType}</p>
+                          <p className="text-xs text-foreground break-words max-h-[48px] overflow-y-auto pr-0.5">{pit.driveType}</p>
                         </div>
                       )}
                     </div>
@@ -1853,7 +1856,7 @@ export function FullTeamPanel({
             <div className="rounded-lg overflow-hidden">
               <button
                 type="button"
-                onClick={() => setMatchRecapOpen((o) => !o)}
+                onClick={() => setMatchRecapOpen((o) => { _matchRecapOpen = !o; return !o; })}
                 className="w-full flex items-center justify-between px-3 py-2 bg-muted/10 hover:bg-muted/20 transition-colors text-left"
               >
                 <p className="text-base font-semibold text-primary">Match Recap</p>
@@ -2029,7 +2032,7 @@ export function FullTeamPanel({
             <div className="flex items-center bg-muted/10 hover:bg-muted/20 transition-colors">
               <button
                 type="button"
-                onClick={() => setStatOverviewOpen((o) => !o)}
+                onClick={() => setStatOverviewOpen((o) => { _statOverviewOpen = !o; return !o; })}
                 className="flex-1 flex items-center justify-between px-3 py-2 text-left"
               >
                 <p className="text-base font-semibold text-primary">Stat Overview</p>
@@ -3328,7 +3331,7 @@ export function ExpandedTeamPanel({
                       {pit.driveType && (
                         <div>
                           <p className="text-[10px] text-muted-foreground">Drive:</p>
-                          <p className="text-[10px] text-foreground break-words">{pit.driveType}</p>
+                          <p className="text-[10px] text-foreground break-words max-h-[40px] overflow-y-auto pr-0.5">{pit.driveType}</p>
                         </div>
                       )}
                     </div>

@@ -616,6 +616,9 @@ function ComparisonPage() {
                 <CommandInput
                   placeholder="Search metrics..."
                   className="h-8 text-xs text-foreground [&>svg]:text-muted-foreground"
+                  autoCorrect="off"
+                  autoComplete="off"
+                  spellCheck={false}
                 />
                 <CommandList className="max-h-[220px]">
                   <CommandEmpty className="text-xs text-muted-foreground py-3 text-center">
@@ -657,6 +660,9 @@ function ComparisonPage() {
               onChange={(e) => setSearchTeam(e.target.value)}
               placeholder="Search teams..."
               className="pr-8 h-9 text-sm bg-transparent border-0 focus-visible:ring-0 placeholder:text-muted-foreground"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
             <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           </div>

@@ -5,10 +5,9 @@ import {
   useMemo,
   useCallback,
   useRef,
-  type DragEvent,
   type ReactNode,
 } from "react";
-import { GripVertical, Maximize2 } from "lucide-react";
+import { ArrowLeftRight, Maximize2, Search } from "lucide-react";
 import { Card } from "@shadcn/ui/components/card.tsx";
 import {
   Tabs,
@@ -125,34 +124,18 @@ function formatMatchTime(estTime: number | null): string | null {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-const SHIFT_DRAG_MIME = "application/x-funkyscout-shift";
 
 function MatchCardSmall({
   card,
   type,
   onMatchClick,
-  shiftSwapDragKey,
-  shiftSwapHoverKey,
-  shiftSwapDisabled,
-  onShiftSwapDragOver,
-  onShiftSwapDragLeave,
-  onShiftSwapDragStart,
-  onShiftSwapDragEnd,
-  onShiftSwapDrop,
+  onReassignClick,
 }: {
   card: MatchCard;
   type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
   onMatchClick?: (matchKey: string) => void;
-  /** When set (e.g. `match|team`), this card is the active drag source — dim others */
-  shiftSwapDragKey?: string | null;
-  /** Drop-target highlight */
-  shiftSwapHoverKey?: string | null;
-  onShiftSwapDragOver?: (matchKey: string, team: string) => void;
-  onShiftSwapDragLeave?: () => void;
-  onShiftSwapDragStart?: (matchKey: string, team: string) => void;
-  onShiftSwapDragEnd?: () => void;
-  shiftSwapDisabled?: boolean;
-  onShiftSwapDrop?: (targetMatchKey: string, targetTeam: string, e: DragEvent) => void;
+  /** Called when the reassign icon is clicked — opens scouter picker */
+  onReassignClick?: (matchKey: string, team: string) => void;
 }) {
   const allianceBorder =
     card.alliance === "red"
@@ -160,14 +143,7 @@ function MatchCardSmall({
       : "border-blue-500/40 bg-blue-500/10";
   const isTeam = type === "team-past" || type === "team-next";
   const matchTime = formatMatchTime(card.estTime);
-  const shiftSwapKey = `${card.matchKey}|${card.team}`;
-  const allowShiftSwap = type === "scouter-next";
-  const isShiftSwapSource = allowShiftSwap && shiftSwapDragKey === shiftSwapKey;
-  const isShiftSwapTargetHover =
-    allowShiftSwap &&
-    shiftSwapDragKey &&
-    shiftSwapDragKey !== shiftSwapKey &&
-    shiftSwapHoverKey === shiftSwapKey;
+  const allowReassign = type === "scouter-next";
 
   return (
     <div
@@ -175,73 +151,22 @@ function MatchCardSmall({
       tabIndex={onMatchClick ? 0 : undefined}
       onClick={onMatchClick ? () => onMatchClick(card.matchKey) : undefined}
       onKeyDown={onMatchClick ? (e) => e.key === "Enter" && onMatchClick(card.matchKey) : undefined}
-      onDragOver={
-        allowShiftSwap &&
-        !shiftSwapDisabled &&
-        shiftSwapDragKey &&
-        shiftSwapDragKey !== shiftSwapKey
-          ? (e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              onShiftSwapDragOver?.(card.matchKey, card.team);
-            }
-          : undefined
-      }
-      onDragLeave={
-        allowShiftSwap
-          ? (e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-                onShiftSwapDragLeave?.();
-              }
-            }
-          : undefined
-      }
-      onDrop={
-        allowShiftSwap && !shiftSwapDisabled
-          ? (e) => {
-              e.preventDefault();
-              onShiftSwapDrop?.(card.matchKey, card.team, e);
-            }
-          : undefined
-      }
       className={`w-[180px] flex-shrink-0 border rounded-lg py-3 flex items-stretch gap-0 ${allianceBorder} ${
         onMatchClick ? "cursor-pointer hover:opacity-90 hover:ring-2 hover:ring-primary/50 transition-all" : ""
-      } ${isShiftSwapTargetHover ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""} ${
-        shiftSwapDragKey && allowShiftSwap && !isShiftSwapSource ? "opacity-60" : ""
-      } ${allowShiftSwap ? "pl-1 pr-3" : "px-3"}`}
-      title={
-        allowShiftSwap
-          ? `${onMatchClick ? `View ${card.matchDisplay} · ` : ""}Drag ⋮⋮ to swap this shift with another scouter`
-          : onMatchClick
-            ? `View ${card.matchDisplay}`
-            : undefined
-      }
+      } ${allowReassign ? "pl-1 pr-3" : "px-3"}`}
+      title={onMatchClick ? `View ${card.matchDisplay}` : undefined}
     >
-      {allowShiftSwap && (
+      {allowReassign && (
         <div
-          draggable={!shiftSwapDisabled}
-          onDragStart={(e) => {
-            if (shiftSwapDisabled) {
-              e.preventDefault();
-              return;
-            }
+          className="flex-shrink-0 flex items-center justify-center w-6 text-muted-foreground hover:text-primary rounded transition-colors cursor-pointer"
+          title="Reassign this shift to another scouter"
+          aria-label="Reassign shift"
+          onClick={(e) => {
             e.stopPropagation();
-            const payload = JSON.stringify({ matchKey: card.matchKey, team: card.team });
-            e.dataTransfer.setData(SHIFT_DRAG_MIME, payload);
-            e.dataTransfer.setData("text/plain", payload);
-            e.dataTransfer.effectAllowed = "move";
-            onShiftSwapDragStart?.(card.matchKey, card.team);
+            onReassignClick?.(card.matchKey, card.team);
           }}
-          onDragEnd={(e) => {
-            e.stopPropagation();
-            onShiftSwapDragEnd?.();
-          }}
-          className="flex-shrink-0 flex items-center justify-center w-6 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground rounded touch-none"
-          title="Drag to swap with another upcoming shift"
-          aria-label="Drag to swap shift"
-          onClick={(e) => e.stopPropagation()}
         >
-          <GripVertical className="w-4 h-4" />
+          <ArrowLeftRight className="w-3.5 h-3.5" />
         </div>
       )}
       {/* Left side: centered vertically */}
@@ -332,27 +257,13 @@ function MatchCardScroll({
   type,
   alignRight,
   onMatchClick,
-  shiftSwapDragKey,
-  shiftSwapHoverKey,
-  shiftSwapDisabled,
-  onShiftSwapDragStart,
-  onShiftSwapDragEnd,
-  onShiftSwapDragOver,
-  onShiftSwapDragLeave,
-  onShiftSwapDrop,
+  onReassignClick,
 }: {
   cards: MatchCard[];
   type: "scouter-past" | "scouter-next" | "team-past" | "team-next";
   alignRight?: boolean;
   onMatchClick?: (matchKey: string) => void;
-  shiftSwapDragKey?: string | null;
-  shiftSwapHoverKey?: string | null;
-  shiftSwapDisabled?: boolean;
-  onShiftSwapDragStart?: (matchKey: string, team: string) => void;
-  onShiftSwapDragEnd?: () => void;
-  onShiftSwapDragOver?: (matchKey: string, team: string) => void;
-  onShiftSwapDragLeave?: () => void;
-  onShiftSwapDrop?: (targetMatchKey: string, targetTeam: string, e: DragEvent) => void;
+  onReassignClick?: (matchKey: string, team: string) => void;
 }) {
   return (
     <div className={`flex-1 flex items-center min-w-0 ${alignRight ? "justify-end" : ""}`}>
@@ -368,14 +279,7 @@ function MatchCardScroll({
               card={m}
               type={type}
               onMatchClick={onMatchClick}
-              shiftSwapDragKey={shiftSwapDragKey}
-              shiftSwapHoverKey={shiftSwapHoverKey}
-              shiftSwapDisabled={shiftSwapDisabled}
-              onShiftSwapDragStart={onShiftSwapDragStart}
-              onShiftSwapDragEnd={onShiftSwapDragEnd}
-              onShiftSwapDragOver={onShiftSwapDragOver}
-              onShiftSwapDragLeave={onShiftSwapDragLeave}
-              onShiftSwapDrop={onShiftSwapDrop}
+              onReassignClick={onReassignClick}
             />
           ))
         )}
@@ -503,28 +407,14 @@ function ScouterRow({
   onRatingChange,
   onExclude,
   onMatchClick,
-  shiftSwapDragKey,
-  shiftSwapHoverKey,
-  shiftSwapDisabled,
-  onShiftSwapDragStart,
-  onShiftSwapDragEnd,
-  onShiftSwapDragOver,
-  onShiftSwapDragLeave,
-  onShiftSwapDrop,
+  onReassignClick,
 }: {
   row: ScouterViewRow;
   rating: number | null;
   onRatingChange: (uid: string, n: number) => void;
   onExclude: (uid: string) => void;
   onMatchClick?: (matchKey: string) => void;
-  shiftSwapDragKey?: string | null;
-  shiftSwapHoverKey?: string | null;
-  shiftSwapDisabled?: boolean;
-  onShiftSwapDragStart?: (matchKey: string, team: string) => void;
-  onShiftSwapDragEnd?: () => void;
-  onShiftSwapDragOver?: (matchKey: string, team: string) => void;
-  onShiftSwapDragLeave?: () => void;
-  onShiftSwapDrop?: (targetMatchKey: string, targetTeam: string, e: DragEvent) => void;
+  onReassignClick?: (matchKey: string, team: string) => void;
 }) {
   return (
     <div className="flex items-center gap-6">
@@ -539,14 +429,7 @@ function ScouterRow({
         cards={row.nextMatches}
         type="scouter-next"
         onMatchClick={onMatchClick}
-        shiftSwapDragKey={shiftSwapDragKey}
-        shiftSwapHoverKey={shiftSwapHoverKey}
-        shiftSwapDisabled={shiftSwapDisabled}
-        onShiftSwapDragStart={onShiftSwapDragStart}
-        onShiftSwapDragEnd={onShiftSwapDragEnd}
-        onShiftSwapDragOver={onShiftSwapDragOver}
-        onShiftSwapDragLeave={onShiftSwapDragLeave}
-        onShiftSwapDrop={onShiftSwapDrop}
+        onReassignClick={onReassignClick}
       />
     </div>
   );
@@ -634,71 +517,47 @@ function ShiftViewerPage() {
   const [dirtyPriorities, setDirtyPriorities] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
 
-  /** Drag ⋮⋮ on upcoming shift cards to swap assignments (incremental Supabase patch). */
-  const [shiftSwapDragKey, setShiftSwapDragKey] = useState<string | null>(null);
-  const [shiftSwapHoverKey, setShiftSwapHoverKey] = useState<string | null>(null);
-  const [shiftSwapBusy, setShiftSwapBusy] = useState(false);
+  /** Reassign popup — open when switch icon is clicked on a shift card. */
+  const [reassignTarget, setReassignTarget] = useState<{ matchKey: string; team: string } | null>(null);
+  const [reassignSearch, setReassignSearch] = useState("");
+  const [reassignBusy, setReassignBusy] = useState(false);
 
-  const parseShiftDragPayload = useCallback((e: DragEvent): { matchKey: string; team: string } | null => {
-    const raw = e.dataTransfer.getData(SHIFT_DRAG_MIME) || e.dataTransfer.getData("text/plain");
-    try {
-      const o = JSON.parse(raw) as { matchKey?: string; team?: string };
-      if (o.matchKey && o.team) return { matchKey: o.matchKey, team: o.team };
-    } catch {
-      /* ignore */
-    }
-    return null;
+  const openReassignPopup = useCallback((matchKey: string, team: string) => {
+    setReassignTarget({ matchKey, team });
+    setReassignSearch("");
   }, []);
 
-  const handleShiftSwapDrop = useCallback(
-    async (targetMatchKey: string, targetTeam: string, e: DragEvent) => {
-      const from = parseShiftDragPayload(e);
-      setShiftSwapDragKey(null);
-      setShiftSwapHoverKey(null);
-      if (!from || !currentEvent) return;
-      if (from.matchKey === targetMatchKey && from.team === targetTeam) return;
+  const closeReassignPopup = useCallback(() => {
+    setReassignTarget(null);
+    setReassignSearch("");
+  }, []);
 
-      const entry1 = schedule.find((s) => s.match === from.matchKey && s.team === from.team);
-      const entry2 = schedule.find((s) => s.match === targetMatchKey && s.team === targetTeam);
-      if (!entry1 || !entry2) {
-        toast.error("Could not find schedule rows for swap.");
-        return;
-      }
-
-      const uid1 = entry1.uid ?? null;
-      const name1 = entry1.name ?? null;
-      const uid2 = entry2.uid ?? null;
-      const name2 = entry2.name ?? null;
-
-      if (uid1 === uid2 && (name1 ?? "") === (name2 ?? "")) {
-        toast.info("Nothing to swap — same scouter on both shifts.");
-        return;
-      }
-
-      setShiftSwapBusy(true);
+  const handleReassign = useCallback(
+    async (targetUid: string, targetName: string) => {
+      if (!reassignTarget || !currentEvent) return;
+      closeReassignPopup();
+      setReassignBusy(true);
       try {
         await assignShiftsDiff(currentEvent, [
-          { matchKey: from.matchKey, teamKey: from.team, uid: uid2, name: name2 },
-          { matchKey: targetMatchKey, teamKey: targetTeam, uid: uid1, name: name1 },
+          { matchKey: reassignTarget.matchKey, teamKey: reassignTarget.team, uid: targetUid, name: targetName },
         ]);
         await refreshCompetition();
-        toast.success("Swapped shifts");
+        toast.success(`Assigned to ${targetName}`);
       } catch (err) {
-        console.error("[Shifts] Swap failed:", err);
-        toast.error("Failed to swap shifts");
+        console.error("[Shifts] Reassign failed:", err);
+        toast.error("Failed to reassign shift");
       } finally {
-        setShiftSwapBusy(false);
+        setReassignBusy(false);
       }
     },
-    [currentEvent, schedule, refreshCompetition, parseShiftDragPayload],
+    [reassignTarget, currentEvent, refreshCompetition, closeReassignPopup],
   );
 
   // Clear dirty state when event changes
   useEffect(() => {
     setDirtyRatings({});
     setDirtyPriorities({});
-    setShiftSwapDragKey(null);
-    setShiftSwapHoverKey(null);
+    setReassignTarget(null);
   }, [currentEvent]);
 
   const scouterRows = useMemo(
@@ -861,9 +720,12 @@ function ShiftViewerPage() {
               value={scouterSearch}
               onChange={(e) => setScouterSearch(e.target.value)}
               className="w-52 h-8 text-sm"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
             <p className="text-xs text-muted-foreground basis-full sm:basis-auto sm:ml-1">
-              Drag <GripVertical className="inline size-3 align-text-bottom opacity-70" /> on an upcoming shift to swap it with another scouter (saves via incremental schedule patch).
+              Click <ArrowLeftRight className="inline size-3 align-text-bottom opacity-70" /> on an upcoming shift to reassign it to another scouter.
             </p>
             {hasScouterChanges && (
               <>
@@ -904,17 +766,7 @@ function ShiftViewerPage() {
                   onRatingChange={handleRatingChange}
                   onExclude={handleExcludeScouter}
                   onMatchClick={handleMatchClick}
-                  shiftSwapDragKey={shiftSwapDragKey}
-                  shiftSwapHoverKey={shiftSwapHoverKey}
-                  shiftSwapDisabled={shiftSwapBusy}
-                  onShiftSwapDragStart={(matchKey, team) => setShiftSwapDragKey(`${matchKey}|${team}`)}
-                  onShiftSwapDragEnd={() => {
-                    setShiftSwapDragKey(null);
-                    setShiftSwapHoverKey(null);
-                  }}
-                  onShiftSwapDragOver={(matchKey, team) => setShiftSwapHoverKey(`${matchKey}|${team}`)}
-                  onShiftSwapDragLeave={() => setShiftSwapHoverKey(null)}
-                  onShiftSwapDrop={handleShiftSwapDrop}
+                  onReassignClick={openReassignPopup}
                 />
               ))}
             </div>
@@ -930,6 +782,9 @@ function ShiftViewerPage() {
               value={teamSearch}
               onChange={(e) => setTeamSearch(e.target.value)}
               className="w-52 h-8 text-sm"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
             {hasTeamChanges && (
               <>
@@ -976,6 +831,64 @@ function ShiftViewerPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* ── Reassign popup ── */}
+      {reassignTarget && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={closeReassignPopup}
+          />
+          <div
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-64 bg-muted border border-border rounded-lg shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <span className="text-sm font-semibold text-foreground">Assign to scouter</span>
+              <button onClick={closeReassignPopup} className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none">×</button>
+            </div>
+            <div className="px-3 py-2 border-b border-border">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={reassignSearch}
+                  onChange={(e) => setReassignSearch(e.target.value)}
+                  placeholder="Search scouters…"
+                  className="w-full pl-8 pr-3 py-1.5 text-sm bg-card border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
+                  autoFocus
+                  autoCorrect="off"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto py-1">
+              {filteredScouters
+                .filter((s) =>
+                  !reassignSearch.trim() ||
+                  s.name.toLowerCase().includes(reassignSearch.toLowerCase())
+                )
+                .map((s) => (
+                  <button
+                    key={s.uid}
+                    disabled={reassignBusy}
+                    onClick={() => handleReassign(s.uid, s.name)}
+                    className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-card transition-colors disabled:opacity-50"
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              {filteredScouters.filter((s) =>
+                !reassignSearch.trim() ||
+                s.name.toLowerCase().includes(reassignSearch.toLowerCase())
+              ).length === 0 && (
+                <div className="px-4 py-4 text-sm text-muted-foreground text-center">No scouters found</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

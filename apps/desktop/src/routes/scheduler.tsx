@@ -439,6 +439,9 @@ function SchedulerPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-7 text-xs"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
           <div className="flex-1 overflow-y-auto">

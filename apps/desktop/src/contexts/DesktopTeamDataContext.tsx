@@ -186,17 +186,14 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
     return () => timers.forEach(clearTimeout);
   }, [currentEvent, fetchTeams]);
 
-  // Every 135s: re-read SQLite.
-  // DesktopCompetitionDataContext triggers Rust sync every 120s + waits 15s
-  // before re-reading. We align to 135s so team data updates at the same
-  // cadence as schedule/picklist data (after each Rust sync cycle).
+  // Every 125s: re-read SQLite (aligned with DesktopCompetitionDataContext).
   useEffect(() => {
     if (!currentEvent) return;
 
     const timer = setInterval(() => {
-      console.log("[DesktopTeamData] Post-sync SQLite refresh (135s)");
+      console.log("[DesktopTeamData] Post-sync SQLite refresh (125s)");
       fetchTeamsRef.current?.();
-    }, 135_000);
+    }, 125_000);
 
     return () => clearInterval(timer);
   }, [currentEvent]);
