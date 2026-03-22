@@ -10,7 +10,7 @@ import { useSync } from "@lib/context/SyncContext";
 import { getEventMatchData, getEventTeamData, cacheEventTeamData, type EventMatchData } from "@lib/db";
 import { getImageUrl } from "@lib/storage/uploads";
 import { getFromImageQueue } from "@lib/storage/imageQueue";
-import { putTeamData } from "@lib/data/writes";
+import { putTeamData, putTeamDataWithImages } from "@lib/data/writes";
 import { getLocalUserData } from "@lib/supabase/user";
 import { AutoPathDisplay } from "../components/AutoPathDisplay";
 import { AutoPathDrawer } from "../components/auto-path-drawer/AutoPathDrawer";
@@ -318,6 +318,80 @@ function TeamInfoPage() {
   
 
   const [matchData, setMatchData] = useState<EventMatchData[]>([]);
+
+  // Image editing state
+  const [editingImages, setEditingImages] = useState(false);
+  const [removedImagePaths, setRemovedImagePaths] = useState<Set<string>>(new Set());
+  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
+  const [newImagePreviews, setNewImagePreviews] = useState<string[]>([]);
+  const [savingImages, setSavingImages] = useState(false);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageEditSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setNewImageFiles((prev) => [...prev, ...files]);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setNewImagePreviews((prev) => [...prev, ev.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = "";
+  };
+
+  const cancelImageEdit = () => {
+    setEditingImages(false);
+    setRemovedImagePaths(new Set());
+    setNewImageFiles([]);
+    setNewImagePreviews([]);
+  };
+
+  const saveImageEdit = async () => {
+    if (!pitData || !currentEvent || !teamKey) return;
+    setSavingImages(true);
+    try {
+      const localUser = getLocalUserData();
+      const teamNum = teamKey.replace("frc", "");
+      const keptFiles = (pitData.images?.files ?? []).filter(
+        (f) => !removedImagePaths.has(f.path)
+      );
+      const updatedData = {
+        ...pitData,
+        images: {
+          rating: pitData.images?.rating ?? 0,
+          description: pitData.images?.description ?? "",
+          files: keptFiles,
+        },
+      };
+      if (newImageFiles.length > 0) {
+        await putTeamDataWithImages(currentEvent, teamKey, updatedData, newImageFiles, {
+          teamName,
+          name: localUser.name || localUser.email || "Unknown",
+          uid: localUser.uid || "unknown",
+        });
+      } else {
+        await putTeamData(currentEvent, teamKey, updatedData, {
+          teamName,
+          name: localUser.name || localUser.email || "Unknown",
+          uid: localUser.uid || "unknown",
+        });
+      }
+      toast.success("Images updated");
+      cancelImageEdit();
+      // Refresh pit data from local cache
+      const data = await getEventTeamData(currentEvent);
+      const updated = data.find((t) => t.team === teamKey);
+      if (updated?.data) setPitData(updated.data as PitData);
+    } catch (err) {
+      console.error("[TeamInfo] Image save failed:", err);
+      toast.error("Failed to save images");
+    } finally {
+      setSavingImages(false);
+    }
+  };
   
   // Stable callback so the sync refresh registration doesn't churn on every render
   const refreshPitData = useCallback(() => {
@@ -796,27 +870,116 @@ function TeamInfoPage() {
               </Dialog>
 
               {/* Images Section */}
-              {pitData.images &&
-                pitData.images.files &&
-                pitData.images.files.length > 0 && (
-                  <div>
-                    <p className="text-base text-primary font-semibold mb-3">
-                      IMAGES
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {pitData.images.files
-                        .map((img, idx) => (
+              {pitData.images && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-base text-primary font-semibold">IMAGES</p>
+                    {!editingImages ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingImages(true)}
+                        className="text-xs text-primary border border-primary/40 rounded-full px-3 py-0.5"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelImageEdit}
+                          disabled={savingImages}
+                          className="text-xs text-muted-foreground border border-border rounded-full px-3 py-0.5 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveImageEdit}
+                          disabled={savingImages}
+                          className="text-xs text-primary border border-primary/40 rounded-full px-3 py-0.5 disabled:opacity-50"
+                        >
+                          {savingImages ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Existing images */}
+                    {pitData.images.files
+                      .filter((img) => !removedImagePaths.has(img.path))
+                      .map((img, idx) => (
+                        <div key={img.path} className="relative">
                           <PitImageWithRetry
-                            key={img.path}
                             path={img.path}
                             teamNum={teamNum}
                             idx={idx}
-                            onZoom={(url) => setZoomImagePath(url)}
+                            onZoom={editingImages ? () => {} : (url) => setZoomImagePath(url)}
                           />
-                        ))}
-                    </div>
+                          {editingImages && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRemovedImagePaths((prev) => new Set([...prev, img.path]))
+                              }
+                              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white text-sm leading-none"
+                              aria-label="Remove image"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                    {/* New image previews */}
+                    {editingImages &&
+                      newImagePreviews.map((preview, idx) => (
+                        <div key={`new-${idx}`} className="relative aspect-square rounded-xl overflow-hidden bg-muted">
+                          <img
+                            src={preview}
+                            alt={`New image ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewImageFiles((prev) => prev.filter((_, i) => i !== idx));
+                              setNewImagePreviews((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white text-sm leading-none"
+                            aria-label="Remove new image"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+
+                    {/* Add image button */}
+                    {editingImages && (
+                      <button
+                        type="button"
+                        onClick={() => imageFileInputRef.current?.click()}
+                        className="aspect-square rounded-xl border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                        aria-label="Add image"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
-                )}
+
+                  {/* Hidden file input */}
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleImageEditSelect}
+                  />
+                </div>
+              )}
 
               
 
