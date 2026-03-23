@@ -707,18 +707,22 @@ function ShiftViewerPage() {
   const [reassignTarget, setReassignTarget] = useState<{ matchKey: string; team: string } | null>(null);
   const [reassignSearch, setReassignSearch] = useState("");
   const [reassignBusy, setReassignBusy] = useState(false);
+  /** Pending conflict confirmation: set when target scouter is already on another team in the same match. */
+  const [reassignConflict, setReassignConflict] = useState<{ uid: string; name: string; conflictingTeam: string } | null>(null);
 
   const openReassignPopup = useCallback((matchKey: string, team: string) => {
     setReassignTarget({ matchKey, team });
     setReassignSearch("");
+    setReassignConflict(null);
   }, []);
 
   const closeReassignPopup = useCallback(() => {
     setReassignTarget(null);
     setReassignSearch("");
+    setReassignConflict(null);
   }, []);
 
-  const handleReassign = useCallback(
+  const doReassign = useCallback(
     async (targetUid: string, targetName: string) => {
       if (!reassignTarget || !currentEvent) return;
       closeReassignPopup();
@@ -737,6 +741,22 @@ function ShiftViewerPage() {
       }
     },
     [reassignTarget, currentEvent, refreshCompetition, closeReassignPopup],
+  );
+
+  const handleReassign = useCallback(
+    (targetUid: string, targetName: string) => {
+      if (!reassignTarget) return;
+      // Check if this scouter is already assigned to a different team in the same match
+      const conflict = schedule.find(
+        (s) => s.match === reassignTarget.matchKey && s.uid === targetUid && s.team !== reassignTarget.team
+      );
+      if (conflict) {
+        setReassignConflict({ uid: targetUid, name: targetName, conflictingTeam: conflict.team.replace(/frc/i, "") });
+        return;
+      }
+      doReassign(targetUid, targetName);
+    },
+    [reassignTarget, schedule, doReassign],
   );
 
   // Clear dirty state when event changes
@@ -1267,48 +1287,79 @@ function ShiftViewerPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <span className="text-sm font-semibold text-foreground">Assign to scouter</span>
+              <span className="text-sm font-semibold text-foreground">
+                {reassignConflict ? "Conflict detected" : "Assign to scouter"}
+              </span>
               <button onClick={closeReassignPopup} className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none">×</button>
             </div>
-            <div className="px-3 py-2 border-b border-border">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={reassignSearch}
-                  onChange={(e) => setReassignSearch(e.target.value)}
-                  placeholder="Search scouters…"
-                  className="w-full pl-8 pr-3 py-1.5 text-sm bg-card border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
-                  autoFocus
-                  autoCorrect="off"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-            </div>
-            <div className="max-h-60 overflow-y-auto py-1">
-              {filteredScouters
-                .filter((s) =>
-                  !reassignSearch.trim() ||
-                  s.name.toLowerCase().includes(reassignSearch.toLowerCase())
-                )
-                .map((s) => (
+            {reassignConflict ? (
+              <div className="px-4 py-4 flex flex-col gap-3">
+                <p className="text-sm text-foreground">
+                  <span className="font-medium">{reassignConflict.name}</span> is already assigned to Team{" "}
+                  <span className="font-medium">{reassignConflict.conflictingTeam}</span> in this match. Assign to this match as well?
+                </p>
+                <div className="flex gap-2">
                   <button
-                    key={s.uid}
                     disabled={reassignBusy}
-                    onClick={() => handleReassign(s.uid, s.name)}
-                    className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-card transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      doReassign(reassignConflict.uid, reassignConflict.name);
+                      setReassignConflict(null);
+                    }}
+                    className="flex-1 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                   >
-                    {s.name}
+                    Assign anyway
                   </button>
-                ))}
-              {filteredScouters.filter((s) =>
-                !reassignSearch.trim() ||
-                s.name.toLowerCase().includes(reassignSearch.toLowerCase())
-              ).length === 0 && (
-                <div className="px-4 py-4 text-sm text-muted-foreground text-center">No scouters found</div>
-              )}
-            </div>
+                  <button
+                    onClick={() => setReassignConflict(null)}
+                    className="flex-1 py-1.5 text-sm font-medium bg-card border border-border rounded-md text-foreground hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="px-3 py-2 border-b border-border">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      value={reassignSearch}
+                      onChange={(e) => setReassignSearch(e.target.value)}
+                      placeholder="Search scouters…"
+                      className="w-full pl-8 pr-3 py-1.5 text-sm bg-card border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
+                      autoFocus
+                      autoCorrect="off"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {filteredScouters
+                    .filter((s) =>
+                      !reassignSearch.trim() ||
+                      s.name.toLowerCase().includes(reassignSearch.toLowerCase())
+                    )
+                    .map((s) => (
+                      <button
+                        key={s.uid}
+                        disabled={reassignBusy}
+                        onClick={() => handleReassign(s.uid, s.name)}
+                        className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-card transition-colors disabled:opacity-50"
+                      >
+                        {s.name}
+                      </button>
+                    ))}
+                  {filteredScouters.filter((s) =>
+                    !reassignSearch.trim() ||
+                    s.name.toLowerCase().includes(reassignSearch.toLowerCase())
+                  ).length === 0 && (
+                    <div className="px-4 py-4 text-sm text-muted-foreground text-center">No scouters found</div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </>
       )}
