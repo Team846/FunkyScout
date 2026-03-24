@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Command,
@@ -15,6 +15,12 @@ import { getMatchLabel } from "@lib/utils/match";
 import {
   getUserEventScheduleAssignments,
 } from "@lib/db";
+import {
+  requestNotificationPermission,
+  scheduleShiftNotifications,
+  clearShiftNotifications,
+  rescheduleOnResume,
+} from "../../lib/shiftNotifications";
 
 interface ShiftDisplay {
   match: string;
@@ -90,6 +96,18 @@ export function ShiftsPage() {
   const hasScrolled = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    requestNotificationPermission();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") rescheduleOnResume();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearShiftNotifications();
+    };
+  }, []);
+
   // DB fetch — only re-run when event/user/schedule changes
   useEffect(() => {
     if (!currentEvent) {
@@ -130,7 +148,20 @@ export function ShiftsPage() {
       .finally(() => setInitialLoading(false));
   }, [currentEvent, userData.name, tbaSchedule]);
 
-  // Re-split past/upcoming every 30s so the highlight advances without a poll
+  // Re-split past/upcoming every 30s so the highlight advances without a poll.
+  // Also reschedule notifications so timeouts stay accurate after recompute.
+  const scheduleNotifications = useCallback((upcoming: RawShift[]) => {
+    scheduleShiftNotifications(
+      upcoming.map((s) => ({
+        match: s.match,
+        matchLabel: s.matchLabel,
+        teamNumber: s.teamNumber,
+        alliance: s.alliance,
+        time: s.time,
+      }))
+    );
+  }, []);
+
   useEffect(() => {
     function recompute() {
       const { combined, nextIdx } = splitShifts(rawShifts);
@@ -139,11 +170,17 @@ export function ShiftsPage() {
         return nextIdx;
       });
       setShifts(combined);
+
+      // Schedule notifications for upcoming shifts only
+      const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
+      const effectiveNow = Date.now() - UPCOMING_BUFFER_MS;
+      const upcoming = rawShifts.filter((s) => !s.time || s.time > effectiveNow);
+      scheduleNotifications(upcoming);
     }
     recompute();
     const interval = setInterval(recompute, 30_000);
     return () => clearInterval(interval);
-  }, [rawShifts]);
+  }, [rawShifts, scheduleNotifications]);
 
   // Auto-scroll to the next shift once when data loads.
   // home.tsx uses min-h-dvh so the window is the scroll container (not CommandList).

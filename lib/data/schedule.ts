@@ -84,13 +84,7 @@ export async function getSchedule(eventKey: string) {
         name,
         uid,
         last_modified,
-        deleted_at,
-        est_time,
-        red_score,
-        blue_score,
-        red_win_prob,
-        predicted_red_score,
-        predicted_blue_score
+        deleted_at
       `)
       .eq("event", eventKey);
 
@@ -113,12 +107,6 @@ export async function getSchedule(eventKey: string) {
       uid: d.uid,
       last_modified: d.last_modified ? new Date(d.last_modified).getTime() : undefined,
       deleted_at: d.deleted_at ? new Date(d.deleted_at).getTime() : undefined,
-      est_time: d.est_time,
-      red_score: d.red_score,
-      blue_score: d.blue_score,
-      red_win_prob: d.red_win_prob,
-      predicted_red_score: d.predicted_red_score,
-      predicted_blue_score: d.predicted_blue_score,
     }));
 
     if (isIncremental) {

@@ -413,7 +413,7 @@ impl SupabaseService {
             println!("[Supabase] schedule snapshot cold — fetching from Supabase");
             let fetch_response = self.auth_client()
                 .from("event_schedule")
-                .select("event,match,team,est_time,red_score,blue_score,red_win_prob,predicted_red_score,predicted_blue_score,alliance")
+                .select("event,match,team,alliance")
                 .eq("event", &event)
                 .execute()
                 .await
@@ -449,11 +449,7 @@ impl SupabaseService {
 
         // 3. Collect rows that are new or have changed TBA data
         let total_schedule = schedule.len();
-        let fields_to_check = [
-            "est_time", "red_score", "blue_score",
-            "red_win_prob", "predicted_red_score", "predicted_blue_score",
-            "alliance"
-        ];
+        let fields_to_check = ["alliance"];
 
         let rows_to_upsert: Vec<Value> = schedule
             .into_iter()

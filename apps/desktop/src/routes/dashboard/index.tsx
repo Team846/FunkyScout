@@ -10,6 +10,7 @@ import { useDesktopCompetitionData } from "../../contexts/DesktopCompetitionData
 import { useDesktopEvent } from "../../contexts/DesktopEventContext";
 import { useUserProfiles } from "../../contexts/UserProfilesContext";
 import { useTabContext } from "../../contexts/TabContext";
+import { useDesktopRealtime } from "../../contexts/DesktopRealtimeContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { LeftPanel } from "./-components/LeftPanel";
 import { ScheduleTable, type ScheduleTableHandle } from "./-components/ScheduleTable";
@@ -46,6 +47,7 @@ function DashboardPage() {
   const { schedule, tbaSchedule, tbaClimbData, matchScoutingData } = useDesktopCompetitionData();
   const { userProfiles } = useUserProfiles();
   const { homeTeam, useTbaClimb } = useDesktopEvent();
+  const { activeScouts } = useDesktopRealtime();
 
   const handleMatchClick = useCallback(
     (matchKey: string) => {
@@ -161,6 +163,7 @@ function DashboardPage() {
                 tbaTeams={tbaTeams}
                 searchQuery={scheduleSearch}
                 homeTeamKey={homeTeamKey}
+                activeScouts={activeScouts}
                 onMatchClick={handleMatchClick}
                 onTeamClick={handleTeamClick}
               />

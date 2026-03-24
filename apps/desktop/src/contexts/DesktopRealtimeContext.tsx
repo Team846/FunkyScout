@@ -11,9 +11,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { useDesktopEvent } from "./DesktopEventContext";
 import supabase from "@lib/supabase/supabase";
 
+export interface ActiveScout {
+  uid: string;
+  name: string;
+  match: string;
+  team: string;
+  phase: "match_start" | "match_play";
+}
+
 interface DesktopRealtimeContextType {
   registerRefreshCallback: (callback: () => void) => () => void;
   isConnected: boolean;
+  activeScouts: ActiveScout[];
 }
 
 const DesktopRealtimeContext = createContext<
@@ -24,6 +33,8 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   const { currentEvent } = useDesktopEvent();
   const callbacksRef = useRef<Set<() => void>>(new Set());
   const [isConnected, setIsConnected] = useState(false);
+  const [activeScouts, setActiveScouts] = useState<ActiveScout[]>([]);
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Track whether this is a reconnect (vs. initial subscription) so we can
   // trigger a catch-up sync only when we've been disconnected and come back.
@@ -205,10 +216,35 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
 
     createChannel();
 
+    // Presence channel — separate from postgres_changes, tracks who is actively scouting.
+    // Mobile joins this channel when entering match_start or match_play. Desktop
+    // subscribes (listen-only) to display who is currently in a match.
+    const presenceChannel = supabase.channel(`scouting-presence-${currentEvent}`)
+      .on("presence", { event: "sync" }, () => {
+        const state = presenceChannel.presenceState();
+        const scouts = Object.values(state)
+          .flat()
+          .map((p: any) => ({
+            uid: p.uid ?? "",
+            name: p.name ?? "",
+            match: p.match ?? "",
+            team: p.team ?? "",
+            phase: p.phase ?? "match_start",
+          } as ActiveScout));
+        setActiveScouts(scouts);
+        console.log(`[DesktopRealtime] 👀 Active scouts: ${scouts.length}`);
+      })
+      .subscribe();
+    presenceChannelRef.current = presenceChannel;
+
     return () => {
       // Mark effect as inactive BEFORE unsubscribing so the CLOSED handler
       // triggered by unsubscribe() doesn't schedule a retry.
       isEffectActiveRef.current = false;
+      if (presenceChannelRef.current) {
+        supabase.removeChannel(presenceChannelRef.current);
+        presenceChannelRef.current = null;
+      }
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -227,7 +263,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <DesktopRealtimeContext.Provider
-      value={{ registerRefreshCallback, isConnected }}
+      value={{ registerRefreshCallback, isConnected, activeScouts }}
     >
       {children}
     </DesktopRealtimeContext.Provider>

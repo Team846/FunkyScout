@@ -8,11 +8,20 @@ import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useUserProfiles } from "../contexts/UserProfilesContext";
 import { runCycleForEvent } from "@lib/schedule/runCycleForEvent";
-import { assignShiftsFromCycle, assignShiftsDiff, assignPitTeams } from "@lib/data/writes";
+import {
+  assignShiftsFromCycle,
+  assignShiftsDiff,
+  assignPitTeams,
+} from "@lib/data/writes";
 import type { CycleAssignment, Scouter } from "@lib/schedule/cycle";
 import { getMatchLabel, getMatchSortOrder } from "@lib/utils/match";
 import { toast } from "sonner";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@shadcn/ui/components/tooltip.tsx";
 import { Pencil, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTabContext } from "../contexts/TabContext";
@@ -56,22 +65,35 @@ function SchedulerPage() {
 
   const handleMatchClick = useCallback(
     (matchKey: string) => {
-      addTab("/matches", getMatchLabel(matchKey), { match: matchKey }, `match-${matchKey}`);
+      addTab(
+        "/matches",
+        getMatchLabel(matchKey),
+        { match: matchKey },
+        `match-${matchKey}`,
+      );
       navigate({ to: "/matches", search: { match: matchKey } });
     },
-    [addTab, navigate]
+    [addTab, navigate],
   );
   const [schedule, setSchedule] = useState<TeamSchedule[] | null>(null);
 
   const [w, setW] = useState(3);
   const [r, setR] = useState(1);
   const [assignments, setAssignments] = useState<CycleAssignment[]>([]);
-  const [assignmentsForEvent, setAssignmentsForEvent] = useState<string | null>(null);
-  const [assignedMatchTeams, setAssignedMatchTeams] = useState<Set<string>>(new Set());
-  const [matchScouterMap, setMatchScouterMap] = useState<Record<string, string>>({});
+  const [assignmentsForEvent, setAssignmentsForEvent] = useState<string | null>(
+    null,
+  );
+  const [assignedMatchTeams, setAssignedMatchTeams] = useState<Set<string>>(
+    new Set(),
+  );
+  const [matchScouterMap, setMatchScouterMap] = useState<
+    Record<string, string>
+  >({});
   const [matchUidMap, setMatchUidMap] = useState<Record<string, string>>({});
   // Saved state — used for dirty detection against manual edits
-  const [savedMatchUidMap, setSavedMatchUidMap] = useState<Record<string, string>>({});
+  const [savedMatchUidMap, setSavedMatchUidMap] = useState<
+    Record<string, string>
+  >({});
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
@@ -90,6 +112,7 @@ function SchedulerPage() {
   const [showScouterPopup, setShowScouterPopup] = useState(false);
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
   const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
+  const [popupSearch, setPopupSearch] = useState("");
 
   // Prevents loading spinner during background sync refreshes
   const hasLoadedRef = useRef(false);
@@ -98,10 +121,14 @@ function SchedulerPage() {
 
   // Count of individual assignment changes vs last saved/loaded state
   const dirtyAssignmentCount = useMemo(() => {
-    const allKeys = new Set([...Object.keys(matchUidMap), ...Object.keys(savedMatchUidMap)]);
+    const allKeys = new Set([
+      ...Object.keys(matchUidMap),
+      ...Object.keys(savedMatchUidMap),
+    ]);
     let count = 0;
     for (const key of allKeys) {
-      if ((matchUidMap[key] ?? null) !== (savedMatchUidMap[key] ?? null)) count++;
+      if ((matchUidMap[key] ?? null) !== (savedMatchUidMap[key] ?? null))
+        count++;
     }
     return count;
   }, [matchUidMap, savedMatchUidMap]);
@@ -192,7 +219,11 @@ function SchedulerPage() {
     // ── Build eligible scouters from context profiles ──
     const eligible = userProfiles
       .filter((p) => p.role === "scouter" || p.role === "admin")
-      .map((p) => ({ uid: p.uid, name: p.name ?? p.uid, role: (p.role as string) ?? "scouter" }));
+      .map((p) => ({
+        uid: p.uid,
+        name: p.name ?? p.uid,
+        role: (p.role as string) ?? "scouter",
+      }));
     setAllScouters(eligible);
 
     // ── Initialize selectedUids: in-memory > schedule UIDs > localStorage > all ──
@@ -254,7 +285,8 @@ function SchedulerPage() {
     });
   };
 
-  const selectAll = () => setSelectedUids(new Set(allScouters.map((s) => s.uid)));
+  const selectAll = () =>
+    setSelectedUids(new Set(allScouters.map((s) => s.uid)));
   const selectNone = () => setSelectedUids(new Set());
 
   const handleGenerate = async () => {
@@ -295,7 +327,9 @@ function SchedulerPage() {
   const handleApply = async () => {
     if (!currentEvent || assignments.length === 0) return;
     if (assignmentsForEvent && assignmentsForEvent !== currentEvent) {
-      toast.error("Event changed since assignments were generated — regenerate first");
+      toast.error(
+        "Event changed since assignments were generated — regenerate first",
+      );
       return;
     }
     setApplying(true);
@@ -303,7 +337,9 @@ function SchedulerPage() {
       await assignShiftsFromCycle(currentEvent, assignments);
       // Sync saved state so dirty count resets
       setSavedMatchUidMap({ ...matchUidMap });
-      toast.success(`Pushed ${assignments.length} shift assignments to Supabase`);
+      toast.success(
+        `Pushed ${assignments.length} shift assignments to Supabase`,
+      );
     } catch (e: any) {
       toast.error(`Failed to push shifts: ${e.message ?? String(e)}`);
     } finally {
@@ -314,8 +350,16 @@ function SchedulerPage() {
   const handleSaveAssignments = async () => {
     if (!currentEvent) return;
     // Compute only the changed entries (added, reassigned, or removed).
-    const allKeys = new Set([...Object.keys(matchUidMap), ...Object.keys(savedMatchUidMap)]);
-    const changes: Array<{ matchKey: string; teamKey: string; uid: string | null; name: string | null }> = [];
+    const allKeys = new Set([
+      ...Object.keys(matchUidMap),
+      ...Object.keys(savedMatchUidMap),
+    ]);
+    const changes: Array<{
+      matchKey: string;
+      teamKey: string;
+      uid: string | null;
+      name: string | null;
+    }> = [];
     for (const key of allKeys) {
       const currentUid = matchUidMap[key] ?? null;
       const savedUid = savedMatchUidMap[key] ?? null;
@@ -334,7 +378,9 @@ function SchedulerPage() {
     try {
       await assignShiftsDiff(currentEvent, changes);
       setSavedMatchUidMap({ ...matchUidMap });
-      toast.success(`Saved ${changes.length} change${changes.length !== 1 ? "s" : ""}`);
+      toast.success(
+        `Saved ${changes.length} change${changes.length !== 1 ? "s" : ""}`,
+      );
     } catch (e: any) {
       toast.error(`Failed to save: ${e.message ?? String(e)}`);
     } finally {
@@ -370,7 +416,9 @@ function SchedulerPage() {
         { event: currentEvent },
       );
       if (teams.length === 0) {
-        toast.error("No teams found for this event. Bootstrap the event first.");
+        toast.error(
+          "No teams found for this event. Bootstrap the event first.",
+        );
         return;
       }
       const result: PitAssignment[] = teams.map((t, i) => {
@@ -385,7 +433,9 @@ function SchedulerPage() {
         };
       });
       setPitAssignments(result);
-      toast.success(`Scheduled ${result.length} teams across ${selected.length} scouters`);
+      toast.success(
+        `Scheduled ${result.length} teams across ${selected.length} scouters`,
+      );
     } catch (e: any) {
       toast.error(`Failed to schedule teams: ${e.message ?? String(e)}`);
     } finally {
@@ -399,9 +449,15 @@ function SchedulerPage() {
     try {
       await assignPitTeams(
         currentEvent,
-        pitAssignments.map((a) => ({ teamKey: a.teamKey, uid: a.uid, name: a.name })),
+        pitAssignments.map((a) => ({
+          teamKey: a.teamKey,
+          uid: a.uid,
+          name: a.name,
+        })),
       );
-      toast.success(`Pushed ${pitAssignments.length} team assignments to Supabase`);
+      toast.success(
+        `Pushed ${pitAssignments.length} team assignments to Supabase`,
+      );
     } catch (e: any) {
       toast.error(`Failed to push team assignments: ${e.message ?? String(e)}`);
     } finally {
@@ -412,6 +468,7 @@ function SchedulerPage() {
   const openTeamPopup = (matchKey: string, teamKey: string) => {
     setSelectedMatchKey(matchKey);
     setSelectedTeamKey(teamKey);
+    setPopupSearch("");
     setShowScouterPopup(true);
   };
 
@@ -428,9 +485,19 @@ function SchedulerPage() {
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <button onClick={selectAll} className="text-xs text-primary hover:underline">All</button>
+              <button
+                onClick={selectAll}
+                className="text-xs text-primary hover:underline"
+              >
+                All
+              </button>
               <span className="text-xs text-muted-foreground">·</span>
-              <button onClick={selectNone} className="text-xs text-primary hover:underline">None</button>
+              <button
+                onClick={selectNone}
+                className="text-xs text-primary hover:underline"
+              >
+                None
+              </button>
             </div>
           </div>
           <div className="px-2 py-2 border-b border-border flex-shrink-0">
@@ -448,7 +515,9 @@ function SchedulerPage() {
             {loadingScouters ? (
               <p className="text-xs text-muted-foreground p-3">Loading...</p>
             ) : filtered.length === 0 ? (
-              <p className="text-xs text-muted-foreground p-3">No scouters found.</p>
+              <p className="text-xs text-muted-foreground p-3">
+                No scouters found.
+              </p>
             ) : (
               <div className="divide-y divide-border">
                 {filtered.map((s) => (
@@ -462,7 +531,9 @@ function SchedulerPage() {
                     />
                     <span className="text-xs flex-1 truncate">{s.name}</span>
                     {s.role === "admin" && (
-                      <span className="text-[10px] text-muted-foreground">admin</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        admin
+                      </span>
                     )}
                   </label>
                 ))}
@@ -479,7 +550,9 @@ function SchedulerPage() {
           <div className="px-3 py-2.5 border-b border-border flex-shrink-0">
             <span className="text-xs font-medium">
               Selected Scouters
-              <span className="ml-1.5 text-muted-foreground">({selectedUids.size})</span>
+              <span className="ml-1.5 text-muted-foreground">
+                ({selectedUids.size})
+              </span>
             </span>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -488,7 +561,10 @@ function SchedulerPage() {
             ) : (
               <div className="divide-y divide-border">
                 {selectedScouters.map((s) => (
-                  <div key={s.uid} className="flex items-center gap-2 px-3 py-1.5">
+                  <div
+                    key={s.uid}
+                    className="flex items-center gap-2 px-3 py-1.5"
+                  >
                     <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
                     <span className="text-xs truncate">{s.name}</span>
                   </div>
@@ -508,7 +584,9 @@ function SchedulerPage() {
                 type="number"
                 min={1}
                 value={w}
-                onChange={(e) => setW(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) =>
+                  setW(Math.max(1, parseInt(e.target.value) || 1))
+                }
                 className="w-16 h-7 text-xs"
               />
             </div>
@@ -518,7 +596,9 @@ function SchedulerPage() {
                 type="number"
                 min={0}
                 value={r}
-                onChange={(e) => setR(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(e) =>
+                  setR(Math.max(0, parseInt(e.target.value) || 0))
+                }
                 className="w-16 h-7 text-xs"
               />
             </div>
@@ -529,7 +609,9 @@ function SchedulerPage() {
 
           {/* Match shifts */}
           <div className="space-y-1.5">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Match Shifts</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+              Match Shifts
+            </p>
             <Button
               size="sm"
               className="w-full h-7 text-xs"
@@ -545,18 +627,24 @@ function SchedulerPage() {
               onClick={handleApply}
               disabled={applying || assignments.length === 0}
             >
-              {applying ? "Pushing..." : `Push to Supabase (${assignments.length})`}
+              {applying
+                ? "Pushing..."
+                : `Push to Supabase (${assignments.length})`}
             </Button>
           </div>
 
           {/* Pit teams */}
           <div className="space-y-1.5">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Pit Teams</p>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+              Pit Teams
+            </p>
             <Button
               size="sm"
               className="w-full h-7 text-xs"
               onClick={handleScheduleTeams}
-              disabled={schedulingTeams || !currentEvent || selectedUids.size === 0}
+              disabled={
+                schedulingTeams || !currentEvent || selectedUids.size === 0
+              }
             >
               {schedulingTeams ? "Scheduling..." : "Schedule Teams"}
             </Button>
@@ -567,7 +655,9 @@ function SchedulerPage() {
               onClick={handleApplyTeams}
               disabled={applyingTeams || pitAssignments.length === 0}
             >
-              {applyingTeams ? "Pushing..." : `Push to Supabase (${pitAssignments.length})`}
+              {applyingTeams
+                ? "Pushing..."
+                : `Push to Supabase (${pitAssignments.length})`}
             </Button>
           </div>
         </div>
@@ -587,7 +677,9 @@ function SchedulerPage() {
                   disabled={savingAssignments}
                   onClick={handleSaveAssignments}
                 >
-                  {savingAssignments ? "Saving…" : `Save (${dirtyAssignmentCount})`}
+                  {savingAssignments
+                    ? "Saving…"
+                    : `Save (${dirtyAssignmentCount})`}
                 </Button>
                 <Button
                   size="sm"
@@ -614,110 +706,152 @@ function SchedulerPage() {
         <div className="flex-1 overflow-hidden rounded-lg border border-border">
           <div className="flex flex-col h-full overflow-hidden relative">
             <div className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 px-3 py-3 bg-card/50 flex-shrink-0 relative z-10 border-b border-border/50">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Match</span>
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">Red Alliance</span>
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">Blue Alliance</span>
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">Time</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Match
+              </span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">
+                Red Alliance
+              </span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center col-span-3">
+                Blue Alliance
+              </span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">
+                Time
+              </span>
             </div>
             <div className="h-full overflow-y-auto">
               {schedule?.map((match: TeamSchedule) => (
-                <div key={match.matchKey} className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50">
+                <div
+                  key={match.matchKey}
+                  className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 items-center px-3 py-2.5 border-b border-border/50"
+                >
                   <span
                     role="button"
                     tabIndex={0}
                     onClick={() => handleMatchClick(match.matchKey)}
-                    onKeyDown={(e) => e.key === "Enter" && handleMatchClick(match.matchKey)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && handleMatchClick(match.matchKey)
+                    }
                     className="text-xs font-semibold text-foreground/80 cursor-pointer hover:bg-secondary/40 hover:text-primary rounded px-1 py-0.5 -mx-1 -my-0.5 transition-colors"
                     title={`View ${getMatchLabel(match.matchKey)}`}
                   >
                     {getMatchLabel(match.matchKey)}
                   </span>
-                  {[...match.redTeams, ...match.blueTeams].slice(0, 3).map((team) => {
-                    const assignmentKey = `${match.matchKey}|${team.teamKey}`;
-                    const isAssigned = assignedMatchTeams.has(assignmentKey);
-                    const scouterName = matchScouterMap[assignmentKey];
-                    const isDirty = (matchUidMap[assignmentKey] ?? null) !== (savedMatchUidMap[assignmentKey] ?? null);
+                  {[...match.redTeams, ...match.blueTeams]
+                    .slice(0, 3)
+                    .map((team) => {
+                      const assignmentKey = `${match.matchKey}|${team.teamKey}`;
+                      const isAssigned = assignedMatchTeams.has(assignmentKey);
+                      const scouterName = matchScouterMap[assignmentKey];
+                      const isDirty =
+                        (matchUidMap[assignmentKey] ?? null) !==
+                        (savedMatchUidMap[assignmentKey] ?? null);
 
-                    return (
-                      <TooltipProvider key={team.teamKey}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span
-                              className={`text-xs text-center rounded px-0.5 transition-colors ${
-                                isEditingAssignments
-                                  ? "cursor-pointer hover:bg-secondary/60 hover:text-foreground"
-                                  : isAssigned ? "cursor-help" : ""
-                              } ${
-                                isDirty
-                                  ? "text-blue-400"
-                                  : isAssigned
-                                  ? "text-yellow-500"
-                                  : "text-gray-500"
-                              }`}
-                              onClick={() => isEditingAssignments && openTeamPopup(match.matchKey, team.teamKey)}
-                            >
-                              {team.teamNumber}
-                            </span>
-                          </TooltipTrigger>
-                          {(isAssigned || isEditingAssignments) && (
-                            <TooltipContent className="bg-black border border-gray-500">
-                              {scouterName ? (
-                                <p className="text-yellow-400">{scouterName}</p>
-                              ) : isEditingAssignments ? (
-                                <p className="text-muted-foreground">Click to assign</p>
-                              ) : null}
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      </TooltipProvider>
-                    );
-                  })}
-                  {[...match.redTeams, ...match.blueTeams].slice(3, 6).map((team) => {
-                    const assignmentKey = `${match.matchKey}|${team.teamKey}`;
-                    const isAssigned = assignedMatchTeams.has(assignmentKey);
-                    const scouterName = matchScouterMap[assignmentKey];
-                    const isDirty = (matchUidMap[assignmentKey] ?? null) !== (savedMatchUidMap[assignmentKey] ?? null);
+                      return (
+                        <TooltipProvider key={team.teamKey}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className={`text-xs text-center rounded px-0.5 transition-colors ${
+                                  isEditingAssignments
+                                    ? "cursor-pointer hover:bg-secondary/60 hover:text-foreground"
+                                    : isAssigned
+                                      ? "cursor-help"
+                                      : ""
+                                } ${
+                                  isDirty
+                                    ? "text-blue-400"
+                                    : isAssigned
+                                      ? "text-yellow-500"
+                                      : "text-gray-500"
+                                }`}
+                                onClick={() =>
+                                  isEditingAssignments &&
+                                  openTeamPopup(match.matchKey, team.teamKey)
+                                }
+                              >
+                                {team.teamNumber}
+                              </span>
+                            </TooltipTrigger>
+                            {(isAssigned || isEditingAssignments) && (
+                              <TooltipContent className="bg-black border border-gray-500">
+                                {scouterName ? (
+                                  <p className="text-yellow-400">
+                                    {scouterName}
+                                  </p>
+                                ) : isEditingAssignments ? (
+                                  <p className="text-muted-foreground">
+                                    Click to assign
+                                  </p>
+                                ) : null}
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
+                  {[...match.redTeams, ...match.blueTeams]
+                    .slice(3, 6)
+                    .map((team) => {
+                      const assignmentKey = `${match.matchKey}|${team.teamKey}`;
+                      const isAssigned = assignedMatchTeams.has(assignmentKey);
+                      const scouterName = matchScouterMap[assignmentKey];
+                      const isDirty =
+                        (matchUidMap[assignmentKey] ?? null) !==
+                        (savedMatchUidMap[assignmentKey] ?? null);
 
-                    return (
-                      <TooltipProvider key={team.teamKey}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span
-                              className={`text-xs text-center rounded px-0.5 transition-colors ${
-                                isEditingAssignments
-                                  ? "cursor-pointer hover:bg-secondary/60 hover:text-foreground"
-                                  : isAssigned ? "cursor-help" : ""
-                              } ${
-                                isDirty
-                                  ? "text-blue-400"
-                                  : isAssigned
-                                  ? "text-yellow-500"
-                                  : "text-gray-500"
-                              }`}
-                              onClick={() => isEditingAssignments && openTeamPopup(match.matchKey, team.teamKey)}
-                            >
-                              {team.teamNumber}
-                            </span>
-                          </TooltipTrigger>
-                          {(isAssigned || isEditingAssignments) && (
-                            <TooltipContent className="bg-black border border-gray-500">
-                              {scouterName ? (
-                                <p className="text-yellow-400">{scouterName}</p>
-                              ) : isEditingAssignments ? (
-                                <p className="text-muted-foreground">Click to assign</p>
-                              ) : null}
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      </TooltipProvider>
-                    );
-                  })}
+                      return (
+                        <TooltipProvider key={team.teamKey}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className={`text-xs text-center rounded px-0.5 transition-colors ${
+                                  isEditingAssignments
+                                    ? "cursor-pointer hover:bg-secondary/60 hover:text-foreground"
+                                    : isAssigned
+                                      ? "cursor-help"
+                                      : ""
+                                } ${
+                                  isDirty
+                                    ? "text-blue-400"
+                                    : isAssigned
+                                      ? "text-yellow-500"
+                                      : "text-gray-500"
+                                }`}
+                                onClick={() =>
+                                  isEditingAssignments &&
+                                  openTeamPopup(match.matchKey, team.teamKey)
+                                }
+                              >
+                                {team.teamNumber}
+                              </span>
+                            </TooltipTrigger>
+                            {(isAssigned || isEditingAssignments) && (
+                              <TooltipContent className="bg-black border border-gray-500">
+                                {scouterName ? (
+                                  <p className="text-yellow-400">
+                                    {scouterName}
+                                  </p>
+                                ) : isEditingAssignments ? (
+                                  <p className="text-muted-foreground">
+                                    Click to assign
+                                  </p>
+                                ) : null}
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      );
+                    })}
                   <span className="text-xs text-muted-foreground text-center">
                     {match.predictedTime
-                      ? new Date(match.predictedTime * 1000).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                      ? new Date(match.predictedTime * 1000).toLocaleTimeString(
+                          [],
+                          {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          },
+                        )
                       : "—"}
                   </span>
                 </div>
@@ -733,63 +867,103 @@ function SchedulerPage() {
           <div className="bg-card rounded-lg p-6 w-96 max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4">
               <h3 className="text-lg font-semibold">Assign Scouter</h3>
-              <Button onClick={() => setShowScouterPopup(false)} variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+              <Button
+                onClick={() => setShowScouterPopup(false)}
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto pr-2">
               {matchScouterMap[`${selectedMatchKey}|${selectedTeamKey}`] && (
                 <div className="mb-4 p-2 border rounded-md bg-secondary/30">
-                  <p className="text-sm text-muted-foreground">Current Scouter:</p>
+                  <p className="text-sm text-muted-foreground">
+                    Current Scouter:
+                  </p>
                   <div className="flex justify-between items-center mt-1">
-                    <span className="font-medium">{matchScouterMap[`${selectedMatchKey}|${selectedTeamKey}`]}</span>
-                    <Button variant="destructive" size="sm" onClick={() => {
-                      const key = `${selectedMatchKey}|${selectedTeamKey}`;
-                      setMatchScouterMap(prev => {
-                        const next = { ...prev };
-                        delete next[key];
-                        return next;
-                      });
-                      setMatchUidMap(prev => {
-                        const next = { ...prev };
-                        delete next[key];
-                        return next;
-                      });
-                      setAssignedMatchTeams(prev => {
-                        const next = new Set(prev);
-                        next.delete(key);
-                        return next;
-                      });
-                      setShowScouterPopup(false);
-                    }}>Remove</Button>
+                    <span className="font-medium">
+                      {
+                        matchScouterMap[
+                          `${selectedMatchKey}|${selectedTeamKey}`
+                        ]
+                      }
+                    </span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        const key = `${selectedMatchKey}|${selectedTeamKey}`;
+                        setMatchScouterMap((prev) => {
+                          const next = { ...prev };
+                          delete next[key];
+                          return next;
+                        });
+                        setMatchUidMap((prev) => {
+                          const next = { ...prev };
+                          delete next[key];
+                          return next;
+                        });
+                        setAssignedMatchTeams((prev) => {
+                          const next = new Set(prev);
+                          next.delete(key);
+                          return next;
+                        });
+                        setShowScouterPopup(false);
+                      }}
+                    >
+                      Remove
+                    </Button>
                   </div>
                 </div>
               )}
+              <Input
+                placeholder="Search scouters…"
+                value={popupSearch}
+                onChange={(e) => setPopupSearch(e.target.value)}
+                className="h-8 text-sm mb-3"
+                autoFocus
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+              />
               <p className="text-sm text-muted-foreground mb-2">
-                {selectedScouters.length === 0 ? "No scouters selected — select scouters in column 2" : "Selected Scouters:"}
+                {selectedScouters.length === 0
+                  ? "No scouters selected — select scouters in column 2"
+                  : ""}
               </p>
               <div className="divide-y divide-border">
-                {selectedScouters.map((s) => (
-                  <button
-                    key={s.uid}
-                    className="flex items-center gap-3 px-2 py-2 w-full text-left hover:bg-secondary/40"
-                    onClick={() => {
-                      if (selectedMatchKey && selectedTeamKey) {
-                        const key = `${selectedMatchKey}|${selectedTeamKey}`;
-                        setMatchScouterMap(prev => ({ ...prev, [key]: s.name }));
-                        setMatchUidMap(prev => ({ ...prev, [key]: s.uid }));
-                        setAssignedMatchTeams(prev => {
-                          const next = new Set(prev);
-                          next.add(key);
-                          return next;
-                        });
-                      }
-                      setShowScouterPopup(false);
-                    }}
-                  >
-                    <span className="text-sm flex-1">{s.name}</span>
-                  </button>
-                ))}
+                {selectedScouters
+                  .filter(
+                    (s) =>
+                      !popupSearch.trim() ||
+                      s.name.toLowerCase().includes(popupSearch.toLowerCase()),
+                  )
+                  .map((s) => (
+                    <button
+                      key={s.uid}
+                      className="flex items-center gap-3 px-2 py-2 w-full text-left hover:bg-secondary/40"
+                      onClick={() => {
+                        if (selectedMatchKey && selectedTeamKey) {
+                          const key = `${selectedMatchKey}|${selectedTeamKey}`;
+                          setMatchScouterMap((prev) => ({
+                            ...prev,
+                            [key]: s.name,
+                          }));
+                          setMatchUidMap((prev) => ({ ...prev, [key]: s.uid }));
+                          setAssignedMatchTeams((prev) => {
+                            const next = new Set(prev);
+                            next.add(key);
+                            return next;
+                          });
+                        }
+                        setShowScouterPopup(false);
+                      }}
+                    >
+                      <span className="text-sm flex-1">{s.name}</span>
+                    </button>
+                  ))}
               </div>
             </div>
           </div>

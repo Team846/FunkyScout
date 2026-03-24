@@ -20,6 +20,11 @@ import { PicklistSelector } from "../../components/PicklistSelector";
 import { canCreatePicklist } from "@lib/utils/permissions";
 import { getMatchLabel } from "@lib/utils/match";
 import { getUserEventScheduleAssignments } from "@lib/db";
+import {
+  scheduleShiftNotifications,
+  clearShiftNotifications,
+  rescheduleOnResume,
+} from "../../lib/shiftNotifications";
 
 interface NextMatchData {
   matchLabel: string;
@@ -77,7 +82,9 @@ const formatRelativeShiftTime = (timestamp: number | null): string => {
   if (diff > 0) {
     if (minutes < 60) return `in ${minutes}m`;
     const remainingMins = minutes % 60;
-    return remainingMins > 0 ? `in ${hours}h ${remainingMins}m` : `in ${hours}h`;
+    return remainingMins > 0
+      ? `in ${hours}h ${remainingMins}m`
+      : `in ${hours}h`;
   } else {
     // Within 2-minute buffer the match is still happening, show "Now"
     if (minutes < 2) return "Now";
@@ -92,7 +99,6 @@ const getQualNumber = (matchKey: string): number | null => {
   const qmMatch = parts[1].match(/^qm(\d+)$/i);
   return qmMatch ? Number(qmMatch[1]) : null;
 };
-
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -122,7 +128,10 @@ export function DashboardPage() {
   const [clockTick, setClockTick] = useState(0);
 
   // Raw shift data from DB — avoids re-fetching every 30s
-  type RawShiftEntry = { assignment: { match: string; team: string; alliance: "red" | "blue" }; matchTime: number | null };
+  type RawShiftEntry = {
+    assignment: { match: string; team: string; alliance: "red" | "blue" };
+    matchTime: number | null;
+  };
   const [rawDashShifts, setRawDashShifts] = useState<RawShiftEntry[]>([]);
   const [dashShiftsDone, setDashShiftsDone] = useState(0);
 
@@ -132,7 +141,16 @@ export function DashboardPage() {
     return () => clearInterval(i);
   }, []);
 
-  const OUR_TEAM = 846;
+  // Reschedule notifications when app comes back to foreground (iOS suspends JS timers)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") rescheduleOnResume();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  const OUR_TEAM = 4415;
 
   // DEV TEST: Set to true to test future match UI with mock data
   const DEV_TEST_FUTURE = false;
@@ -178,7 +196,7 @@ export function DashboardPage() {
         const ourMatches = nexusMatches.filter(
           (match: NexusMatch) =>
             match.redTeams.includes(ourTeamStr) ||
-            match.blueTeams.includes(ourTeamStr)
+            match.blueTeams.includes(ourTeamStr),
         );
 
         // Only look for upcoming matches from Nexus
@@ -188,14 +206,14 @@ export function DashboardPage() {
         const upcomingMatches = ourMatches.filter(
           (match: NexusMatch) =>
             !match.times.actualOnFieldTime &&
-            match.times.estimatedStartTime > now - MATCH_BUFFER_MS
+            match.times.estimatedStartTime > now - MATCH_BUFFER_MS,
         );
 
         if (upcomingMatches.length > 0) {
           // Get the soonest upcoming match
           const ourMatch = upcomingMatches.sort(
             (a: NexusMatch, b: NexusMatch) =>
-              a.times.estimatedStartTime - b.times.estimatedStartTime
+              a.times.estimatedStartTime - b.times.estimatedStartTime,
           )[0];
 
           // Nexus is only used for timing — get teams from TBA schedule
@@ -269,10 +287,10 @@ export function DashboardPage() {
 
       const isOnRed = matchData.redTeams.includes(ourTeamKey);
       const redTeamNums = matchData.redTeams.map((t: string) =>
-        parseInt(t.replace("frc", ""), 10)
+        parseInt(t.replace("frc", ""), 10),
       );
       const blueTeamNums = matchData.blueTeams.map((t: string) =>
-        parseInt(t.replace("frc", ""), 10)
+        parseInt(t.replace("frc", ""), 10),
       );
 
       // Build team ranks map from TBA data
@@ -318,7 +336,14 @@ export function DashboardPage() {
         setMatchLoading(false);
         setInitialMatchLoading(false);
       });
-  }, [currentEvent, nexusMatches, tbaTeams, tbaSchedule, matchPreds, clockTick]);
+  }, [
+    currentEvent,
+    nexusMatches,
+    tbaTeams,
+    tbaSchedule,
+    matchPreds,
+    clockTick,
+  ]);
 
   // DB fetch — expensive, only re-runs when event/user/schedule changes
   useEffect(() => {
@@ -337,15 +362,25 @@ export function DashboardPage() {
         let done = 0;
         try {
           const allMatchData = await getEventMatchData(currentEvent);
-          done = allMatchData.filter((m) => m.name && !m.deleted_at && m.uid === currentUid).length;
+          done = allMatchData.filter(
+            (m) => m.name && !m.deleted_at && m.uid === currentUid,
+          ).length;
           console.log("[DashboardPage] Shifts actually done:", done);
         } catch (e) {
           console.error("Failed to count completed shifts:", e);
         }
 
         const assignments = currentUid
-          ? await getUserEventScheduleAssignments(currentEvent, currentUid, true)
-          : await getUserEventScheduleAssignments(currentEvent, userData.name || "", false);
+          ? await getUserEventScheduleAssignments(
+              currentEvent,
+              currentUid,
+              true,
+            )
+          : await getUserEventScheduleAssignments(
+              currentEvent,
+              userData.name || "",
+              false,
+            );
 
         if (assignments.length === 0) {
           setRawDashShifts([]);
@@ -355,7 +390,10 @@ export function DashboardPage() {
 
         const shiftsWithTimes = assignments.map((assignment) => {
           const matchData = tbaSchedule[assignment.match];
-          return { assignment, matchTime: matchData?.est_time ? matchData.est_time * 1000 : null };
+          return {
+            assignment,
+            matchTime: matchData?.est_time ? matchData.est_time * 1000 : null,
+          };
         });
 
         setRawDashShifts(shiftsWithTimes);
@@ -384,21 +422,53 @@ export function DashboardPage() {
         return;
       }
 
-      const futureShiftsCount = rawDashShifts.filter((s) => s.matchTime && s.matchTime > now).length;
+      const futureShiftsCount = rawDashShifts.filter(
+        (s) => s.matchTime && s.matchTime > now,
+      ).length;
 
       const upcomingQualMatches = Object.entries(tbaSchedule)
-        .map(([matchKey, md]) => ({ matchKey, qualNum: getQualNumber(matchKey), matchTime: md?.est_time ? md.est_time * 1000 : null }))
-        .filter((m) => m.qualNum !== null && m.matchTime !== null && (m.matchTime as number) >= now)
+        .map(([matchKey, md]) => ({
+          matchKey,
+          qualNum: getQualNumber(matchKey),
+          matchTime: md?.est_time ? md.est_time * 1000 : null,
+        }))
+        .filter(
+          (m) =>
+            m.qualNum !== null &&
+            m.matchTime !== null &&
+            (m.matchTime as number) >= now,
+        )
         .sort((a, b) => (a.matchTime || 0) - (b.matchTime || 0));
 
-      const assignedMatches = new Set(rawDashShifts.map((s) => s.assignment.match));
+      const assignedMatches = new Set(
+        rawDashShifts.map((s) => s.assignment.match),
+      );
       let untilBreak = 0;
       for (const match of upcomingQualMatches) {
         if (assignedMatches.has(match.matchKey)) untilBreak += 1;
         else break;
       }
 
-      setShiftStats({ done: dashShiftsDone, left: futureShiftsCount, untilBreak });
+      setShiftStats({
+        done: dashShiftsDone,
+        left: futureShiftsCount,
+        untilBreak,
+      });
+
+      // Schedule 1-min-warning notifications for all upcoming shifts
+      const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
+      const effectiveNow = now - UPCOMING_BUFFER_MS;
+      scheduleShiftNotifications(
+        rawDashShifts
+          .filter((s) => !s.matchTime || s.matchTime > effectiveNow)
+          .map((s) => ({
+            match: s.assignment.match,
+            matchLabel: getMatchLabel(s.assignment.match),
+            teamNumber: s.assignment.team.replace("frc", ""),
+            alliance: s.assignment.alliance,
+            time: s.matchTime,
+          })),
+      );
 
       const upcomingShifts = rawDashShifts
         .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
@@ -413,8 +483,10 @@ export function DashboardPage() {
         const pastShifts = rawDashShifts
           .filter((s) => s.matchTime && s.matchTime <= now - SHIFT_BUFFER_MS)
           .sort((a, b) => (b.matchTime || 0) - (a.matchTime || 0));
-        if (pastShifts.length > 0) { shiftToDisplay = pastShifts[0]; isPast = true; }
-        else shiftToDisplay = rawDashShifts[0];
+        if (pastShifts.length > 0) {
+          shiftToDisplay = pastShifts[0];
+          isPast = true;
+        } else shiftToDisplay = rawDashShifts[0];
       }
 
       if (shiftToDisplay) {
@@ -435,7 +507,10 @@ export function DashboardPage() {
 
     recompute();
     const interval = setInterval(recompute, 30_000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearShiftNotifications();
+    };
   }, [rawDashShifts, dashShiftsDone, tbaSchedule]);
 
   return (
@@ -481,7 +556,7 @@ export function DashboardPage() {
                   return nextShift.matchLabel;
                 })();
                 const teamInfo = teams.find(
-                  (t: Team) => t.key === nextShift.teamKey
+                  (t: Team) => t.key === nextShift.teamKey,
                 );
                 const teamName =
                   teamInfo?.name ?? `Team ${nextShift.teamNumber}`;
@@ -528,7 +603,10 @@ export function DashboardPage() {
                           Team {nextShift.teamNumber}
                         </p>
                       </div>
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted" aria-hidden>
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted"
+                        aria-hidden
+                      >
                         <svg
                           viewBox="0 0 30 30"
                           style={{ width: 30, height: 30 }}
@@ -575,7 +653,10 @@ export function DashboardPage() {
                           </span>
                         </div>
                       </div>
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted" aria-hidden>
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted"
+                        aria-hidden
+                      >
                         <svg
                           viewBox="0 0 30 30"
                           style={{ width: 30, height: 30 }}

@@ -563,31 +563,23 @@ impl SyncService {
                         .collect();
 
                     if !schedule_records.is_empty() {
-                        // Load cached schedule for change detection.
-                        // Only push rows where TBA timing/scores/predictions actually changed.
-                        // Assignment fields (name, uid) are written by mobile, not desktop — exclude from comparison.
-                        let cached_schedule: HashMap<(String, String), (Option<i64>, Option<i64>, Option<i64>, Option<f64>, Option<f64>, Option<f64>)> = {
-                            let rows: Vec<(String, String, Option<i64>, Option<i64>, Option<i64>, Option<f64>, Option<f64>, Option<f64>)> =
-                                sqlx::query_as(
-                                    "SELECT match, team, est_time, red_score, blue_score, red_win_prob, \
-                                     predicted_red_score, predicted_blue_score \
-                                     FROM event_schedule WHERE event = ?"
-                                )
-                                .bind(&self.current_event)
-                                .fetch_all(&self.sqlx_pool)
-                                .await
-                                .unwrap_or_default();
+                        // Build Supabase push records — scores, predictions, and est_time are
+                        // no longer in Supabase (mobile polls TBA/Statbotics/Nexus directly).
+                        // Only push structural fields: event, match, team, alliance.
+                        // alliance is set once at bootstrap and never changes, so the only
+                        // rows that need pushing are ones absent from the snapshot (new matches).
+                        let supabase_records: Vec<serde_json::Value> = schedule_records.iter().map(|r| {
+                            json!({
+                                "event": r["event"],
+                                "match": r["match"],
+                                "team": r["team"],
+                                "alliance": r["alliance"],
+                                "last_modified": r["last_modified"],
+                            })
+                        }).collect();
 
-                            rows.into_iter()
-                                .map(|(m, t, et, rs, bs, rwp, prs, pbs)| ((m, t), (et, rs, bs, rwp, prs, pbs)))
-                                .collect()
-                        };
-
-                        // Build a set of (match, team) pairs present in the Supabase snapshot.
-                        // When snapshot is cold (empty on first run), pass ALL records to
-                        // bulk_upsert_schedule so it can do a full SELECT from Supabase and
-                        // detect rows that are missing (e.g. accidentally deleted).
-                        // When snapshot is warm, only send changed or Supabase-absent rows.
+                        // Change detection: only push rows absent from the Supabase snapshot.
+                        // alliance never changes after bootstrap, so existing rows never need updates.
                         let snapshot_set: std::collections::HashSet<(String, String)> =
                             self.schedule_snapshot.iter().filter_map(|s| {
                                 let m = s.get("match")?.as_str()?.to_string();
@@ -596,30 +588,16 @@ impl SyncService {
                             }).collect();
 
                         let changed_schedule_records: Vec<serde_json::Value> = if self.schedule_snapshot.is_empty() {
-                            // Cold start: bypass local filter — let bulk_upsert_schedule detect
-                            // missing Supabase rows via its own SELECT.
-                            schedule_records.clone()
+                            // Cold start: pass all records so bulk_upsert_schedule can detect
+                            // rows missing from Supabase (e.g. after manual deletions).
+                            supabase_records.clone()
                         } else {
-                            schedule_records
+                            supabase_records
                                 .iter()
                                 .filter(|record| {
                                     let match_key = record.get("match").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                     let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    // Row absent from Supabase snapshot — always push.
-                                    if !snapshot_set.contains(&(match_key.clone(), team.clone())) {
-                                        return true;
-                                    }
-                                    match cached_schedule.get(&(match_key, team)) {
-                                        None => true, // New row
-                                        Some(&(cet, crs, cbs, crwp, cprs, cpbs)) => {
-                                            record.get("est_time").and_then(|v| v.as_i64()) != cet
-                                                || record.get("red_score").and_then(|v| v.as_i64()) != crs
-                                                || record.get("blue_score").and_then(|v| v.as_i64()) != cbs
-                                                || record.get("red_win_prob").and_then(|v| v.as_f64()) != crwp
-                                                || record.get("predicted_red_score").and_then(|v| v.as_f64()) != cprs
-                                                || record.get("predicted_blue_score").and_then(|v| v.as_f64()) != cpbs
-                                        }
-                                    }
+                                    !snapshot_set.contains(&(match_key, team))
                                 })
                                 .cloned()
                                 .collect()
@@ -866,7 +844,7 @@ impl SyncService {
             let predicted_blue_score = record.get("predicted_blue_score").and_then(|v| v.as_f64());
 
             if preserve_assignments {
-                // TBA path: COALESCE so null doesn't erase existing assignments
+                // TBA path: COALESCE so null doesn't erase existing assignments or scores
                 sqlx::query(
                     "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -875,11 +853,11 @@ impl SyncService {
                        name = COALESCE(excluded.name, event_schedule.name),
                        uid = COALESCE(excluded.uid, event_schedule.uid),
                        est_time = excluded.est_time,
-                       red_score = excluded.red_score,
-                       blue_score = excluded.blue_score,
-                       red_win_prob = excluded.red_win_prob,
-                       predicted_red_score = excluded.predicted_red_score,
-                       predicted_blue_score = excluded.predicted_blue_score,
+                       red_score = COALESCE(excluded.red_score, event_schedule.red_score),
+                       blue_score = COALESCE(excluded.blue_score, event_schedule.blue_score),
+                       red_win_prob = COALESCE(excluded.red_win_prob, event_schedule.red_win_prob),
+                       predicted_red_score = COALESCE(excluded.predicted_red_score, event_schedule.predicted_red_score),
+                       predicted_blue_score = COALESCE(excluded.predicted_blue_score, event_schedule.predicted_blue_score),
                        last_modified = excluded.last_modified"
                 )
                 .bind(&self.current_event)
@@ -899,7 +877,9 @@ impl SyncService {
                 .await
                 .context(format!("Failed to cache schedule for match {} team {}", match_key, team))?;
             } else {
-                // Supabase pull path: direct assignment — null means deliberately cleared
+                // Supabase pull path: scores/predictions are no longer in Supabase —
+                // use COALESCE to preserve locally-cached TBA scores.
+                // name/uid are direct assignment (null from Supabase means deliberately cleared).
                 sqlx::query(
                     "INSERT INTO event_schedule (event, match, team, alliance, name, uid, est_time, red_score, blue_score, red_win_prob, predicted_red_score, predicted_blue_score, last_modified)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -908,11 +888,11 @@ impl SyncService {
                        name = excluded.name,
                        uid = excluded.uid,
                        est_time = excluded.est_time,
-                       red_score = excluded.red_score,
-                       blue_score = excluded.blue_score,
-                       red_win_prob = excluded.red_win_prob,
-                       predicted_red_score = excluded.predicted_red_score,
-                       predicted_blue_score = excluded.predicted_blue_score,
+                       red_score = COALESCE(excluded.red_score, event_schedule.red_score),
+                       blue_score = COALESCE(excluded.blue_score, event_schedule.blue_score),
+                       red_win_prob = COALESCE(excluded.red_win_prob, event_schedule.red_win_prob),
+                       predicted_red_score = COALESCE(excluded.predicted_red_score, event_schedule.predicted_red_score),
+                       predicted_blue_score = COALESCE(excluded.predicted_blue_score, event_schedule.predicted_blue_score),
                        last_modified = excluded.last_modified"
                 )
                 .bind(&self.current_event)

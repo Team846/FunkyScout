@@ -6,6 +6,8 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { getMatchLabel } from "@lib/utils/match";
 import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
+import { getLocalUserData } from "@lib/supabase/user";
+import { joinScoutPresence, leaveScoutPresence } from "../lib/scoutPresence";
 type MatchType = {
   teamNum?: string | null;
   matchNum?: string | null;
@@ -36,6 +38,7 @@ function MatchStart() {
   const [coordinates, setCoordinates] = useState<[number, number] | null>(null);
   const [showPuff, setShowPuff] = useState(false);
   const handleBackClick = () => {
+    leaveScoutPresence();
     if (practice) {
       navigate({ to: "/practice" });
     } else {
@@ -75,6 +78,23 @@ function MatchStart() {
   }, [isActive]);
 
   useEffect(() => {}, [coordinates]);
+
+  // Join presence channel when entering match_start.
+  // Channel stays open when navigating forward to match_play (no cleanup here).
+  // Back navigation calls leaveScoutPresence() explicitly in handleBackClick.
+  useEffect(() => {
+    if (!matchNum || !teamNum || !alliance) return;
+    const event = matchNum.split("_")[0];
+    const { name, uid } = getLocalUserData();
+    if (!event || !uid) return;
+    joinScoutPresence(event, {
+      uid,
+      name: name || uid,
+      match: matchNum,
+      team: teamNum,
+      phase: "match_start",
+    });
+  }, [matchNum, teamNum, alliance]);
 
   return (
     <>

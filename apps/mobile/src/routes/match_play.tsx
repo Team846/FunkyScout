@@ -5,6 +5,7 @@ import blue_field from "/blue_field.svg";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { getMatchLabel } from "@lib/utils/match";
 import { getLocalUserData } from "@lib/supabase/user";
+import { updateScoutPresence, leaveScoutPresence } from "../lib/scoutPresence";
 import { vibrateShake, vibrateBuzz, vibrateTap } from "@lib/utils/haptics";
 import { useOrientation } from "@lib/hooks/useOrientation";
 import { RotateDevicePrompt } from "../components/RotateDevicePrompt";
@@ -68,6 +69,23 @@ function MatchPlay() {
     matchNum && teamNum
       ? `matchData_${matchNum}_${teamNum}`
       : "currentMatchData";
+
+  // Update presence to match_play phase on mount; leave when unmounting.
+  // The channel was opened by match_start — we just update the phase here.
+  useEffect(() => {
+    if (!matchNum || !teamNum) return;
+    const { uid, name } = getLocalUserData();
+    updateScoutPresence({
+      uid: uid || "",
+      name: name || uid || "",
+      match: matchNum,
+      team: teamNum,
+      phase: "match_play",
+    });
+    return () => {
+      leaveScoutPresence();
+    };
+  }, [matchNum, teamNum]);
 
   const handleBackClick = () => {
     // Clear in-progress data when leaving

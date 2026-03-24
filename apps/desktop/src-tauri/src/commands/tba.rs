@@ -173,9 +173,6 @@ pub async fn bootstrap_event_schedule(
                     "match": match_key,
                     "team": team,
                     "alliance": "red",
-                    "est_time": match_data.est_time,
-                    "red_score": match_data.red_score,
-                    "blue_score": match_data.blue_score,
                     "last_modified": now,
                 }));
             }
@@ -185,9 +182,6 @@ pub async fn bootstrap_event_schedule(
                     "match": match_key,
                     "team": team,
                     "alliance": "blue",
-                    "est_time": match_data.est_time,
-                    "red_score": match_data.red_score,
-                    "blue_score": match_data.blue_score,
                     "last_modified": now,
                 }));
             }

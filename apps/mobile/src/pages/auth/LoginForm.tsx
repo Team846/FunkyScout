@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { loginWithPassword, sendPasswordReset } from "@lib/supabase/auth";
+import { requestNotificationPermission } from "../../lib/shiftNotifications";
 
 export function LoginForm() {
   const navigate = useNavigate();
@@ -36,6 +37,9 @@ export function LoginForm() {
       const success = await loginWithPassword(email, password);
       if (success) {
         toast.success("Login successful!");
+        // Request notification permission while still in a user-gesture context.
+        // Native browser prompt appears if not yet decided; no-op if already granted/denied.
+        requestNotificationPermission();
         navigate({ to: "/events" });
       } else {
         toast.error("Login Failed");

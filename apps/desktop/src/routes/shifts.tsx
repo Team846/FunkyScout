@@ -10,6 +10,11 @@ import {
 import { ArrowLeftRight, Maximize2, RotateCcw, Search, Trash2 } from "lucide-react";
 import { Card } from "@shadcn/ui/components/card.tsx";
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@shadcn/ui/components/hover-card.tsx";
+import {
   Tabs,
   TabsContent,
   TabsList,
@@ -46,6 +51,7 @@ import { permanentlyExcludeScouter } from "@lib/data/scouterExclusions";
 import { toast } from "sonner";
 import { useTabContext } from "../contexts/TabContext";
 import { getMatchLabel } from "@lib/utils/match";
+import { useDesktopRealtime, type ActiveScout } from "../contexts/DesktopRealtimeContext";
 
 export const Route = createFileRoute("/shifts")({
   component: ShiftViewerPage,
@@ -469,19 +475,46 @@ function MatchCardScroll({
 function ScouterCard({
   row,
   rating,
+  activeScout,
   onRatingChange,
   onExclude,
 }: {
   row: ScouterViewRow;
   rating: number | null;
+  activeScout?: ActiveScout;
   onRatingChange: (n: number) => void;
   onExclude: () => void;
 }) {
+  const isActive = !!activeScout;
+  const isInMatch = activeScout?.phase === "match_play";
+
   return (
-    <Card className="w-[220px] flex-shrink-0 px-4 py-3 flex flex-col gap-1.5">
-      {/* Row 1: name + stars */}
+    <Card className={`w-[220px] flex-shrink-0 px-4 py-3 flex flex-col gap-1.5 ${isActive ? "ring-1 ring-green-500/40" : ""}`}>
+      {/* Row 1: name + presence dot + stars */}
       <div className="flex items-center justify-between gap-2 min-w-0">
-        <span className="font-semibold text-base truncate flex-1">{row.name}</span>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          {isActive ? (
+            <HoverCard openDelay={200} closeDelay={100}>
+              <HoverCardTrigger asChild>
+                <span
+                  className={`flex-shrink-0 w-2 h-2 rounded-full cursor-pointer ${isInMatch ? "bg-green-500 animate-pulse" : "bg-yellow-400 animate-pulse"}`}
+                  title={isInMatch ? "In match" : "At start position"}
+                />
+              </HoverCardTrigger>
+              <HoverCardContent className="w-56 p-3" side="top">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold text-foreground">
+                    {isInMatch ? "🟢 Actively Scouting" : "🟡 At Start Position"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {getMatchLabel(activeScout.match)} · Team {activeScout.team.replace("frc", "")}
+                  </p>
+                </div>
+              </HoverCardContent>
+            </HoverCard>
+          ) : null}
+          <span className="font-semibold text-base truncate flex-1">{row.name}</span>
+        </div>
         <StarRating value={rating} onChange={onRatingChange} />
       </div>
       {/* Row 2: stats */}
@@ -581,6 +614,7 @@ function TeamCard({
 function ScouterRow({
   row,
   rating,
+  activeScout,
   onRatingChange,
   onExclude,
   onMatchClick,
@@ -589,6 +623,7 @@ function ScouterRow({
 }: {
   row: ScouterViewRow;
   rating: number | null;
+  activeScout?: ActiveScout;
   onRatingChange: (uid: string, n: number) => void;
   onExclude: (uid: string) => void;
   onMatchClick?: (matchKey: string) => void;
@@ -601,6 +636,7 @@ function ScouterRow({
       <ScouterCard
         row={row}
         rating={rating}
+        activeScout={activeScout}
         onRatingChange={(n) => onRatingChange(row.uid, n)}
         onExclude={() => onExclude(row.uid)}
       />
@@ -657,6 +693,7 @@ function ShiftViewerPage() {
   const navigate = useNavigate();
   const { addTab, activeTabId } = useTabContext();
   const { currentEvent } = useDesktopEvent();
+  const { activeScouts } = useDesktopRealtime();
   const { schedule, tbaClimbData, matchScoutingData, tbaSchedule, refresh: refreshCompetition } =
     useDesktopCompetitionData();
   const { tbaTeams, pitScoutingData, refresh: refreshTeams } = useDesktopTeamData();
@@ -1205,6 +1242,7 @@ function ShiftViewerPage() {
                   key={s.uid}
                   row={s}
                   rating={dirtyRatings[s.uid] ?? s.rating}
+                  activeScout={activeScouts.find((a) => a.uid === s.uid)}
                   onRatingChange={handleRatingChange}
                   onExclude={handleExcludeScouter}
                   onMatchClick={handleMatchClick}

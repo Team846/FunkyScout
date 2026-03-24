@@ -16,6 +16,7 @@ import {
   getPicklists,
 } from "@lib/data";
 import { fetchTBAMatchSchedule } from "@lib/tba";
+import { fetchEventMatches } from "@lib/statbotics";
 import { getNexusEventStatus, buildNexusTimeMap, type NexusMatch } from "@lib/nexus";
 import type {
   EventPicklist as SupabaseEventPicklist,
@@ -90,14 +91,24 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const nexusPolling = useRef<PollingController | null>(null);
   const picklistPolling = useRef<PollingController | null>(null);
   const matchDataPolling = useRef<PollingController | null>(null);
+  const matchScoresPolling = useRef<PollingController | null>(null);
 
   // Refs for stable access in refresh callback
   const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
   const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
   const fetchPicklistsRef = useRef<(() => Promise<void>) | null>(null);
   const fetchMatchDataRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchMatchScoresRef = useRef<(() => Promise<void>) | null>(null);
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
+  // Cached scores/predictions from direct TBA+Statbotics poll (not via Supabase)
+  const matchScoresRef = useRef<Record<string, {
+    redScore: number | null;
+    blueScore: number | null;
+    redWinProb: number | null;
+    predictedRedScore: number | null;
+    predictedBlueScore: number | null;
+  }>>({});
 
   const fetchSchedule = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -208,9 +219,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
         );
 
         // Check if desktop has synced match data
-        const hasMatchData =
-          supabaseSchedule &&
-          supabaseSchedule.some((s: any) => s.est_time != null);
+        // Schedule has team assignments — treat as "desktop has synced" if any rows exist.
+        // Scores, predictions, and est_time come from matchScoresRef (direct TBA/Statbotics/Nexus).
+        const hasMatchData = supabaseSchedule != null && supabaseSchedule.filter((s: any) => !s.deleted_at).length > 0;
 
         if (supabaseSchedule) {
           const entries = supabaseSchedule
@@ -221,16 +232,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
             alliance: s.alliance as "red" | "blue",
             name: s.name,
             uid: s.uid,
-            est_time: s.est_time,
-            red_score: s.red_score,
-            blue_score: s.blue_score,
-            red_win_prob: s.red_win_prob,
-            predicted_red_score: s.predicted_red_score,
-            predicted_blue_score: s.predicted_blue_score,
           }));
           setSchedule(entries);
 
-          // Build tbaSchedule from schedule entries (desktop-synced data)
+          // Build tbaSchedule from schedule entries (desktop-synced data).
+          // Scores, predictions, and est_time are no longer in Supabase — merge from
+          // matchScoresRef which is populated by the direct TBA/Statbotics poll (5 min).
           if (hasMatchData) {
             console.log("[CompetitionData] Using match data from desktop sync");
             const matchData: Record<string, TBAMatchData> = {};
@@ -239,6 +246,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
                 const matchEntries = entries.filter(
                   (e) => e.match === entry.match
                 );
+                const s = matchScoresRef.current[entry.match];
                 matchData[entry.match] = {
                   redTeams: matchEntries
                     .filter((e) => e.alliance === "red")
@@ -246,12 +254,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
                   blueTeams: matchEntries
                     .filter((e) => e.alliance === "blue")
                     .map((e) => e.team),
-                  est_time: entry.est_time ?? 0,
-                  redScore: entry.red_score ?? null,
-                  blueScore: entry.blue_score ?? null,
-                  red_win_prob: entry.red_win_prob,
-                  predicted_red_score: entry.predicted_red_score,
-                  predicted_blue_score: entry.predicted_blue_score,
+                  est_time: matchScoresRef.current[entry.match]?.estTime ?? 0,
+                  redScore: s?.redScore ?? null,
+                  blueScore: s?.blueScore ?? null,
+                  red_win_prob: s?.redWinProb ?? null,
+                  predicted_red_score: s?.predictedRedScore ?? null,
+                  predicted_blue_score: s?.predictedBlueScore ?? null,
                 };
               }
             });
@@ -374,13 +382,98 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
   }, [currentEvent, dbInitialized, isOnline]);
 
+  // Fetch match scores (TBA) and predictions (Statbotics) directly.
+  // These fields were removed from Supabase event_schedule to reduce realtime egress.
+  // Mobile now polls these APIs at a slow interval (10 min) instead of getting them
+  // pushed from desktop via Supabase realtime.
+  const fetchMatchScoresAndPredictions = useCallback(async () => {
+    if (!currentEvent || !isOnline) return;
+    console.log("[CompetitionData] Fetching match scores + predictions from TBA/Statbotics");
+    try {
+      const [tbaData, statboticsMatches] = await Promise.all([
+        fetchTBAMatchSchedule(currentEvent),
+        fetchEventMatches(currentEvent),
+      ]);
+
+      const scores: Record<string, {
+        redScore: number | null;
+        blueScore: number | null;
+        redWinProb: number | null;
+        predictedRedScore: number | null;
+        predictedBlueScore: number | null;
+        estTime: number | null;
+      }> = {};
+
+      // Final scores + est_time from TBA (est_time no longer in Supabase)
+      if (tbaData) {
+        for (const [matchKey, match] of Object.entries(tbaData)) {
+          scores[matchKey] = {
+            redScore: match.redScore ?? null,
+            blueScore: match.blueScore ?? null,
+            redWinProb: null,
+            predictedRedScore: null,
+            predictedBlueScore: null,
+            estTime: match.est_time ?? null,
+          };
+        }
+      }
+
+      // Predictions from Statbotics
+      for (const m of statboticsMatches) {
+        const key = m.key as string;
+        const pred = (m as any).pred;
+        if (scores[key]) {
+          scores[key].redWinProb = pred?.red_win_prob ?? null;
+          scores[key].predictedRedScore = pred?.red_score ?? null;
+          scores[key].predictedBlueScore = pred?.blue_score ?? null;
+        } else {
+          scores[key] = {
+            redScore: null,
+            blueScore: null,
+            redWinProb: pred?.red_win_prob ?? null,
+            predictedRedScore: pred?.red_score ?? null,
+            predictedBlueScore: pred?.blue_score ?? null,
+            estTime: null,
+          };
+        }
+      }
+
+      matchScoresRef.current = scores;
+
+      // Merge into tbaSchedule without losing team/est_time data
+      setTbaSchedule((prev) => {
+        const updated: Record<string, TBAMatchData> = {};
+        for (const [key, match] of Object.entries(prev)) {
+          const s = scores[key];
+          updated[key] = s
+            ? {
+                ...match,
+                est_time: s.estTime ?? match.est_time,
+                redScore: s.redScore,
+                blueScore: s.blueScore,
+                red_win_prob: s.redWinProb,
+                predicted_red_score: s.predictedRedScore,
+                predicted_blue_score: s.predictedBlueScore,
+              }
+            : match;
+        }
+        return updated;
+      });
+
+      console.log(`[CompetitionData] Scores/predictions updated for ${Object.keys(scores).length} matches`);
+    } catch (error) {
+      console.error("[CompetitionData] Error fetching match scores/predictions:", error);
+    }
+  }, [currentEvent, isOnline]);
+
   // Keep refs in sync
   useEffect(() => {
     fetchScheduleRef.current = fetchSchedule;
     fetchNexusRef.current = fetchNexus;
     fetchPicklistsRef.current = fetchPicklists;
     fetchMatchDataRef.current = fetchMatchData;
-  }, [fetchSchedule, fetchNexus, fetchPicklists, fetchMatchData]);
+    fetchMatchScoresRef.current = fetchMatchScoresAndPredictions;
+  }, [fetchSchedule, fetchNexus, fetchPicklists, fetchMatchData, fetchMatchScoresAndPredictions]);
 
   // Stable wrappers for polling - always call latest fetch functions
   const fetchScheduleStable = useCallback(async () => {
@@ -404,6 +497,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const fetchMatchDataStable = useCallback(async () => {
     if (fetchMatchDataRef.current) {
       await fetchMatchDataRef.current();
+    }
+  }, []); // Never changes!
+
+  const fetchMatchScoresStable = useCallback(async () => {
+    if (fetchMatchScoresRef.current) {
+      await fetchMatchScoresRef.current();
     }
   }, []); // Never changes!
 
@@ -443,6 +542,14 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       );
       matchDataPolling.current.start();
     }
+    if (!matchScoresPolling.current) {
+      matchScoresPolling.current = new PollingController(
+        "Match Scores",
+        fetchMatchScoresStable,
+        LIVE_POLLING_CONFIG // 5 min — includes est_time (Nexus overlays on top, TBA is fallback)
+      );
+      matchScoresPolling.current.start();
+    }
 
     return () => {
       schedulePolling.current?.stop();
@@ -453,6 +560,8 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       picklistPolling.current = null;
       matchDataPolling.current?.stop();
       matchDataPolling.current = null;
+      matchScoresPolling.current?.stop();
+      matchScoresPolling.current = null;
     };
   }, [
     dbInitialized,
@@ -460,6 +569,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchNexusStable,
     fetchPicklistsStable,
     fetchMatchDataStable,
+    fetchMatchScoresStable,
   ]);
 
   // Handle event changes - fetch data immediately
@@ -492,6 +602,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       fetchNexus();
       fetchPicklists();
       fetchMatchData();
+      fetchMatchScoresAndPredictions();
     }
   }, [
     currentEvent,
@@ -500,6 +611,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     fetchNexus,
     fetchPicklists,
     fetchMatchData,
+    fetchMatchScoresAndPredictions,
     isOnline,
   ]);
 
@@ -531,7 +643,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       .on(
         "postgres_changes",
         {
-          event: "*",
+          // UPDATE only — INSERT fires on bootstrap (not actionable for mobile)
+          // and DELETE is unused. This halves the event volume broadcast to all clients.
+          event: "UPDATE",
           schema: "public",
           table: "event_schedule",
           filter: `event=eq.${currentEvent}`,

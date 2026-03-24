@@ -1,6 +1,7 @@
 import { useMemo, useRef, useImperativeHandle, forwardRef, useState, useEffect } from "react";
 import type { ScheduleEntry, TBAMatchData } from "../../../contexts/DesktopCompetitionDataContext";
 import type { TBATeam } from "../../../contexts/DesktopTeamDataContext";
+import type { ActiveScout } from "../../../contexts/DesktopRealtimeContext";
 import {
   Tooltip,
   TooltipContent,
@@ -18,6 +19,7 @@ interface ScheduleTableProps {
   tbaTeams: TBATeam[];
   searchQuery: string;
   homeTeamKey: string; // e.g. "frc846"
+  activeScouts?: ActiveScout[];
   onMatchClick?: (matchKey: string) => void;
   onTeamClick?: (teamKey: string) => void;
 }
@@ -75,6 +77,7 @@ function TeamChip({
   q75,
   isHome,
   scouterName,
+  activeScout,
   onClick,
 }: {
   teamKey: string;
@@ -83,6 +86,7 @@ function TeamChip({
   q75: number;
   isHome: boolean;
   scouterName?: string;
+  activeScout?: ActiveScout;
   onClick?: () => void;
 }) {
   const team = tbaTeams.find((t) => t.key === teamKey);
@@ -97,18 +101,28 @@ function TeamChip({
     else if (epa <= q25) chipClass = "bg-chart-5/40 text-chart-5";
   }
 
+  const presenceDotClass = activeScout
+    ? activeScout.phase === "match_play"
+      ? "bg-primary shadow-[0_0_4px_1px] shadow-primary/60"
+      : "bg-ring shadow-[0_0_4px_1px] shadow-ring/60"
+    : null;
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
           onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
           className={[
-            "inline-flex items-center justify-center min-w-[56px] px-2.5 py-2 rounded text-xs font-bold transition-colors tabular-nums",
+            "relative inline-flex items-center justify-center min-w-[56px] px-2.5 py-2 rounded text-xs font-bold transition-colors tabular-nums",
             chipClass,
-            onClick ? "cursor-pointer hover:ring-1 hover:ring-primary/60 hover:brightness-110" : "",
+            onClick ? "cursor-pointer hover:ring-1 hover:ring-muted-foreground/60 hover:brightness-110" : "",
+            activeScout ? "ring-1 ring-offset-1 ring-offset-background " + (activeScout.phase === "match_play" ? "ring-primary/70" : "ring-ring/70") : "",
           ].join(" ")}
         >
           {teamNum}
+          {presenceDotClass && (
+            <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full animate-pulse ${presenceDotClass}`} />
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="bg-muted text-foreground/80 border border-border flex flex-col gap-0.5 [&>svg]:fill-muted [&>svg]:bg-muted">
@@ -118,6 +132,11 @@ function TeamChip({
         )}
         {!scouterName && (
           <span className="text-muted-foreground italic">No scouter assigned</span>
+        )}
+        {activeScout && (
+          <span className={activeScout.phase === "match_play" ? "text-primary" : "text-ring"}>
+            {activeScout.phase === "match_play" ? "Actively scouting" : "At start position"} — {activeScout.name}
+          </span>
         )}
       </TooltipContent>
     </Tooltip>
@@ -132,7 +151,7 @@ function formatTime(estTime: number | undefined): string {
 
 export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>(
   function ScheduleTable(
-    { schedule, tbaSchedule, tbaTeams, searchQuery, homeTeamKey, onMatchClick, onTeamClick },
+    { schedule, tbaSchedule, tbaTeams, searchQuery, homeTeamKey, activeScouts, onMatchClick, onTeamClick },
     ref
   ) {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -263,7 +282,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
               >
                 {/* Match label + time */}
                 <div
-                  className={`flex flex-col px-3 py-1 rounded-md bg-primary/5 border-l-2 border-muted-foreground/40 ${onMatchClick ? "cursor-pointer hover:bg-primary/15 hover:border-primary/60 transition-colors" : ""}`}
+                  className={`flex flex-col px-3 py-1 rounded-md bg-primary/5 border-l-2 border-muted-foreground/40 ${onMatchClick ? "cursor-pointer hover:bg-primary/15 hover:border-muted-foreground/70 transition-colors" : ""}`}
                   onClick={onMatchClick ? () => onMatchClick(row.matchKey) : undefined}
                   onKeyDown={onMatchClick ? (e) => e.key === "Enter" && onMatchClick(row.matchKey) : undefined}
                   role={onMatchClick ? "button" : undefined}
@@ -289,6 +308,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                         q75={q75}
                         isHome={team === homeTeamKey}
                         scouterName={entry?.name}
+                        activeScout={activeScouts?.find((a) => a.match === row.matchKey && a.team === team)}
                         onClick={onTeamClick ? () => onTeamClick(team) : undefined}
                       />
                     );
@@ -311,6 +331,7 @@ export const ScheduleTable = forwardRef<ScheduleTableHandle, ScheduleTableProps>
                         q75={q75}
                         isHome={team === homeTeamKey}
                         scouterName={entry?.name}
+                        activeScout={activeScouts?.find((a) => a.match === row.matchKey && a.team === team)}
                         onClick={onTeamClick ? () => onTeamClick(team) : undefined}
                       />
                     );
