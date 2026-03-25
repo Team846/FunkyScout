@@ -22,6 +22,8 @@ import {
   PollingController,
   LIVE_POLLING_CONFIG,
 } from "@lib/utils/fetchUtils";
+import { fetchTBATeamStatuses, fetchTBAEventOPRs } from "@lib/tba/event";
+import { fetchStatboticsEventTeams } from "@lib/statbotics/event";
 
 export interface Team {
   key: string;
@@ -49,6 +51,16 @@ export interface TBATeam {
   dpr?: number;
 }
 
+interface TeamStatsEntry {
+  rank: number;
+  record: { wins: number; losses: number; ties: number };
+  nextMatch: string | null;
+  lastMatch: string | null;
+  epa: TBATeam["epa"] | null;
+  opr?: number;
+  dpr?: number;
+}
+
 interface TeamDataContextType {
   teams: Team[];
   tbaTeams: TBATeam[];
@@ -66,8 +78,10 @@ const TeamDataContext = createContext<TeamDataContextType | undefined>(
 export function TeamDataProvider({ children }: { children: ReactNode }) {
   const { currentEvent, dbInitialized, isOnline } = useEvent();
   const { registerRefreshCallback } = useSync();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
+  // Base team list from Supabase (pit scouting fields, team_name, assignments)
+  const [baseTbaTeams, setBaseTbaTeams] = useState<TBATeam[]>([]);
+  // Live computed stats from TBA/Statbotics direct polling
+  const [teamStatsData, setTeamStatsData] = useState<Record<string, TeamStatsEntry>>({});
   const [loading, setLoading] = useState(false);
   const [scoutedTeams, setScoutedTeams] = useState<Set<string>>(new Set());
   const [teamAssignments, setTeamAssignments] = useState<Map<string, string>>(
@@ -87,7 +101,6 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     if (!currentEvent || !dbInitialized) return;
 
     // Prevent concurrent fetches — if one is already in progress, skip this call.
-    // The in-progress fetch will still complete and update state correctly.
     if (isFetchingRef.current) {
       console.log("[TeamData] Skipping fetch — already in progress");
       return;
@@ -97,24 +110,14 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     // Check if we should skip cache this time (only on event change when online)
     const shouldSkipCache = skipCacheOnceRef.current && isOnline;
     if (shouldSkipCache) {
-      skipCacheOnceRef.current = false; // Clear immediately
+      skipCacheOnceRef.current = false;
     }
 
     // 1. Load from cache only on first load (no live data yet) and if not skipping.
-    // Once hasLoadedDataRef is true we have live data in state — don't overwrite it
-    // with potentially stale cache (avoids the flash-then-revert race condition).
     if (!shouldSkipCache && !hasLoadedDataRef.current) {
       const cached = await getTbaTeams(currentEvent);
       if (cached.length > 0) {
-        setTeams(
-          cached.map((t: TbaTeam) => ({
-            key: t.team_key,
-            num: t.team_number,
-            name: t.name ?? "",
-            rank: t.rank ?? 0,
-          }))
-        );
-        setTbaTeams(
+        setBaseTbaTeams(
           cached.map((t: TbaTeam) => ({
             key: t.team_key,
             team: t.team_number,
@@ -133,16 +136,51 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // 2. Refresh from Supabase if online
     if (isOnline) {
       const isInitialLoad = !hasLoadedDataRef.current;
       if (isInitialLoad || shouldSkipCache) {
         setLoading(true);
       }
       try {
-        const supabaseTeams = await getTeams(currentEvent);
+        // Fetch Supabase team data (pit scouting fields, team_name, assignments)
+        // AND TBA/Statbotics stats in parallel — same poll cycle, same 5-min interval.
+        // Use allSettled for API calls so one failure doesn't block the Supabase update.
+        const [supabaseTeams, [statusResult, epaResult, oprResult]] = await Promise.all([
+          getTeams(currentEvent),
+          Promise.allSettled([
+            fetchTBATeamStatuses(currentEvent),
+            fetchStatboticsEventTeams(currentEvent),
+            fetchTBAEventOPRs(currentEvent),
+          ]),
+        ]);
 
-        // All stats (rank, EPA, OPR, record) are pushed to Supabase by desktop every ~120s
+        const statuses = statusResult.status === "fulfilled" ? statusResult.value : undefined;
+        const epaMap = epaResult.status === "fulfilled" ? (epaResult.value as Record<string, any>) : {};
+        const oprMap = oprResult.status === "fulfilled" ? oprResult.value : undefined;
+
+        // Build live stats map from TBA + Statbotics.
+        // rank, record, next/last match, EPA, OPR are NOT read from Supabase data —
+        // mobile polls TBA and Statbotics directly to avoid triggering unnecessary
+        // last_modified bumps on event_team_data during competition.
+        if (statuses) {
+          const stats: Record<string, TeamStatsEntry> = {};
+          for (const [teamKey, status] of Object.entries(statuses as Record<string, any>)) {
+            stats[teamKey] = {
+              rank: status.qual?.ranking?.rank ?? 0,
+              record: status.qual?.ranking?.record ?? { wins: 0, losses: 0, ties: 0 },
+              nextMatch: status.next_match_key ?? null,
+              lastMatch: status.last_match_key ?? null,
+              epa: (epaMap as Record<string, any>)[teamKey] ?? null,
+              opr: oprMap?.oprs[teamKey],
+              dpr: oprMap?.dprs[teamKey],
+            };
+          }
+          console.log(`[TeamData] Stats: updated ${Object.keys(stats).length} teams from TBA/Statbotics`);
+          setTeamStatsData(stats);
+        }
+
+        // Update base team list from Supabase (team_name only — no computed stats).
+        // The data column is still fetched and cached by getTeams() for pit scouting display.
         const merged: TbaTeam[] = (supabaseTeams ?? []).map(
           (supabaseTeam: {
             event: string;
@@ -159,15 +197,15 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               team_key: supabaseTeam.team,
               team_number: teamNumber,
               name: supabaseTeam.team_name ?? `Team ${teamNumber}`,
-              rank: supabaseTeam.data?.rank ?? 0,
-              wins: supabaseTeam.data?.record?.wins ?? 0,
-              losses: supabaseTeam.data?.record?.losses ?? 0,
-              ties: supabaseTeam.data?.record?.ties ?? 0,
-              epa: supabaseTeam.data?.epa ?? null,
-              opr: supabaseTeam.data?.opr ?? undefined,
-              dpr: supabaseTeam.data?.dpr ?? undefined,
-              next_match: supabaseTeam.data?.next_match || undefined,
-              last_match: supabaseTeam.data?.last_match || undefined,
+              rank: 0,
+              wins: 0,
+              losses: 0,
+              ties: 0,
+              epa: null,
+              opr: undefined,
+              dpr: undefined,
+              next_match: undefined,
+              last_match: undefined,
               last_synced: Date.now(),
             };
           }
@@ -176,35 +214,21 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
         merged.sort((a, b) => a.team_number - b.team_number);
         if (merged.length > 0) {
           await cacheTbaTeams(currentEvent, merged);
-          setTeams(
-            merged.map((t) => ({
-              key: t.team_key,
-              num: t.team_number,
-              name: t.name ?? "",
-              rank: t.rank ?? 0,
-            }))
-          );
-          setTbaTeams(
+          setBaseTbaTeams(
             merged.map((t) => ({
               key: t.team_key,
               team: t.team_number,
               name: t.name ?? "",
-              rank: t.rank ?? 0,
-              record: {
-                wins: t.wins ?? 0,
-                losses: t.losses ?? 0,
-                ties: t.ties ?? 0,
-              },
-              nextMatch: t.next_match || null,
-              lastMatch: t.last_match || null,
+              rank: 0,
+              record: { wins: 0, losses: 0, ties: 0 },
+              nextMatch: null,
+              lastMatch: null,
             }))
           );
           hasLoadedDataRef.current = true;
         }
 
-        // getTeams() fetches the full event_team_data from Supabase (including pit
-        // scouting name + assigned fields) and caches it. Use it to keep scoutedTeams
-        // and teamAssignments in sync after every poll, not just on mount.
+        // Keep scoutedTeams and teamAssignments in sync after every poll.
         const scouted = new Set(
           (supabaseTeams ?? [])
             .filter((t: EventTeamData) => !!t.name)
@@ -234,22 +258,22 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     currentEventRef.current = currentEvent;
   }, [fetchTeams, currentEvent]);
 
-  // Stable wrapper for polling - always calls latest fetch function
+  // Stable wrapper for polling
   const fetchTeamsStable = useCallback(async () => {
     if (fetchTeamsRef.current) {
       await fetchTeamsRef.current();
     }
-  }, []); // Never changes!
+  }, []);
 
-  // Start controller once when dbInitialized (never stop/start on event changes)
+  // Single polling controller — Supabase + TBA/Statbotics all run in the same cycle
   useEffect(() => {
     if (!dbInitialized) return;
 
     if (!pollingController.current) {
       pollingController.current = new PollingController(
-        "Teams (Supabase 15s + TBA 2min cached)",
+        "Teams (Supabase + TBA + Statbotics)",
         fetchTeamsStable,
-        LIVE_POLLING_CONFIG // 15s polling for Supabase, TBA cached at 2min
+        LIVE_POLLING_CONFIG
       );
       pollingController.current.start();
     }
@@ -260,11 +284,11 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     };
   }, [dbInitialized, fetchTeamsStable]);
 
-  // Handle event changes - fetch teams immediately
+  // Handle event changes - fetch immediately
   useEffect(() => {
     if (!currentEvent) {
-      setTeams([]);
-      setTbaTeams([]);
+      setBaseTbaTeams([]);
+      setTeamStatsData({});
       setInitialLoading(false);
       hasLoadedDataRef.current = false;
       isFetchingRef.current = false;
@@ -272,27 +296,17 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
     }
 
     if (dbInitialized) {
-      // Always reset so the new event's cache can load, even offline.
-      // Without this, hasLoadedDataRef=true from the previous event prevents
-      // fetchTeams() from loading the new event's cached data when offline.
       hasLoadedDataRef.current = false;
-      // When online and switching away from a loaded event, skip cache so we
-      // don't flash stale old-event data before fresh Supabase data arrives.
       if (isOnline) {
         skipCacheOnceRef.current = true;
         setInitialLoading(true);
       }
-      // Allow the new event's fetch to run even if a previous fetch is in flight.
-      // The old fetch belongs to a different event and should be superseded.
       isFetchingRef.current = false;
-      // Trigger one immediate fetch. Poller handles periodic background refresh.
-      // forceRefresh() is NOT called here — that would duplicate this fetch.
       fetchTeams();
     }
   }, [currentEvent, dbInitialized, fetchTeams, isOnline]);
 
   // Fetch scouted teams and assignments when event changes AND after initial load completes
-  // (On new mount, getEventTeamData can run before fetchTeams populates SQLite — re-run when initialLoading becomes false)
   useEffect(() => {
     if (!currentEvent || !dbInitialized) {
       setScoutedTeams(new Set());
@@ -302,94 +316,90 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
 
     getEventTeamData(currentEvent).then((data: EventTeamData[]) => {
       const scouted = new Set(
-        data
-          .filter((t: EventTeamData) => {
-            return !!t.name;
-          })
-          .map((t: EventTeamData) => t.team)
+        data.filter((t: EventTeamData) => !!t.name).map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
 
       const assignments = new Map<string, string>();
       data.forEach((t: EventTeamData) => {
-        if (t.assigned) {
-          assignments.set(t.team, t.assigned);
-        }
+        if (t.assigned) assignments.set(t.team, t.assigned);
       });
       setTeamAssignments(assignments);
     });
   }, [currentEvent, dbInitialized, initialLoading]);
 
-  // No realtime subscription for event_team_data on mobile — pit scouting data
-  // submitted by this device is already in local SQLite immediately, and TBA/EPA
-  // updates from desktop are non-urgent and covered by the 5-minute poll.
-
   const refresh = useCallback(async () => {
-    // Use ref to call current fetch function without changing callback identity.
-    // forceRefresh() is NOT called — that would duplicate this fetch.
     if (fetchTeamsRef.current) {
       await fetchTeamsRef.current();
     }
 
-    // Also refresh scouted teams and assignments
     if (currentEventRef.current) {
       const data = await getEventTeamData(currentEventRef.current);
       const scouted = new Set(
-        data
-          .filter((t: EventTeamData) => {
-            // Only count as scouted if name is registered (someone submitted pit data)
-            return !!t.name;
-          })
-          .map((t: EventTeamData) => t.team)
+        data.filter((t: EventTeamData) => !!t.name).map((t: EventTeamData) => t.team)
       );
       setScoutedTeams(scouted);
 
-      // Build assignment map
       const assignments = new Map<string, string>();
       data.forEach((t: EventTeamData) => {
-        if (t.assigned) {
-          assignments.set(t.team, t.assigned);
-        }
+        if (t.assigned) assignments.set(t.team, t.assigned);
       });
       setTeamAssignments(assignments);
     }
-  }, []); // Empty dependencies - callback never changes!
+  }, []);
 
   // Register refresh callback with SyncContext
   useEffect(() => {
     if (!registerRefreshCallback) return;
-
-    console.log(
-      "[TeamDataContext] Registering refresh callback with SyncContext"
-    );
+    console.log("[TeamDataContext] Registering refresh callback with SyncContext");
     const unregister = registerRefreshCallback(refresh);
-
     return () => {
       console.log("[TeamDataContext] Unregistering refresh callback");
       unregister();
     };
   }, [registerRefreshCallback, refresh]);
 
-  // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
+  // Merge base team list with live TBA/Statbotics stats
+  const mergedTbaTeams = useMemo<TBATeam[]>(
+    () =>
+      baseTbaTeams.map((t) => {
+        const s = teamStatsData[t.key];
+        return {
+          ...t,
+          rank: s?.rank ?? t.rank,
+          record: s?.record ?? t.record,
+          nextMatch: s?.nextMatch ?? t.nextMatch,
+          lastMatch: s?.lastMatch ?? t.lastMatch,
+          epa: s?.epa ?? null,
+          opr: s?.opr,
+          dpr: s?.dpr,
+        };
+      }),
+    [baseTbaTeams, teamStatsData]
+  );
+
+  const mergedTeams = useMemo<Team[]>(
+    () =>
+      baseTbaTeams.map((t) => ({
+        key: t.key,
+        num: t.team,
+        name: t.name,
+        rank: teamStatsData[t.key]?.rank ?? t.rank,
+      })),
+    [baseTbaTeams, teamStatsData]
+  );
+
   const contextValue = useMemo(
     () => ({
-      teams,
-      tbaTeams,
+      teams: mergedTeams,
+      tbaTeams: mergedTbaTeams,
       loading,
       initialLoading,
       refresh,
       scoutedTeams,
       teamAssignments,
     }),
-    [
-      teams,
-      tbaTeams,
-      loading,
-      initialLoading,
-      refresh,
-      scoutedTeams,
-      teamAssignments,
-    ]
+    [mergedTeams, mergedTbaTeams, loading, initialLoading, refresh, scoutedTeams, teamAssignments]
   );
 
   return (

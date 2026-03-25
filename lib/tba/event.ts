@@ -164,5 +164,16 @@ async function fetchTeamEventCOPRs(
   return returnObject;
 }
 
-export { fetchTBAEventTeams, fetchTBATeamStatuses, fetchTBAMatchSchedule, fetchTeamEventCOPRs };
+async function fetchTBAEventOPRs(
+  eventKey: string
+): Promise<{ oprs: Record<string, number>; dprs: Record<string, number> } | undefined> {
+  const result = await fetchTBAData(`/event/${eventKey}/oprs`, "GET");
+  if (!result) return undefined;
+  return {
+    oprs: (result.oprs as Record<string, number>) ?? {},
+    dprs: (result.dprs as Record<string, number>) ?? {},
+  };
+}
+
+export { fetchTBAEventTeams, fetchTBATeamStatuses, fetchTBAMatchSchedule, fetchTeamEventCOPRs, fetchTBAEventOPRs };
 export type { EventSchedule, TeamRank };

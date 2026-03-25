@@ -459,27 +459,14 @@ impl SyncService {
                 .collect();
 
             if !team_data_records.is_empty() {
-                // Cache ALL to local SQLite first (for offline support).
+                // Cache ALL to local SQLite (for desktop UI — rank, EPA, OPR, etc.).
+                // No longer pushed to Supabase: mobile polls TBA/Statbotics directly.
                 self.cache_teams_to_sqlite(&team_data_records)
                     .await
                     .context("Failed to cache team data to SQLite")?;
 
-                let teams_with_epa = team_data_records.iter()
-                    .filter(|r| r.get("data").and_then(|d| d.get("epa")).and_then(|e| e.as_object()).is_some())
-                    .count();
-                println!("[Sync] Pushing {} teams to Supabase ({} with EPA)",
-                    team_data_records.len(), teams_with_epa);
-
-                match self.supabase
-                    .bulk_upsert_team_data(&self.current_event, team_data_records)
-                    .await
-                {
-                    Ok(_) => println!("[Sync] ✓ Pushed team data to Supabase"),
-                    Err(e) => {
-                        eprintln!("[Sync] ✗ Failed to push team data to Supabase: {}", e);
-                        // Non-fatal: continue to Supabase pull steps
-                    }
-                }
+                println!("[Sync] Cached {} teams to local SQLite (not pushed to Supabase — mobile polls directly)",
+                    team_data_records.len());
             }
 
             // 6. Fetch match schedule from TBA and push
@@ -1683,7 +1670,9 @@ impl SyncService {
             .await
             .context("Failed to fetch teams from TBA")?;
 
-        // Push teams to Supabase
+        // Push team names to Supabase so mobile can display them.
+        // rank/record are no longer included — mobile polls TBA statuses directly.
+        // data: {} is required — the column is NOT NULL and merge_team_data_batch expects it.
         let team_records: Vec<serde_json::Value> = teams
             .into_iter()
             .map(|team| {
@@ -1691,15 +1680,7 @@ impl SyncService {
                     "event": self.current_event,
                     "team": team.key,
                     "team_name": team.name,
-                    "data": json!({
-                        "rank": team.rank,
-                        "record": {
-                            "wins": team.record.wins,
-                            "losses": team.record.losses,
-                            "ties": team.record.ties,
-                        },
-                        "team_number": team.team,
-                    }),
+                    "data": {},
                 })
             })
             .collect();

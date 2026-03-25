@@ -95,6 +95,7 @@ export function ShiftsPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const hasScrolled = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const prevEventRef = useRef<string | null>(null);
 
   useEffect(() => {
     requestNotificationPermission();
@@ -111,9 +112,21 @@ export function ShiftsPage() {
   // DB fetch — only re-run when event/user/schedule changes
   useEffect(() => {
     if (!currentEvent) {
+      setRawShifts([]);
       setInitialLoading(false);
+      prevEventRef.current = null;
       return;
     }
+
+    // Clear stale data immediately when the event changes so the old event's
+    // shifts don't stay visible while the async fetch is in flight.
+    if (prevEventRef.current !== currentEvent) {
+      setRawShifts([]);
+      setInitialLoading(true);
+      hasScrolled.current = false;
+      prevEventRef.current = currentEvent;
+    }
+
     const byUid = !!userData.uid;
     getUserEventScheduleAssignments(
       currentEvent,

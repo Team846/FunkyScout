@@ -12,8 +12,8 @@ import { useTeamData } from "@lib/context/TeamDataContext";
 import { useCompetition } from "@lib/context/CompetitionDataContext";
 import { useSync } from "@lib/context/SyncContext";
 import { calculateAllTeamStats } from "@lib/data/matchStats";
-import { getEventMatchData, getEventTeamData } from "@lib/db";
-import type { EventMatchData, EventTeamData } from "@lib/db";
+import { getEventMatchData } from "@lib/db";
+import type { EventMatchData } from "@lib/db";
 
 interface TeamStats {
   teamKey: string;
@@ -71,7 +71,6 @@ export function DataPage() {
   const { registerRefreshCallback } = useSync();
 
   const [matchScoutingData, setMatchScoutingData] = useState<EventMatchData[]>([]);
-  const [teamData, setTeamData] = useState<EventTeamData[]>([]);
   const [nextMatch, setNextMatch] = useState<NextMatchData | null>(null);
   const [initialMatchLoading, setInitialMatchLoading] = useState(true);
   const [sortField, setSortField] = useState<SortField>(
@@ -88,13 +87,9 @@ export function DataPage() {
   const loadData = useCallback(() => {
     if (!currentEvent) return;
 
-    Promise.all([
-      getEventMatchData(currentEvent),
-      getEventTeamData(currentEvent),
-    ])
-      .then(([matchData, teamDataResults]) => {
+    getEventMatchData(currentEvent)
+      .then((matchData) => {
         setMatchScoutingData(matchData.filter((d) => !d.deleted_at));
-        setTeamData(teamDataResults.filter((d) => !d.deleted_at));
       })
       .catch((error) => {
         console.error("Failed to load data:", error);
@@ -117,8 +112,8 @@ export function DataPage() {
     // Combine with TBA data (EPA/OPR) and ranking
     return teams.map((team) => {
       const stats = statsMap[team.key];
-      const teamDataEntry = teamData.find((t) => t.team === team.key);
-      const epaValue = teamDataEntry?.data?.epa?.total_points?.mean ?? null;
+      const tbaTeamEntry = tbaTeams.find((t) => t.key === team.key);
+      const epaValue = tbaTeamEntry?.epa?.total_points?.mean ?? null;
 
       return {
         teamKey: team.key,
@@ -136,7 +131,7 @@ export function DataPage() {
         matchCount: stats?.matchCount || 0,
       };
     });
-  }, [teams, teamData, matchScoutingData]);
+  }, [teams, tbaTeams, matchScoutingData]);
 
   // Sort teams
   const sortedTeams = useMemo(() => {

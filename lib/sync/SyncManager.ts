@@ -267,10 +267,11 @@ export class SyncManager {
       .maybeSingle();
 
     if (fetchError) {
-      // Bail out — pushing without the merge would wipe TBA stats (rank, EPA, OPR) already
-      // in Supabase. The queue item will retry when the fetch succeeds.
+      // Bail out — pushing without the fetch-merge would overwrite existing pit scouting
+      // data with only the current submission's fields (losing any previously scouted fields
+      // not present in this submission). The queue item will retry when the fetch succeeds.
       // maybeSingle() returns null data (not an error) for 0 rows, so this is a real error.
-      console.error("[Sync] Fetch failed before team data merge — aborting to preserve TBA stats:", fetchError);
+      console.error("[Sync] Fetch failed before team data merge — aborting to preserve existing pit scouting:", fetchError);
       throw fetchError;
     }
 
@@ -289,14 +290,14 @@ export class SyncManager {
       }
     }
 
-    // 3. Merge pit data with existing TBA stats
+    // 3. Merge new pit scouting fields on top of any existing pit scouting data.
+    //    existing.data may contain previously submitted pit fields from another scout
+    //    or a partial re-submission — preserve anything not present in the new payload.
     let mergedData = data;
     if (existing && existing.data) {
-      // Keep existing TBA stats (rank, record, epa, opr, etc.)
-      // Overwrite with new pit scouting data
       mergedData = {
-        ...existing.data, // Preserve TBA stats
-        ...data,          // Overwrite with pit data
+        ...existing.data, // Preserve existing pit scouting fields
+        ...data,          // New submission wins on any key it includes
       };
     }
 

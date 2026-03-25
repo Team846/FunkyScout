@@ -25,3 +25,28 @@ export async function fetchEventTeamYears(event: string): Promise<any[]> {
     return [];
   }
 }
+
+/**
+ * Fetch EPA for all teams at a specific event directly from Statbotics.
+ * Returns a map of "frcXXXX" -> EPA object.
+ */
+export async function fetchStatboticsEventTeams(
+  event: string
+): Promise<Record<string, { total_points?: { mean?: number; sd?: number }; auto?: { mean?: number; sd?: number }; teleop?: { mean?: number; sd?: number }; endgame?: { mean?: number; sd?: number }; norm?: number } | null>> {
+  try {
+    const data: any[] = await fetchStatboticsData(
+      `/team_events?event=${event}&limit=100`
+    );
+    if (!data || !Array.isArray(data)) return {};
+    const result: Record<string, any> = {};
+    for (const entry of data) {
+      if (entry.team != null) {
+        result[`frc${entry.team}`] = entry.epa ?? null;
+      }
+    }
+    return result;
+  } catch (error) {
+    console.error(`[Statbotics] Failed to fetch event teams for ${event}:`, error);
+    return {};
+  }
+}

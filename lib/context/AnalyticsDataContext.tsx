@@ -92,7 +92,7 @@ export function AnalyticsDataProvider({ children }: { children: ReactNode }) {
     }
 
     // 2. Network refresh — Statbotics blocks browser CORS; only fetch from Tauri (desktop).
-    // Mobile gets EPA/predictions from Supabase (desktop pushes them to event_team_data + event_schedule).
+    // Mobile polls EPA directly from Statbotics and TBA via TeamDataContext (not from Supabase).
     const isTauri = "__TAURI_INTERNALS__" in window || "__TAURI__" in window;
     if (isOnline && teams.length > 0 && isTauri) {
       console.log("[AnalyticsData] Fetching from Statbotics");
