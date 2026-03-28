@@ -10,12 +10,11 @@ import { getMatchLabel } from "@lib/utils/match";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
 import type { MatchDataRaw, MatchAction } from "@lib/config/match-action-schemas/actions.types";
 import { Activity, Maximize2, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { fetchTBAData } from "@lib/tba/fetch";
 import React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@shadcn/ui/components/tooltip.tsx";
-import { fetchEventVideo } from "@lib/tba/video";
 import { calculateSingleMatchStats, calculateTeamStats } from "@lib/data/matchStats";
 import type { TbaClimbEntry } from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
@@ -514,10 +513,8 @@ function MatchPlaybackView({
   const [matchRP, setMatchRP] = useState<{ red: number | null; blue: number | null }>({ red: null, blue: null });
   useEffect(() => {
     setMatchRP({ red: null, blue: null });
-    fetchTBAData(`/match/${tbaMatchKey}`, "GET").then((data: any) => {
-      const red = data?.score_breakdown?.red?.rp ?? null;
-      const blue = data?.score_breakdown?.blue?.rp ?? null;
-      if (red !== null || blue !== null) setMatchRP({ red, blue });
+    invoke<{ red: number | null; blue: number | null }>("fetch_match_rp", { matchKey: tbaMatchKey }).then((data) => {
+      if (data.red !== null || data.blue !== null) setMatchRP({ red: data.red, blue: data.blue });
     }).catch(() => {});
   }, [tbaMatchKey]);
 
@@ -1658,9 +1655,9 @@ function MatchesPage() {
 
   useEffect(() => {
     if (!currentEvent) return;
-    fetchEventVideo(currentEvent).then((data) => {
-      setVideoCache(data && typeof data === "object" ? data : null);
-    });
+    invoke("fetch_event_videos", { event: currentEvent }).then((data) => {
+      setVideoCache(data && typeof data === "object" ? data as any : null);
+    }).catch(() => {});
   }, [currentEvent]);
 
   const handleSelectMatch = (key: string) => {

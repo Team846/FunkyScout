@@ -45,13 +45,16 @@ pub fn run() {
             // block_in_place moves the current task off this thread so block_on can safely
             // run without deadlocking the tokio runtime that Tauri already started.
             tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(async {
-                // Create sync trigger channel (for instant sync on writes)
+                // Create sync trigger channel (for instant full sync on writes)
                 let (sync_tx, sync_rx) = tokio::sync::mpsc::channel::<()>(100);
+                // Create per-table sync trigger channel (for targeted incremental sync from realtime)
+                let (table_sync_tx, table_sync_rx) = tokio::sync::mpsc::channel::<String>(100);
 
                 let mut state = AppState::new(&handle).await.expect("Failed to initialize AppState");
 
-                // Store sync trigger in AppState for Tauri commands
+                // Store triggers in AppState for Tauri commands
                 state.sync_trigger = Some(sync_tx);
+                state.table_sync_trigger = Some(table_sync_tx);
 
                 // Read config from store, fallback to env vars
                 let (tba_key, supabase_url, supabase_key, event_key, sqlx_pool) = {
@@ -123,7 +126,7 @@ pub fn run() {
                     println!("[App] Starting background sync service with instant trigger...");
                     // Spawn sync service in background (don't await - it's an infinite loop!)
                     tauri::async_runtime::spawn(async move {
-                        sync_service.start_background_sync(sync_rx).await;
+                        sync_service.start_background_sync(sync_rx, table_sync_rx).await;
                     });
                 } else {
                     println!("[App] Sync service not started - configure API keys");
@@ -139,6 +142,9 @@ pub fn run() {
             commands::tba::fetch_tba_event_teams,
             commands::tba::fetch_tba_team_statuses,
             commands::tba::fetch_tba_match_schedule,
+            commands::tba::fetch_team_stats,
+            commands::tba::fetch_match_rp,
+            commands::tba::fetch_event_videos,
             commands::tba::bootstrap_event_schedule,
             commands::tba::bootstrap_from_csv,
             commands::config::save_config,
@@ -164,6 +170,7 @@ pub fn run() {
             commands::sync_queue::clear_failed_sync_queue,
             commands::sync_queue::retry_failed_sync_queue,
             commands::sync_queue::trigger_sync_now,
+            commands::sync_queue::sync_table_now,
             commands::image_cache::cache_image,
             commands::image_cache::get_cached_image,
         ])
@@ -178,6 +185,8 @@ pub struct AppState {
     pub tba_service: TbaService,
     pub supabase_service: SupabaseService,
     pub sync_trigger: Option<tokio::sync::mpsc::Sender<()>>,
+    /// Sends a table name to the sync loop for targeted incremental pulls (realtime events)
+    pub table_sync_trigger: Option<tokio::sync::mpsc::Sender<String>>,
     /// Shared with SupabaseService — updated when user logs in via set_user_jwt command
     pub user_jwt_shared: Arc<RwLock<Option<String>>>,
     /// Shared with SyncService — updated by save_config when user changes events
@@ -247,7 +256,8 @@ impl AppState {
             app_handle: app_handle.clone(),
             tba_service,
             supabase_service,
-            sync_trigger: None, // Set later when channel is created
+            sync_trigger: None,       // Set later when channel is created
+            table_sync_trigger: None, // Set later when channel is created
             user_jwt_shared,
             current_event_shared,
         })

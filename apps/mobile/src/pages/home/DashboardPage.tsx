@@ -150,7 +150,7 @@ export function DashboardPage() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
-  const OUR_TEAM = 4415;
+  const OUR_TEAM = 846;
 
   // DEV TEST: Set to true to test future match UI with mock data
   const DEV_TEST_FUTURE = false;

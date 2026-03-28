@@ -66,9 +66,13 @@ impl SyncService {
         }
     }
 
-    /// Start background sync loop (120s interval + instant trigger)
-    /// Syncs every 120s OR immediately when triggered
-    pub async fn start_background_sync(mut self, mut trigger_rx: tokio::sync::mpsc::Receiver<()>) {
+    /// Start background sync loop (120s interval + instant full trigger + per-table trigger)
+    /// Full sync every 120s OR immediately when triggered. Per-table sync for realtime events.
+    pub async fn start_background_sync(
+        mut self,
+        mut trigger_rx: tokio::sync::mpsc::Receiver<()>,
+        mut table_trigger_rx: tokio::sync::mpsc::Receiver<String>,
+    ) {
         let mut ticker = interval(Duration::from_secs(120));
 
         loop {
@@ -90,7 +94,7 @@ impl SyncService {
                     }
                 }
 
-                // Instant sync when triggered by write operations
+                // Instant full sync when triggered by write operations
                 Some(_) = trigger_rx.recv() => {
                     // Drain any burst triggers that arrived before sync starts
                     while trigger_rx.try_recv().is_ok() {}
@@ -105,8 +109,83 @@ impl SyncService {
                     // redundant second sync cycle; data was just fully refreshed.
                     while trigger_rx.try_recv().is_ok() {}
                 }
+
+                // Per-table incremental sync triggered by realtime events (avoids full sync)
+                Some(table) = table_trigger_rx.recv() => {
+                    // Drain duplicates for the same table that arrived during debounce
+                    while table_trigger_rx.try_recv().is_ok() {}
+                    let ev = self.current_event_shared.read().unwrap().clone();
+                    if !ev.is_empty() { self.current_event = ev.clone(); }
+                    println!("[Sync] Per-table sync triggered for: {}", table);
+                    if let Err(e) = self.sync_table_only(&table).await {
+                        eprintln!("[Sync] Error during per-table sync ({}): {}", table, e);
+                    }
+                }
             }
         }
+    }
+
+    /// Incrementally sync a single table from Supabase — used by realtime event handlers
+    /// so they don't trigger a wasteful full sync cycle (TBA, schedule, user_profiles, etc.)
+    /// Always uses last_sync_time - 1min buffer, same as sync_once().
+    async fn sync_table_only(&self, table: &str) -> Result<()> {
+        let since_iso: Option<String> = {
+            let guard = self.last_sync_time.lock().unwrap();
+            guard.as_ref().map(|dt| {
+                (*dt - chrono::Duration::minutes(1)).to_rfc3339()
+            })
+        };
+
+        match table {
+            "event_match_data" => {
+                let since = if self.sqlite_has_rows("event_match_data", &self.current_event).await {
+                    since_iso.as_deref()
+                } else {
+                    None
+                };
+                match self.supabase.fetch_event_match_data(&self.current_event, since).await {
+                    Ok(data) if !data.is_empty() => {
+                        println!("[Sync] event_match_data (table-only): {} rows", data.len());
+                        self.cache_match_data_to_sqlite(&data).await?;
+                    }
+                    Ok(_) => println!("[Sync] event_match_data (table-only): no new rows"),
+                    Err(e) => eprintln!("[Sync] event_match_data table-only fetch failed: {}", e),
+                }
+            }
+            "event_team_data" => {
+                let since = if self.sqlite_has_rows("event_team_data", &self.current_event).await {
+                    since_iso.as_deref()
+                } else {
+                    None
+                };
+                match self.supabase.fetch_event_team_data(&self.current_event, since).await {
+                    Ok(data) if !data.is_empty() => {
+                        println!("[Sync] event_team_data (table-only): {} rows", data.len());
+                        self.cache_teams_to_sqlite(&data).await?;
+                    }
+                    Ok(_) => println!("[Sync] event_team_data (table-only): no new rows"),
+                    Err(e) => eprintln!("[Sync] event_team_data table-only fetch failed: {}", e),
+                }
+            }
+            "event_picklist" => {
+                let since = if self.sqlite_has_rows("event_picklist", &self.current_event).await {
+                    since_iso.as_deref()
+                } else {
+                    None
+                };
+                match self.supabase.fetch_event_picklists(&self.current_event, since).await {
+                    Ok(data) if !data.is_empty() => {
+                        println!("[Sync] event_picklist (table-only): {} rows", data.len());
+                        self.cache_picklists_to_sqlite(&data).await?;
+                    }
+                    Ok(_) => println!("[Sync] event_picklist (table-only): no new rows"),
+                    Err(e) => eprintln!("[Sync] event_picklist table-only fetch failed: {}", e),
+                }
+            }
+            _ => eprintln!("[Sync] sync_table_only: unknown table '{}'", table),
+        }
+
+        Ok(())
     }
 
     /// Perform one sync cycle:
@@ -125,7 +204,7 @@ impl SyncService {
         let since_iso: Option<String> = {
             let guard = self.last_sync_time.lock().unwrap();
             guard.as_ref().map(|dt| {
-                (*dt - chrono::Duration::minutes(5)).to_rfc3339()
+                (*dt - chrono::Duration::minutes(1)).to_rfc3339()
             })
         };
         let is_first_sync = since_iso.is_none();
@@ -278,199 +357,8 @@ impl SyncService {
             self.update_schedule_snapshot(&schedule_data, schedule_since.is_none());
         }
 
-        // 6. Fetch ALL teams from TBA (not just statuses - we need all teams for EPA/OPR sync)
-        // NOTE: TBA failure is non-fatal — we skip the TBA/Statbotics push steps but
-        // ALWAYS continue to the Supabase pull steps (picklists, match data, etc.)
-        let teams = match self.tba.fetch_event_teams(&self.current_event).await {
-            Ok(data) => {
-                println!("[Sync] TBA event teams fetched: {} teams", data.len());
-                Some(data)
-            },
-            Err(e) => {
-                eprintln!("[Sync] TBA event teams fetch failed (skipping TBA push steps): {}", e);
-                None
-            }
-        };
-
-        // Steps 2–9.5: TBA push (teams, EPA, schedule, climb) — skipped if TBA unavailable.
-        // These steps are wrapped in if let Some so that Supabase PULL steps (10+) ALWAYS run
-        // even when TBA is down. Picklists, match data, etc. must sync regardless of TBA health.
-        if let Some(teams) = teams {
-            // 2. Fetch EPA from Statbotics - Try batch endpoint first, fallback to individual calls
-            // Extract year from event code (e.g., "2025flor" -> "2025")
-            let event_year = self.current_event.chars().take(4).collect::<String>();
-
-            println!("[Sync] Fetching EPA for {} teams at event {}...", teams.len(), self.current_event);
-            println!("[Sync] Attempting batch EPA fetch (1 API call)...");
-
-            // Build set of team numbers at this event for filtering
-            let event_team_nums: std::collections::HashSet<i32> = teams.iter()
-                .map(|t| t.team)
-                .collect();
-
-            // Step 1: Try event-specific endpoint (1 call, pre-event EPA, most accurate).
-            // Step 2: If event not indexed (returns 0 results), fall back to year-level batch
-            //         filtered to event teams (slower but covers off-season/unregistered events).
-            let mut epa_data: Vec<(i32, serde_json::Value)> = Vec::new();
-
-            let event_specific_result = self.statbotics.fetch_event_team_events(&self.current_event).await;
-            match event_specific_result {
-                Ok(team_events) if !team_events.is_empty() => {
-                    println!("[Sync] ✓ Event-specific EPA: {} teams from /team_events", team_events.len());
-                    epa_data = team_events
-                        .into_iter()
-                        .filter_map(|data| {
-                            let team_num = data.get("team").and_then(|t| t.as_i64()).map(|t| t as i32)?;
-                            Some((team_num, data))
-                        })
-                        .collect();
-                },
-                Ok(_) => {
-                    // Empty = event not indexed in Statbotics — fall back to year-level batch
-                    println!("[Sync] Event not indexed in Statbotics, falling back to year-level batch...");
-                    match self.statbotics.fetch_event_team_years(&self.current_event, &event_year).await {
-                        Ok(team_years) => {
-                            println!("[Sync] ✓ Fetched {} total team EPAs for year {}", team_years.len(), event_year);
-                            epa_data = team_years
-                                .into_iter()
-                                .filter_map(|data| {
-                                    let team_num = data.get("team").and_then(|t| t.as_i64()).map(|t| t as i32)?;
-                                    if event_team_nums.contains(&team_num) {
-                                        Some((team_num, data))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                            println!("[Sync] ✓ Matched {}/{} event teams with year-level EPA", epa_data.len(), teams.len());
-                        },
-                        Err(e) => {
-                            eprintln!("[Sync] ✗ Statbotics year-level EPA unavailable, skipping: {}", e);
-                        }
-                    }
-                },
-                Err(e) => {
-                    // API unavailable — skip EPA this cycle, next sync will retry
-                    eprintln!("[Sync] ✗ Statbotics EPA unavailable, skipping this cycle: {}", e);
-                }
-            }
-
-            println!("[Sync] Final EPA data: {}/{} teams", epa_data.len(), teams.len());
-
-            // 3. Fetch OPR/DPR from TBA (graceful fallback on error)
-            let oprs = match self.tba.fetch_oprs(&self.current_event).await {
-                Ok(data) => {
-                    let opr_count = data.get("oprs").and_then(|o| o.as_object()).map(|o| o.len()).unwrap_or(0);
-                    println!("[Sync] OPR data fetched: {} teams", opr_count);
-                    data
-                },
-                Err(e) => {
-                    eprintln!("[Sync] OPR fetch failed: {}", e);
-                    json!({})
-                }
-            };
-
-            // 4. Build EPA lookup map (team_key -> EPA data)
-            let epa_map: HashMap<String, &serde_json::Value> = epa_data
-                .iter()
-                .map(|(team_num, data)| {
-                    let team_key = format!("frc{}", team_num);
-                    (team_key, data)
-                })
-                .collect();
-
-            println!("[Sync] EPA map built with {} teams (out of {} total teams)", epa_map.len(), teams.len());
-
-            // Log teams missing EPA data
-            if epa_map.len() < teams.len() {
-                let missing_count = teams.len() - epa_map.len();
-                println!("[Sync] {} teams missing EPA data (no {} data yet or Statbotics unavailable)", missing_count, event_year);
-            }
-
-            // 5. Transform TBA teams + EPA + OPR to comprehensive Supabase format
-            // Include ALL teams at the event (not just teams with status)
-            let team_data_records: Vec<serde_json::Value> = teams
-                .into_iter()
-                .map(|team| {
-                    let team_key = team.key.clone();
-                    let team_name = team.name.clone();
-
-                    // Use TeamRank fields directly (already parsed from TBA)
-                    let rank = team.rank as i64;
-                    let wins = team.record.wins as i64;
-                    let losses = team.record.losses as i64;
-                    let ties = team.record.ties as i64;
-                    let next_match = team.next_match;
-                    let last_match = team.last_match;
-
-                    // Build EPA object from Statbotics (if available)
-                    let epa_json = if let Some(epa) = epa_map.get(&team_key) {
-                        json!({
-                            "total_points": {
-                                "mean": epa.get("epa").and_then(|e| e.get("total_points").and_then(|t| t.get("mean"))),
-                                "sd": epa.get("epa").and_then(|e| e.get("total_points").and_then(|t| t.get("sd"))),
-                            },
-                            "auto": {
-                                "mean": epa.get("epa").and_then(|e| e.get("auto").and_then(|a| a.get("mean"))),
-                                "sd": epa.get("epa").and_then(|e| e.get("auto").and_then(|a| a.get("sd"))),
-                            },
-                            "teleop": {
-                                "mean": epa.get("epa").and_then(|e| e.get("teleop").and_then(|t| t.get("mean"))),
-                                "sd": epa.get("epa").and_then(|e| e.get("teleop").and_then(|t| t.get("sd"))),
-                            },
-                            "endgame": {
-                                "mean": epa.get("epa").and_then(|e| e.get("endgame").and_then(|eg| eg.get("mean"))),
-                                "sd": epa.get("epa").and_then(|e| e.get("endgame").and_then(|eg| eg.get("sd"))),
-                            },
-                            "norm": epa.get("epa").and_then(|e| e.get("norm")),
-                        })
-                    } else {
-                        json!(null)
-                    };
-
-                    // Extract OPR/DPR (OPR keys are in "frc10017" format, not "10017")
-                    let opr = oprs.get("oprs").and_then(|o| o.get(team_key.as_str())).and_then(|v| v.as_f64());
-                    let dpr = oprs.get("dprs").and_then(|d| d.get(team_key.as_str())).and_then(|v| v.as_f64());
-                    let ccwm = oprs.get("ccwms").and_then(|c| c.get(team_key.as_str())).and_then(|v| v.as_f64());
-
-                    // Build comprehensive data JSON with ranking + EPA + OPR
-                    let data = json!({
-                        "rank": rank,
-                        "record": {
-                            "wins": wins,
-                            "losses": losses,
-                            "ties": ties,
-                        },
-                        "next_match": next_match,
-                        "last_match": last_match,
-                        "epa": epa_json,
-                        "opr": opr,
-                        "dpr": dpr,
-                        "ccwm": ccwm,
-                    });
-
-                    json!({
-                        "event": self.current_event,
-                        "team": team_key,
-                        "team_name": team_name,
-                        "data": data,
-                    })
-                })
-                .collect();
-
-            if !team_data_records.is_empty() {
-                // Cache ALL to local SQLite (for desktop UI — rank, EPA, OPR, etc.).
-                // No longer pushed to Supabase: mobile polls TBA/Statbotics directly.
-                self.cache_teams_to_sqlite(&team_data_records)
-                    .await
-                    .context("Failed to cache team data to SQLite")?;
-
-                println!("[Sync] Cached {} teams to local SQLite (not pushed to Supabase — mobile polls directly)",
-                    team_data_records.len());
-            }
-
-            // 6. Fetch match schedule from TBA and push
-            match self.tba.fetch_match_schedule(&self.current_event).await {
+        // 6. Fetch match schedule from TBA and push
+        match self.tba.fetch_match_schedule(&self.current_event).await {
                 Ok(schedule) => {
                     // 7. Fetch Statbotics match predictions (graceful fallback on error)
                     let predictions = match self.statbotics.fetch_event_matches(&self.current_event).await {
@@ -626,22 +514,21 @@ impl SyncService {
                 }
             }
 
-            // 9.5. Fetch TBA score breakdowns to extract climb data (desktop-only, not synced to Supabase)
-            match self.tba.fetch_match_breakdowns(&self.current_event).await {
-                Ok(climb_entries) => {
-                    if !climb_entries.is_empty() {
-                        println!("[Sync] TBA climb data fetched: {} entries", climb_entries.len());
-                        self.cache_climb_to_sqlite(&climb_entries)
-                            .await
-                            .unwrap_or_else(|e| eprintln!("[Sync] Failed to cache TBA climb data: {}", e));
-                    }
-                }
-                Err(e) => {
-                    // Non-fatal: score breakdowns may not be available yet
-                    eprintln!("[Sync] TBA climb breakdown fetch skipped: {}", e);
+        // 9.5. Fetch TBA score breakdowns to extract climb data (desktop-only, not synced to Supabase)
+        match self.tba.fetch_match_breakdowns(&self.current_event).await {
+            Ok(climb_entries) => {
+                if !climb_entries.is_empty() {
+                    println!("[Sync] TBA climb data fetched: {} entries", climb_entries.len());
+                    self.cache_climb_to_sqlite(&climb_entries)
+                        .await
+                        .unwrap_or_else(|e| eprintln!("[Sync] Failed to cache TBA climb data: {}", e));
                 }
             }
-        } // end if let Some(teams)
+            Err(e) => {
+                // Non-fatal: score breakdowns may not be available yet
+                eprintln!("[Sync] TBA climb breakdown fetch skipped: {}", e);
+            }
+        }
 
         // Only advance last_sync_time if:
         // - We're already in incremental mode (not the first sync), OR
@@ -736,17 +623,9 @@ impl SyncService {
         .await
         .context("Failed to ensure event exists in event_list")?;
 
-        // Bulk insert/update team data.
-        // On conflict: merge incoming data on top of existing instead of replacing,
-        // so user fields (priority, pit scouting) are preserved when TBA-only data
-        // is written by the sync cycle. SQLite's json_patch follows RFC 7396 merge,
-        // where keys in the patch overlay the existing value.
-        // We strip null values from the patch first so TBA fields that are temporarily
-        // null (epa, opr) don't erase previously cached values.
         for record in team_records {
             let team = record.get("team").and_then(|v| v.as_str()).unwrap_or("");
             let team_name = record.get("team_name").and_then(|v| v.as_str());
-            // Pit scouting / assignment fields — null if not yet scouted/assigned
             let name = record.get("name").and_then(|v| v.as_str());
             let uid = record.get("uid").and_then(|v| v.as_str());
             let assigned = record.get("assigned").and_then(|v| v.as_str());
@@ -757,7 +636,8 @@ impl SyncService {
                     .or_else(|| v.as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())))
             });
 
-            // Strip null values from incoming data so json_patch doesn't erase existing keys
+            // Strip null values from incoming data (pit scouting only) so json_patch
+            // doesn't erase existing pit fields.
             let data_json = match record.get("data").and_then(|v| v.as_object()) {
                 Some(obj) => {
                     let non_null: serde_json::Map<String, serde_json::Value> = obj
@@ -771,7 +651,8 @@ impl SyncService {
             };
 
             sqlx::query(
-                "INSERT INTO event_team_data (event, team, team_name, data, name, uid, assigned, timestamp, last_modified, deleted_at)
+                "INSERT INTO event_team_data
+                   (event, team, team_name, data, name, uid, assigned, timestamp, last_modified, deleted_at)
                  VALUES (?, ?, ?, json(?), ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(event, team) DO UPDATE SET
                    team_name = excluded.team_name,

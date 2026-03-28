@@ -38,20 +38,7 @@ export interface EventTeamData {
   event: string;
   team: string;
   team_name?: string;
-  data?: {
-    rank?: number;
-    record?: {
-      wins: number;
-      losses: number;
-      ties: number;
-    };
-    last_match?: string;
-    next_match?: string;
-    epa?: number;
-    opr?: number;
-    dpr?: number;
-    ccwm?: number;
-  };
+  data?: Record<string, unknown>; // pit scouting fields only
   last_modified: number;
 }
 

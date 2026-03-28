@@ -94,7 +94,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const matchScoresPolling = useRef<PollingController | null>(null);
 
   // Refs for stable access in refresh callback
-  const fetchScheduleRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchScheduleRef = useRef<((skipTba?: boolean) => Promise<void>) | null>(null);
   const fetchNexusRef = useRef<(() => Promise<void>) | null>(null);
   const fetchPicklistsRef = useRef<(() => Promise<void>) | null>(null);
   const fetchMatchDataRef = useRef<(() => Promise<void>) | null>(null);
@@ -110,7 +110,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     predictedBlueScore: number | null;
   }>>({});
 
-  const fetchSchedule = useCallback(async () => {
+  const fetchSchedule = useCallback(async (skipTba = false) => {
     if (!currentEvent || !dbInitialized) return;
 
     // Check if we should skip cache this time (only on event change when online)
@@ -211,7 +211,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       try {
         const [supabaseSchedule, tbaData] = await Promise.all([
           getSchedule(currentEvent),
-          fetchTBAMatchSchedule(currentEvent),
+          // Skip TBA when triggered by realtime (shift assignment change) — match
+          // timing doesn't change when a scouter is assigned. Normal poll cycle fetches TBA.
+          skipTba ? Promise.resolve(null) : fetchTBAMatchSchedule(currentEvent),
         ]);
 
         console.log(
@@ -658,7 +660,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
               `[Competition] Realtime: Batched ${updateCount} schedule updates`
             );
             updateCount = 0;
-            fetchScheduleRef.current?.();
+            // skipTba=true: realtime fires on shift assignment changes, not match
+            // timing changes — no need to re-fetch TBA on every admin edit.
+            fetchScheduleRef.current?.(true);
           }, 2000);
         }
       )

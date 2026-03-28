@@ -13,10 +13,10 @@ import { useDesktopRealtime } from "./DesktopRealtimeContext";
 import {
   getTeams as getSQLiteTeams,
   getPitScoutingData,
-  type EventTeamData,
   type PitScoutingData,
 } from "../lib/db";
 import { setDesktopTeamRefresh } from "@lib/data/writes";
+import { invoke } from "@tauri-apps/api/core";
 
 export type { PitScoutingData };
 
@@ -44,7 +44,16 @@ export interface TBATeam {
   } | null;
   opr?: number;
   dpr?: number;
-  ccwm?: number;
+}
+
+interface TeamStatsEntry {
+  rank: number;
+  record: { wins: number; losses: number; ties: number };
+  nextMatch: string | null;
+  lastMatch: string | null;
+  epa: TBATeam["epa"] | null;
+  opr?: number;
+  dpr?: number;
 }
 
 interface DesktopTeamDataContextType {
@@ -65,7 +74,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   const { registerRefreshCallback } = useDesktopRealtime();
 
   const [teams, setTeams] = useState<Team[]>([]);
-  const [tbaTeams, setTbaTeams] = useState<TBATeam[]>([]);
+  const [teamStatsData, setTeamStatsData] = useState<Record<string, TeamStatsEntry>>({});
   const [pitScoutingData, setPitScoutingData] = useState<PitScoutingData[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastDataRefreshAt, setLastDataRefreshAt] = useState(0);
@@ -74,79 +83,58 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   const fetchTeamsRef = useRef<(() => Promise<void>) | null>(null);
 
   /**
-   * Read team data from local SQLite cache.
-   * Rust sync service (120s, incremental) is the sole Supabase reader —
-   * the frontend never calls Supabase directly for team data.
-   *
-   * Shows whatever SQLite has immediately (offline-safe). Rust sync updates
-   * SQLite in the background; subsequent polls pick up fresh data silently.
+   * Read team data from local SQLite cache and fetch live stats from TBA/Statbotics.
+   * SQLite (via Rust sync) provides pit scouting data and team names.
+   * TBA/Statbotics provide rank, record, EPA, OPR in memory — never stored locally.
    */
   const fetchTeams = useCallback(async () => {
     if (!currentEvent) return;
 
     try {
-      const [cached, pitData] = await Promise.all([
-        getSQLiteTeams(currentEvent),
-        getPitScoutingData(currentEvent),
+      const [[cached, pitData], statsMap] = await Promise.all([
+        Promise.all([
+          getSQLiteTeams(currentEvent),
+          getPitScoutingData(currentEvent),
+        ]),
+        invoke<Record<string, TeamStatsEntry>>("fetch_team_stats", { event: currentEvent })
+          .catch((e) => {
+            console.warn("[DesktopTeamData] fetch_team_stats failed:", e);
+            return {} as Record<string, TeamStatsEntry>;
+          }),
       ]);
+
       if (cached.length > 0) {
-        processTeamData(cached);
+        const sortedTeams = [...cached].sort((a, b) => {
+          const aNum = parseInt(a.team.replace("frc", ""), 10);
+          const bNum = parseInt(b.team.replace("frc", ""), 10);
+          return aNum - bNum;
+        });
+        setTeams(
+          sortedTeams.map((t) => {
+            const teamNumber = parseInt(t.team.replace("frc", ""), 10);
+            return {
+              key: t.team,
+              num: teamNumber,
+              name: t.team_name || `Team ${teamNumber}`,
+              rank: 0,
+            };
+          })
+        );
         hasLoadedDataRef.current = true;
       }
+
       setPitScoutingData(pitData);
+
+      if (Object.keys(statsMap).length > 0) {
+        setTeamStatsData(statsMap);
+      }
     } catch (error) {
-      console.error("[DesktopTeamData] Failed to read from SQLite:", error);
+      console.error("[DesktopTeamData] Failed to fetch team data:", error);
     } finally {
       setLoading(false);
       setLastDataRefreshAt(Date.now());
     }
   }, [currentEvent]);
-
-  /**
-   * Process team data from SQLite into display format
-   */
-  const processTeamData = (teamData: EventTeamData[]) => {
-    const sortedTeams = [...teamData].sort((a, b) => {
-      const aNum = parseInt(a.team.replace("frc", ""), 10);
-      const bNum = parseInt(b.team.replace("frc", ""), 10);
-      return aNum - bNum;
-    });
-
-    setTeams(
-      sortedTeams.map((t) => {
-        const teamNumber = parseInt(t.team.replace("frc", ""), 10);
-        return {
-          key: t.team,
-          num: teamNumber,
-          name: t.team_name || `Team ${teamNumber}`,
-          rank: t.data?.rank ?? 0,
-        };
-      })
-    );
-
-    setTbaTeams(
-      sortedTeams.map((t) => {
-        const teamNumber = parseInt(t.team.replace("frc", ""), 10);
-        return {
-          key: t.team,
-          team: teamNumber,
-          name: t.team_name || `Team ${teamNumber}`,
-          rank: t.data?.rank ?? 0,
-          record: {
-            wins: t.data?.record?.wins ?? 0,
-            losses: t.data?.record?.losses ?? 0,
-            ties: t.data?.record?.ties ?? 0,
-          },
-          nextMatch: t.data?.next_match || null,
-          lastMatch: t.data?.last_match || null,
-          epa: (typeof t.data?.epa === "object" ? t.data?.epa : null) ?? null,
-          opr: t.data?.opr ?? undefined,
-          dpr: t.data?.dpr ?? undefined,
-          ccwm: t.data?.ccwm ?? undefined,
-        };
-      })
-    );
-  };
 
   // Keep ref in sync
   useEffect(() => {
@@ -157,7 +145,7 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentEvent) {
       setTeams([]);
-      setTbaTeams([]);
+      setTeamStatsData({});
       setPitScoutingData([]);
       hasLoadedDataRef.current = false;
       return;
@@ -230,6 +218,24 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
       await fetchTeamsRef.current();
     }
   }, []);
+
+  // Derive tbaTeams by merging base team list with live TBA/Statbotics stats
+  const tbaTeams = useMemo<TBATeam[]>(
+    () =>
+      teams.map((t) => ({
+        key: t.key,
+        team: t.num,
+        name: t.name,
+        rank: teamStatsData[t.key]?.rank ?? 0,
+        record: teamStatsData[t.key]?.record ?? { wins: 0, losses: 0, ties: 0 },
+        nextMatch: teamStatsData[t.key]?.nextMatch ?? null,
+        lastMatch: teamStatsData[t.key]?.lastMatch ?? null,
+        epa: teamStatsData[t.key]?.epa ?? null,
+        opr: teamStatsData[t.key]?.opr,
+        dpr: teamStatsData[t.key]?.dpr,
+      })),
+    [teams, teamStatsData]
+  );
 
   const contextValue = useMemo(
     () => ({ teams, tbaTeams, pitScoutingData, loading, lastDataRefreshAt, refresh }),

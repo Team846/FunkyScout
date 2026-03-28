@@ -142,7 +142,7 @@ pub async fn retry_failed_sync_queue(
     Ok(result.rows_affected())
 }
 
-/// Trigger instant sync (called by frontend after write operations)
+/// Trigger instant full sync (called by frontend after write operations)
 /// Non-blocking - sends signal to sync service to run sync_once() immediately
 #[tauri::command]
 pub async fn trigger_sync_now(
@@ -160,6 +160,28 @@ pub async fn trigger_sync_now(
         Ok(())
     } else {
         Err("Sync trigger not initialized".to_string())
+    }
+}
+
+/// Trigger incremental sync for a single table (called by realtime event handlers).
+/// Avoids a full sync cycle — only pulls the changed table, saves egress.
+/// Valid tables: "event_match_data", "event_team_data", "event_picklist"
+#[tauri::command]
+pub async fn sync_table_now(
+    state: State<'_, Mutex<AppState>>,
+    table: String,
+) -> Result<(), String> {
+    let app_state = state.lock().unwrap();
+
+    if let Some(table_sync_trigger) = &app_state.table_sync_trigger {
+        if let Err(e) = table_sync_trigger.try_send(table.clone()) {
+            eprintln!("[SyncTrigger] Failed to send table sync signal for {}: {}", table, e);
+            return Err(format!("Failed to trigger table sync: {}", e));
+        }
+        println!("[SyncTrigger] Per-table sync triggered for: {}", table);
+        Ok(())
+    } else {
+        Err("Table sync trigger not initialized".to_string())
     }
 }
 

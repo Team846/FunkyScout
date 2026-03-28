@@ -6,7 +6,7 @@ mod m20260210_sync_queue;
 mod m20260215_fix_user_roles;
 mod m20260219_add_tba_climb;
 mod m20260220_collapse_picklist_entries;
-
+mod m20260327_add_team_rankings;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -19,6 +19,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260215_fix_user_roles::Migration),
             Box::new(m20260219_add_tba_climb::Migration),
             Box::new(m20260220_collapse_picklist_entries::Migration),
+            Box::new(m20260327_add_team_rankings::Migration),
         ]
     }
 }

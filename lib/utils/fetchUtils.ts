@@ -18,8 +18,8 @@ export const DEFAULT_POLLING_CONFIG: PollingConfig = {
 
 
 export const LIVE_POLLING_CONFIG: PollingConfig = {
-  baseInterval: 300_000, // 5min for both dev and prod (incremental sync reduces per-poll egress)
-  maxInterval: 600_000, // 10min max for backoff headroom
+  baseInterval: 600_000, // 10min — visibilitychange triggers immediate incremental refresh on app open
+  maxInterval: 1_200_000, // 20min max for backoff headroom
   backoffFactor: 2,
 };
 

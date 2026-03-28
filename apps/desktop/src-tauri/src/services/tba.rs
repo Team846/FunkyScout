@@ -287,6 +287,60 @@ impl TbaService {
         Ok(entries)
     }
 
+    /// Fetch ranking points for a single match from TBA
+    /// GET /match/{match_key}
+    /// Returns { red: Option<i64>, blue: Option<i64> }
+    pub async fn fetch_match_rp(&self, match_key: &str) -> Result<(Option<i64>, Option<i64>)> {
+        let data: serde_json::Value = self.fetch_json(&format!("/match/{}", match_key)).await?;
+        let red = data["score_breakdown"]["red"]["rp"].as_i64();
+        let blue = data["score_breakdown"]["blue"]["rp"].as_i64();
+        Ok((red, blue))
+    }
+
+    /// Fetch all match videos for an event from TBA
+    /// GET /event/{event_key}/matches
+    /// Returns only YouTube video keys (sanitized), keyed by match key.
+    pub async fn fetch_event_videos(
+        &self,
+        event_key: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        let matches: Vec<serde_json::Value> =
+            self.fetch_json(&format!("/event/{}/matches", event_key)).await?;
+
+        let is_valid_youtube_id = |s: &str| -> bool {
+            let len = s.len();
+            (10..=12).contains(&len)
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        };
+
+        let result = matches
+            .into_iter()
+            .filter_map(|m| {
+                let key = m["key"].as_str()?.to_string();
+                let raw_videos = m["videos"].as_array()?.clone();
+                let videos: Vec<serde_json::Value> = raw_videos
+                    .into_iter()
+                    .filter_map(|v| {
+                        let vtype = v["type"].as_str()?;
+                        if vtype.to_lowercase() != "youtube" {
+                            return None;
+                        }
+                        let vkey = v["key"].as_str()?.trim().to_string();
+                        if is_valid_youtube_id(&vkey) {
+                            Some(serde_json::json!({ "type": "youtube", "key": vkey }))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Some(serde_json::json!({ "key": key, "videos": videos }))
+            })
+            .collect();
+
+        Ok(result)
+    }
+
     /// Generic fetch with TBA API key auth
     async fn fetch_json<T: serde::de::DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
         let url = format!("{}{}", TBA_BASE_URL, endpoint);

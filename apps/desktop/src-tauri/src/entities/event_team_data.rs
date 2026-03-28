@@ -24,6 +24,12 @@ pub struct Model {
     pub last_modified: i32,
     pub deleted_at: Option<i32>,
     pub inflight: bool,
+    pub rank: Option<i32>,
+    pub wins: Option<i32>,
+    pub losses: Option<i32>,
+    pub ties: Option<i32>,
+    pub next_match: Option<String>,
+    pub last_match: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -11,6 +11,11 @@
 // Module-level map so timeouts survive re-renders
 const pendingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Tracks which shift keys have already fired a notification. Once a shift
+// notification fires (via timeout or catchup), it will never fire again —
+// even if Nexus updates the timing.
+const shownNotifications = new Set<string>();
+
 /** Call once on app load to request notification permission from the user. */
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!("Notification" in window)) return false;
@@ -54,20 +59,29 @@ export function scheduleShiftNotifications(shifts: ShiftForNotification[]) {
   for (const shift of shifts) {
     if (!shift.time) continue;
     const delay = shift.time - now - 60_000; // fire 1 min before
+    const key = `${shift.match}-${shift.teamNumber}`;
 
     // Catchup: app was backgrounded and missed the 1-min window but match hasn't
     // started yet (within 3-min grace period). Fire immediately on resume.
-    const missedWindow = delay <= 0 && shift.time > now - 3 * 60_000;
+    // Guard with shownNotifications so repeated recomputes (30s interval or
+    // Nexus timing updates) don't fire duplicate notifications.
+    const missedWindow = delay <= 0 && shift.time > now - 60_000;
     if (missedWindow) {
-      showShiftNotification(shift.matchLabel, shift.teamNumber, shift.alliance, true);
+      if (!shownNotifications.has(key)) {
+        shownNotifications.add(key);
+        showShiftNotification(shift.matchLabel, shift.teamNumber, shift.alliance);
+      }
       continue;
     }
     if (delay <= 0) continue;
 
-    const key = `${shift.match}-${shift.teamNumber}`;
+    // Only schedule if not already shown (handles Nexus pushing time back to future)
+    if (shownNotifications.has(key)) continue;
+
     const t = setTimeout(() => {
       pendingTimeouts.delete(key);
-      showShiftNotification(shift.matchLabel, shift.teamNumber, shift.alliance, false);
+      shownNotifications.add(key);
+      showShiftNotification(shift.matchLabel, shift.teamNumber, shift.alliance);
     }, delay);
     pendingTimeouts.set(key, t);
   }

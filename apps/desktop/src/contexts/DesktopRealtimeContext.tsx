@@ -44,7 +44,8 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
 
   // Debouncing state to batch rapid updates
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const updateCountRef = useRef(0);
+  // Accumulates which tables fired during the debounce window so we sync only those
+  const pendingTablesRef = useRef<Set<string>>(new Set());
 
   // Holds the currently active channel so retries can remove it before creating a new one.
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -59,24 +60,33 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Call all registered callbacks (debounced)
-  const triggerRefresh = useCallback(() => {
-    updateCountRef.current++;
+  // Call all registered callbacks (debounced).
+  // Accepts an optional table name — if provided, only that table is synced in Rust
+  // (saves egress vs a full sync_once). Multiple tables within the debounce window are
+  // each synced individually. Falls back to a full trigger_sync_now if no table given.
+  const triggerRefresh = useCallback((table?: string) => {
+    if (table) {
+      pendingTablesRef.current.add(table);
+    }
 
     // Clear existing timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Set new timer to batch updates
+    // Set new timer to batch updates within 500ms
     debounceTimerRef.current = setTimeout(() => {
-      updateCountRef.current = 0;
+      const tables = pendingTablesRef.current;
+      pendingTablesRef.current = new Set();
 
-      console.log(`[DesktopRealtime] 🔄 Triggering sync + ${callbacksRef.current.size} refresh callbacks`);
-
-      // Trigger one Rust sync cycle for the whole batch — called here so each
-      // consumer context doesn't need to independently invoke it.
-      invoke("trigger_sync_now").catch(console.error);
+      if (tables.size > 0) {
+        console.log(`[DesktopRealtime] 🔄 Per-table sync for: ${[...tables].join(", ")} + ${callbacksRef.current.size} callbacks`);
+        // Sync each changed table individually — avoids full sync cycle (TBA, schedule, etc.)
+        tables.forEach((t) => invoke("sync_table_now", { table: t }).catch(console.error));
+      } else {
+        console.log(`[DesktopRealtime] 🔄 Full sync + ${callbacksRef.current.size} callbacks`);
+        invoke("trigger_sync_now").catch(console.error);
+      }
 
       callbacksRef.current.forEach((cb) => {
         try {
@@ -128,7 +138,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
             if (!is413 && ev !== currentEvent) return;
             if (is413) console.warn("[DesktopRealtime] ⚠️ event_team_data payload too large — refreshing conservatively");
             console.log(`[DesktopRealtime] 📨 event_team_data ${payload.eventType}`);
-            triggerRefresh();
+            triggerRefresh("event_team_data");
           }
         )
         // Picklists (admin edits from mobile or other desktop sessions)
@@ -142,7 +152,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
             if (!is413 && ev !== currentEvent) return;
             if (is413) console.warn("[DesktopRealtime] ⚠️ event_picklist payload too large — refreshing conservatively");
             console.log(`[DesktopRealtime] 📨 event_picklist ${payload.eventType}`);
-            triggerRefresh();
+            triggerRefresh("event_picklist");
           }
         )
         // Match data (match scouting submissions from mobile)
@@ -156,7 +166,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
             if (!is413 && ev !== currentEvent) return;
             if (is413) console.warn("[DesktopRealtime] ⚠️ event_match_data payload too large — refreshing conservatively");
             console.log(`[DesktopRealtime] 📨 event_match_data ${payload.eventType}`);
-            triggerRefresh();
+            triggerRefresh("event_match_data");
           }
         )
         .subscribe(handleStatus);

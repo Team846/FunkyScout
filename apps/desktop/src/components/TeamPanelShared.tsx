@@ -48,7 +48,7 @@ import {
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
 import { getMatchSortOrder, getMatchLabel } from "@lib/utils/match";
 import { buildNexusTimeMap } from "@lib/nexus";
-import { fetchEventVideo } from "@lib/tba/video";
+import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getMatchActionSchema, getActionById } from "@lib/config/match-action-schemas";
@@ -1084,7 +1084,7 @@ export function FullTeamPanel({
   // ── Match video cache (lazy: only fetch when section is open) ───────────────
   useEffect(() => {
     if (!currentEvent || !matchOverviewOpen) return;
-    fetchEventVideo(currentEvent).then((data: unknown) => {
+    invoke("fetch_event_videos", { event: currentEvent }).then((data: unknown) => {
       setMatchVideoCache(data && typeof data === "object" ? data as typeof matchVideoCache : null);
     }).catch(() => {});
   }, [currentEvent, matchOverviewOpen]);
@@ -2845,7 +2845,7 @@ export function ExpandedTeamPanel({
   // ── Match video cache (always fetch in expanded view) ─────────────────────
   useEffect(() => {
     if (!currentEvent) return;
-    fetchEventVideo(currentEvent).then((data: unknown) => {
+    invoke("fetch_event_videos", { event: currentEvent }).then((data: unknown) => {
       setMatchVideoCache(data && typeof data === "object" ? data as typeof matchVideoCache : null);
     }).catch(() => {});
   }, [currentEvent]);

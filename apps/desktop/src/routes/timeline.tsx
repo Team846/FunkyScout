@@ -4,7 +4,7 @@ import React from "react";
 import { ChevronLeft } from "lucide-react";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
 import { useTabContext } from "../contexts/TabContext";
-import { fetchEventVideo } from "@lib/tba/video";
+import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "@lib/utils/platform";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -839,11 +839,10 @@ function TimelinePage() {
 
   useEffect(() => {
     if (!event) return;
-    fetchEventVideo(event).then((vd) => {
-      if (!vd) return;
+    invoke<{ data: Array<{ key: string; videos: Array<{ key: string }> }> }>("fetch_event_videos", { event }).then((vd) => {
       const entry = vd.data.find((e) => e.key === match);
       setYoutubeId(entry?.videos?.[0]?.key ?? null);
-    });
+    }).catch(() => {});
   }, [event, match]);
 
   const matchNum    = getMatchLabel(match);
