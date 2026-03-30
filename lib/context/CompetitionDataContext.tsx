@@ -101,6 +101,9 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
   const fetchMatchScoresRef = useRef<(() => Promise<void>) | null>(null);
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
+  // Post-match refresh: track Nexus match labels to detect completions
+  const prevNexusMatchLabelsRef = useRef<Set<string>>(new Set());
+  const postMatchRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Cached scores/predictions from direct TBA+Statbotics poll (not via Supabase)
   const matchScoresRef = useRef<Record<string, {
     redScore: number | null;
@@ -108,6 +111,7 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     redWinProb: number | null;
     predictedRedScore: number | null;
     predictedBlueScore: number | null;
+    estTime: number | null;
   }>>({});
 
   const fetchSchedule = useCallback(async (skipTba = false) => {
@@ -582,6 +586,12 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
       setNexusMatches([]);
       setInitialLoading(false);
       hasLoadedDataRef.current = false;
+      // Reset post-match detection state for the new event
+      prevNexusMatchLabelsRef.current = new Set();
+      if (postMatchRefreshTimer.current) {
+        clearTimeout(postMatchRefreshTimer.current);
+        postMatchRefreshTimer.current = null;
+      }
       return;
     }
 
@@ -727,6 +737,57 @@ export function CompetitionDataProvider({ children }: { children: ReactNode }) {
     }
     return overlaid;
   }, [tbaSchedule, nexusMatches, currentEvent]);
+
+  // Post-match refresh: when a match disappears from the Nexus response, it has
+  // completed. Trigger a single delayed refresh of match data, picklists, and
+  // match scores 3 minutes later so scouters have time to submit.
+  const POST_MATCH_REFRESH_DELAY = 180_000; // 3 minutes
+
+  useEffect(() => {
+    const currentLabels = new Set(nexusMatches.map((m) => m.label));
+    const prevLabels = prevNexusMatchLabelsRef.current;
+
+    // Skip detection when:
+    // - First Nexus poll (initial population, not a completion)
+    // - Nexus returned empty (network blip / API error — not a real completion)
+    if (prevLabels.size > 0 && currentLabels.size > 0) {
+      const completedMatches = [...prevLabels].filter(
+        (l) => !currentLabels.has(l)
+      );
+
+      if (completedMatches.length > 0) {
+        console.log(
+          `[CompetitionData] Matches completed: ${completedMatches.join(", ")}`
+        );
+
+        // Reset timer if multiple matches complete close together
+        if (postMatchRefreshTimer.current) {
+          clearTimeout(postMatchRefreshTimer.current);
+        }
+
+        postMatchRefreshTimer.current = setTimeout(() => {
+          console.log(
+            "[CompetitionData] Post-match refresh: pulling match data, picklists, scores"
+          );
+          matchDataPolling.current?.forceRefresh();
+          picklistPolling.current?.forceRefresh();
+          matchScoresPolling.current?.forceRefresh();
+          postMatchRefreshTimer.current = null;
+        }, POST_MATCH_REFRESH_DELAY);
+      }
+    }
+
+    prevNexusMatchLabelsRef.current = currentLabels;
+  }, [nexusMatches]);
+
+  // Clean up post-match timer on unmount
+  useEffect(() => {
+    return () => {
+      if (postMatchRefreshTimer.current) {
+        clearTimeout(postMatchRefreshTimer.current);
+      }
+    };
+  }, []);
 
   // Memoize context value to prevent unnecessary re-renders when polling runs but data hasn't changed
   const contextValue = useMemo(
