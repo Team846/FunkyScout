@@ -23,6 +23,8 @@ interface DesktopRealtimeContextType {
   registerRefreshCallback: (callback: () => void) => () => void;
   isConnected: boolean;
   activeScouts: ActiveScout[];
+  realtimeEnabled: boolean;
+  setRealtimeEnabled: (enabled: boolean) => void;
 }
 
 const DesktopRealtimeContext = createContext<
@@ -34,6 +36,14 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   const callbacksRef = useRef<Set<() => void>>(new Set());
   const [isConnected, setIsConnected] = useState(false);
   const [activeScouts, setActiveScouts] = useState<ActiveScout[]>([]);
+  const [realtimeEnabled, setRealtimeEnabledState] = useState(() => {
+    return localStorage.getItem("realtimeEnabled") !== "false";
+  });
+
+  const setRealtimeEnabled = useCallback((enabled: boolean) => {
+    localStorage.setItem("realtimeEnabled", String(enabled));
+    setRealtimeEnabledState(enabled);
+  }, []);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Track whether this is a reconnect (vs. initial subscription) so we can
@@ -101,8 +111,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   // Subscribe to Supabase realtime for user-generated data from mobile.
   // event_schedule is intentionally excluded — desktop is the writer for schedule
   // (TBA sync), so subscribing would create a feedback loop.
+  // When realtimeEnabled is false, skip postgres_changes entirely — 120s periodic
+  // sync still runs so data stays fresh, just with up to 2min lag.
   useEffect(() => {
-    if (!currentEvent) {
+    if (!currentEvent || !realtimeEnabled) {
       setIsConnected(false);
       return;
     }
@@ -269,11 +281,11 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
       }
       setIsConnected(false);
     };
-  }, [currentEvent, triggerRefresh]);
+  }, [currentEvent, realtimeEnabled, triggerRefresh]);
 
   return (
     <DesktopRealtimeContext.Provider
-      value={{ registerRefreshCallback, isConnected, activeScouts }}
+      value={{ registerRefreshCallback, isConnected, activeScouts, realtimeEnabled, setRealtimeEnabled }}
     >
       {children}
     </DesktopRealtimeContext.Provider>

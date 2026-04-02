@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const nexusActive = nexusMatches.length > 0 &&
     Object.values(tbaSchedule).some((m) => m.est_time > 0);
   const { forceSyncNow } = useDesktopSync();
-  const { isConnected: realtimeConnected } = useDesktopRealtime();
+  const { isConnected: realtimeConnected, realtimeEnabled, setRealtimeEnabled } = useDesktopRealtime();
   const { lastDataRefreshAt } = useDesktopCompetitionData();
 
   const [events, setEvents] = useState<EventListEntry[]>([]);
@@ -810,7 +810,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     {/* Realtime connection dot */}
                     <span
                       className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${
-                        realtimeConnected ? "bg-green-500" : "bg-yellow-500"
+                        !realtimeEnabled ? "bg-muted-foreground" : realtimeConnected ? "bg-green-500" : "bg-yellow-500"
                       }`}
                     />
                   </button>
@@ -827,7 +827,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                             : "Not synced"}
                     </div>
                     <div className="text-muted-foreground">
-                      Realtime: {realtimeConnected ? "connected" : "reconnecting..."}
+                      Realtime: {!realtimeEnabled ? "disabled" : realtimeConnected ? "connected" : "reconnecting..."}
                     </div>
                     {lastDataRefreshAt > 0 && (
                       <div className="text-muted-foreground">
@@ -893,6 +893,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <Switch
                         checked={useTbaClimb}
                         onCheckedChange={setUseTbaClimb}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          Realtime Sync
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Push updates instantly. Off = 120s polling only, saves egress.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={realtimeEnabled}
+                        onCheckedChange={setRealtimeEnabled}
                       />
                     </div>
 
