@@ -135,19 +135,13 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         // Team data (pit scouting submissions from mobile)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "event_team_data" },
+          { event: "*", schema: "public", table: "event_team_data", filter: `event=eq.${currentEvent}` },
           (payload) => {
-            // Filter client-side — avoids server-side filter cold-start delays.
-            // Server-side filters force Supabase to warm a new WAL decoder slot for
-            // every unique filter value, making the first event after each reconnect slow.
-            //
-            // Also handle 413 (payload too large): Supabase sends errors:["Error 413..."]
-            // and sets new/old to {} when the row is too large to transmit. We can't
-            // filter by event in that case, so refresh conservatively to avoid silent drops.
+            // Server-side filter ensures only current event rows are received, eliminating
+            // egress from historical event data. 413 (payload too large) errors still possible
+            // if a single row exceeds Supabase's realtime payload limit.
             const errors = (payload as any).errors as string[] | undefined;
             const is413 = errors?.some((e) => e.includes("413"));
-            const ev = (payload.new as any)?.event ?? (payload.old as any)?.event;
-            if (!is413 && ev !== currentEvent) return;
             if (is413) console.warn("[DesktopRealtime] ⚠️ event_team_data payload too large — refreshing conservatively");
             console.log(`[DesktopRealtime] 📨 event_team_data ${payload.eventType}`);
             triggerRefresh("event_team_data");
@@ -156,12 +150,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         // Picklists (admin edits from mobile or other desktop sessions)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "event_picklist" },
+          { event: "*", schema: "public", table: "event_picklist", filter: `event=eq.${currentEvent}` },
           (payload) => {
             const errors = (payload as any).errors as string[] | undefined;
             const is413 = errors?.some((e) => e.includes("413"));
-            const ev = (payload.new as any)?.event ?? (payload.old as any)?.event;
-            if (!is413 && ev !== currentEvent) return;
             if (is413) console.warn("[DesktopRealtime] ⚠️ event_picklist payload too large — refreshing conservatively");
             console.log(`[DesktopRealtime] 📨 event_picklist ${payload.eventType}`);
             triggerRefresh("event_picklist");
@@ -170,12 +162,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         // Match data (match scouting submissions from mobile)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "event_match_data" },
+          { event: "*", schema: "public", table: "event_match_data", filter: `event=eq.${currentEvent}` },
           (payload) => {
             const errors = (payload as any).errors as string[] | undefined;
             const is413 = errors?.some((e) => e.includes("413"));
-            const ev = (payload.new as any)?.event ?? (payload.old as any)?.event;
-            if (!is413 && ev !== currentEvent) return;
             if (is413) console.warn("[DesktopRealtime] ⚠️ event_match_data payload too large — refreshing conservatively");
             console.log(`[DesktopRealtime] 📨 event_match_data ${payload.eventType}`);
             triggerRefresh("event_match_data");
