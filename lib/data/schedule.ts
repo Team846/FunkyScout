@@ -48,7 +48,7 @@ export async function refreshSchedule(eventKey: string) {
 
   const { error: scheduleError } = await supabase
     .from("event_schedule")
-    .upsert(rows, { onConflict: "event,match,team" });
+    .upsert(rows, { onConflict: "event,match,team", ignoreDuplicates: true });
 
   if (scheduleError) throw scheduleError;
 }
