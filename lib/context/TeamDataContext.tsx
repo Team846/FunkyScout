@@ -18,6 +18,7 @@ import {
   type TbaTeam,
   type EventTeamData,
 } from "@lib/db";
+import { getUserProfiles } from "@lib/data/scouterRatings";
 import {
   PollingController,
   LIVE_POLLING_CONFIG,
@@ -69,6 +70,7 @@ interface TeamDataContextType {
   refresh: () => Promise<void>;
   scoutedTeams: Set<string>; // Team keys that have been pit scouted
   teamAssignments: Map<string, string>; // Map of teamKey -> assignedUid
+  assignmentNames: Map<string, string>; // Map of teamKey -> assigned scouter name
 }
 
 const TeamDataContext = createContext<TeamDataContextType | undefined>(
@@ -87,6 +89,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   const [teamAssignments, setTeamAssignments] = useState<Map<string, string>>(
     new Map()
   );
+  const [assignmentNames, setAssignmentNames] = useState<Map<string, string>>(
+    new Map()
+  );
   const [initialLoading, setInitialLoading] = useState(true);
   const pollingController = useRef<PollingController | null>(null);
 
@@ -96,6 +101,26 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   const skipCacheOnceRef = useRef(false);
   const hasLoadedDataRef = useRef(false);
   const isFetchingRef = useRef(false);
+
+  const resolveAssignmentNames = useCallback(async (assignments: Map<string, string>) => {
+    const uniqueUids = [...new Set(assignments.values())];
+    if (uniqueUids.length === 0) {
+      setAssignmentNames(new Map());
+      return;
+    }
+    try {
+      const profiles = await getUserProfiles(uniqueUids);
+      const uidToName = new Map(profiles.map((p) => [p.uid, p.name]));
+      const names = new Map<string, string>();
+      assignments.forEach((uid, teamKey) => {
+        const name = uidToName.get(uid);
+        if (name) names.set(teamKey, name);
+      });
+      setAssignmentNames(names);
+    } catch (err) {
+      console.warn("[TeamData] Failed to resolve assignment names:", err);
+    }
+  }, []);
 
   const fetchTeams = useCallback(async () => {
     if (!currentEvent || !dbInitialized) return;
@@ -240,6 +265,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           if (t.assigned) assignments.set(t.team, t.assigned);
         });
         setTeamAssignments(assignments);
+        resolveAssignmentNames(assignments);
       } finally {
         setLoading(false);
         setInitialLoading(false);
@@ -325,8 +351,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
         if (t.assigned) assignments.set(t.team, t.assigned);
       });
       setTeamAssignments(assignments);
+      resolveAssignmentNames(assignments);
     });
-  }, [currentEvent, dbInitialized, initialLoading]);
+  }, [currentEvent, dbInitialized, initialLoading, resolveAssignmentNames]);
 
   const refresh = useCallback(async () => {
     if (fetchTeamsRef.current) {
@@ -345,8 +372,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
         if (t.assigned) assignments.set(t.team, t.assigned);
       });
       setTeamAssignments(assignments);
+      resolveAssignmentNames(assignments);
     }
-  }, []);
+  }, [resolveAssignmentNames]);
 
   // Register refresh callback with SyncContext
   useEffect(() => {
@@ -398,8 +426,9 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       refresh,
       scoutedTeams,
       teamAssignments,
+      assignmentNames,
     }),
-    [mergedTeams, mergedTbaTeams, loading, initialLoading, refresh, scoutedTeams, teamAssignments]
+    [mergedTeams, mergedTbaTeams, loading, initialLoading, refresh, scoutedTeams, teamAssignments, assignmentNames]
   );
 
   return (

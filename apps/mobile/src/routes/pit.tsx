@@ -11,7 +11,7 @@ export const Route = createFileRoute("/pit")({
 
 export function Pit() {
   const navigate = useNavigate();
-  const { teams, loading, scoutedTeams, teamAssignments, refresh } = useTeamData();
+  const { teams, loading, scoutedTeams, teamAssignments, assignmentNames, refresh } = useTeamData();
 
   // Pull fresh assignments from Supabase on open — avoids showing up to 5min stale data
   // (TeamDataContext polls every 5min; this makes the pit page always up-to-date on navigate)
@@ -154,28 +154,35 @@ export function Pit() {
                       <span className="text-foreground"> | {team.name}</span>
                     </p>
                     {badge && (
-                      <Badge
-                        variant="default"
-                        className={`ml-2 ${badge.style}`}
-                      >
-                        {badge.type === "SCOUTED" && (
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="size-3 mr-1"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              d="M20 6L9 17L4 12"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
+                      <div className="flex items-center gap-1.5 ml-2">
+                        <Badge
+                          variant="default"
+                          className={badge.style}
+                        >
+                          {badge.type === "SCOUTED" && (
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="size-3 mr-1"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M20 6L9 17L4 12"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                          {badge.type}
+                        </Badge>
+                        {assignmentNames.get(team.key) && (
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                            {assignmentNames.get(team.key)}
+                          </span>
                         )}
-                        {badge.type}
-                      </Badge>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -231,25 +238,32 @@ export function Pit() {
                       )}
                     </div>
                     {badge && (
-                      <Badge variant="outline" className={`ml-2 ${badge.style}`}>
-                        {badge.type === "SCOUTED" && (
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="size-3 mr-1"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              d="M20 6L9 17L4 12"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
+                      <div className="flex items-center gap-1.5 ml-2">
+                        <Badge variant="outline" className={badge.style}>
+                          {badge.type === "SCOUTED" && (
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="size-3 mr-1"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M20 6L9 17L4 12"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                          {badge.type}
+                        </Badge>
+                        {assignmentNames.get(team.key) && (
+                          <span className="text-xs text-muted-foreground truncate max-w-[100px]">
+                            {assignmentNames.get(team.key)}
+                          </span>
                         )}
-                        {badge.type}
-                      </Badge>
+                      </div>
                     )}
                   </div>
                 </div>
