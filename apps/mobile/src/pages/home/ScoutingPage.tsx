@@ -61,6 +61,7 @@ export function ScoutingPage() {
     }
     if (initialShiftLoading) setShiftLoading(true);
 
+    
     const fetchShiftData = async () => {
       try {
         const currentUid = getLocalUserData().uid;

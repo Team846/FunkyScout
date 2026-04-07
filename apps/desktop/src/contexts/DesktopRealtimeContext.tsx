@@ -46,6 +46,12 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Exponential backoff: starts at 5s, doubles each retry, caps at 2 minutes.
+  // Resets to 5s on successful reconnection. Prevents reconnection storms from
+  // burning through realtime egress on spotty networks.
+  const retryDelayRef = useRef(15_000);
+  const RETRY_DELAY_INITIAL = 15_000;
+  const RETRY_DELAY_MAX = 120_000; // 2 minutes
   // Track whether this is a reconnect (vs. initial subscription) so we can
   // trigger a catch-up sync only when we've been disconnected and come back.
   const hasConnectedOnceRef = useRef(false);
@@ -122,6 +128,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     // Reset reconnect tracker when event changes so first sub isn't treated as reconnect
     hasConnectedOnceRef.current = false;
     isEffectActiveRef.current = true;
+    retryDelayRef.current = RETRY_DELAY_INITIAL;
 
     // Stable channel name per event — no incrementing counter. The counter was
     // causing every retry to be treated as a brand-new (table, filter) subscription
@@ -178,6 +185,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
     };
 
     const scheduleRetry = () => {
+      const delay = retryDelayRef.current;
+      // Exponential backoff: double the delay for next retry, cap at RETRY_DELAY_MAX
+      retryDelayRef.current = Math.min(delay * 2, RETRY_DELAY_MAX);
+      console.log(`[DesktopRealtime] Retrying in ${(delay / 1000).toFixed(0)}s (next: ${(retryDelayRef.current / 1000).toFixed(0)}s)`);
       retryTimerRef.current = setTimeout(() => {
         if (!isEffectActiveRef.current) return;
         // Remove the broken channel before creating a fresh one so Supabase fully
@@ -188,7 +199,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         }
         console.log("[DesktopRealtime] Retrying with fresh channel...");
         createChannel();
-      }, 5_000);
+      }, delay);
     };
 
     const handleStatus = (status: any, err: any) => {
@@ -200,6 +211,8 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           clearTimeout(retryTimerRef.current);
           retryTimerRef.current = null;
         }
+        // Reset backoff on success so next disconnect starts fast again
+        retryDelayRef.current = RETRY_DELAY_INITIAL;
         setIsConnected(true);
 
         if (hasConnectedOnceRef.current) {
@@ -212,7 +225,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           hasConnectedOnceRef.current = true;
         }
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.warn(`[DesktopRealtime] ${status} — retrying in 5s with fresh channel`);
+        console.warn(`[DesktopRealtime] ${status} — scheduling retry with backoff`);
         setIsConnected(false);
         scheduleRetry();
       } else if (status === "CLOSED") {
@@ -220,7 +233,7 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
         // Retry on unexpected closes (spotty network). Skip if the effect is
         // cleaning up — that's an intentional close and the channel is gone.
         if (isEffectActiveRef.current) {
-          console.warn("[DesktopRealtime] CLOSED unexpectedly — retrying in 5s with fresh channel");
+          console.warn("[DesktopRealtime] CLOSED unexpectedly — scheduling retry with backoff");
           scheduleRetry();
         }
       }

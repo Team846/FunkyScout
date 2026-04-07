@@ -93,6 +93,7 @@ export function ShiftsPage() {
   const [shifts, setShifts] = useState<ShiftDisplay[]>([]);
   const [nextShiftIdx, setNextShiftIdx] = useState<number>(-1);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const hasScrolled = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const prevEventRef = useRef<string | null>(null);
@@ -214,6 +215,18 @@ export function ShiftsPage() {
     }
   }, [nextShiftIdx, shifts.length]);
 
+  // Filter shifts by search query while preserving time-based sort order
+  const filteredShifts = searchQuery
+    ? shifts.filter((shift) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          shift.matchLabel.toLowerCase().includes(q) ||
+          shift.teamNumber.includes(q) ||
+          shift.alliance.includes(q)
+        );
+      })
+    : shifts;
+
   if (!currentEvent) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -224,17 +237,18 @@ export function ShiftsPage() {
 
   return (
     <div className="flex h-full flex-1 flex-col gap-4 min-h-0 overflow-hidden">
-      <Command className="flex h-full flex-1 min-h-0 flex-col w-full bg-background [&_[data-slot=command-input-wrapper]]:border-0 [&_[data-slot=command-input-wrapper]]:h-14 [&_[data-slot=command-input-wrapper]]:rounded-2xl [&_[data-slot=command-input-wrapper]]:bg-muted [&_[data-slot=command-input-wrapper]]:px-1 [&_[data-slot=command-input-wrapper]]:sticky [&_[data-slot=command-input-wrapper]]:top-0 [&_[data-slot=command-input-wrapper]]:z-10">
+      <Command shouldFilter={false} className="flex h-full flex-1 min-h-0 flex-col w-full bg-background [&_[data-slot=command-input-wrapper]]:border-0 [&_[data-slot=command-input-wrapper]]:h-14 [&_[data-slot=command-input-wrapper]]:rounded-2xl [&_[data-slot=command-input-wrapper]]:bg-muted [&_[data-slot=command-input-wrapper]]:px-1 [&_[data-slot=command-input-wrapper]]:sticky [&_[data-slot=command-input-wrapper]]:top-0 [&_[data-slot=command-input-wrapper]]:z-10">
         <CommandInput
           className="text-foreground text-md placeholder-border"
           placeholder="Search shifts..."
+          onValueChange={setSearchQuery}
         />
         <CommandList ref={listRef} className="mt-5 flex h-full flex-1 min-h-0 max-h-none flex-col gap-4 overflow-y-auto">
           <CommandEmpty>
             {initialLoading ? "Loading shifts..." : "No shifts assigned."}
           </CommandEmpty>
-          {shifts.map((shift, idx) => {
-            const isNext = idx === nextShiftIdx;
+          {filteredShifts.map((shift, idx) => {
+            const isNext = !searchQuery && idx === nextShiftIdx;
             return (
             <CommandItem
               key={`${shift.match}-${shift.team}-${idx}`}
