@@ -46,12 +46,15 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
-  // Exponential backoff: starts at 5s, doubles each retry, caps at 2 minutes.
-  // Resets to 5s on successful reconnection. Prevents reconnection storms from
-  // burning through realtime egress on spotty networks.
+  // Exponential backoff: starts at 15s, doubles each retry, caps at 2 minutes.
+  // After SUBSCRIBED, backoff resets to 15s only if the connection stays healthy
+  // for BACKOFF_RESET_AFTER_STABLE_MS (avoids flapping networks resetting backoff).
   const retryDelayRef = useRef(15_000);
   const RETRY_DELAY_INITIAL = 15_000;
   const RETRY_DELAY_MAX = 120_000; // 2 minutes
+  /** Only reset backoff to INITIAL after SUBSCRIBED stays up this long (avoids flapping success/fail negating backoff). */
+  const BACKOFF_RESET_AFTER_STABLE_MS = 45_000;
+  const backoffResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track whether this is a reconnect (vs. initial subscription) so we can
   // trigger a catch-up sync only when we've been disconnected and come back.
   const hasConnectedOnceRef = useRef(false);
@@ -184,7 +187,15 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
       return ch;
     };
 
+    const clearBackoffResetTimer = () => {
+      if (backoffResetTimerRef.current) {
+        clearTimeout(backoffResetTimerRef.current);
+        backoffResetTimerRef.current = null;
+      }
+    };
+
     const scheduleRetry = () => {
+      clearBackoffResetTimer();
       const delay = retryDelayRef.current;
       // Exponential backoff: double the delay for next retry, cap at RETRY_DELAY_MAX
       retryDelayRef.current = Math.min(delay * 2, RETRY_DELAY_MAX);
@@ -211,8 +222,13 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
           clearTimeout(retryTimerRef.current);
           retryTimerRef.current = null;
         }
-        // Reset backoff on success so next disconnect starts fast again
-        retryDelayRef.current = RETRY_DELAY_INITIAL;
+        // Do not reset backoff immediately: spotty networks can flap SUBSCRIBED ↔ error
+        // and would keep resetting to fast retries. Only reset after stable uptime.
+        clearBackoffResetTimer();
+        backoffResetTimerRef.current = setTimeout(() => {
+          backoffResetTimerRef.current = null;
+          retryDelayRef.current = RETRY_DELAY_INITIAL;
+        }, BACKOFF_RESET_AFTER_STABLE_MS);
         setIsConnected(true);
 
         if (hasConnectedOnceRef.current) {
@@ -272,6 +288,10 @@ export function DesktopRealtimeProvider({ children }: { children: ReactNode }) {
       }
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+      }
+      if (backoffResetTimerRef.current) {
+        clearTimeout(backoffResetTimerRef.current);
+        backoffResetTimerRef.current = null;
       }
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
