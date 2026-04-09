@@ -22,7 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@shadcn/ui/components/tooltip.tsx";
-import { Pencil, X } from "lucide-react";
+import { ArrowRightLeft, Pencil, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTabContext } from "../contexts/TabContext";
 
@@ -53,6 +53,12 @@ interface PitAssignment {
   teamName: string | null;
   uid: string;
   name: string;
+}
+
+interface TeamAssignmentRow {
+  teamKey: string;
+  teamNumber: number;
+  teamName: string | null;
 }
 
 function SchedulerPage() {
@@ -98,6 +104,15 @@ function SchedulerPage() {
   const [applying, setApplying] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [isEditingAssignments, setIsEditingAssignments] = useState(false);
+  const [rightPanelView, setRightPanelView] = useState<"match" | "team">("match");
+  const [teamRows, setTeamRows] = useState<TeamAssignmentRow[]>([]);
+  const [teamScouterMap, setTeamScouterMap] = useState<Record<string, string>>({});
+  const [teamUidMap, setTeamUidMap] = useState<Record<string, string>>({});
+  const [savedTeamUidMap, setSavedTeamUidMap] = useState<Record<string, string>>(
+    {},
+  );
+  const [savingTeamAssignments, setSavingTeamAssignments] = useState(false);
+  const [isEditingTeamAssignments, setIsEditingTeamAssignments] = useState(false);
 
   const [allScouters, setAllScouters] = useState<ScouterProfile[]>([]);
   const [selectedUids, setSelectedUids] = useState<Set<string>>(
@@ -110,6 +125,9 @@ function SchedulerPage() {
   const [schedulingTeams, setSchedulingTeams] = useState(false);
   const [applyingTeams, setApplyingTeams] = useState(false);
   const [showScouterPopup, setShowScouterPopup] = useState(false);
+  const [scouterPopupMode, setScouterPopupMode] = useState<"match" | "team">(
+    "match",
+  );
   const [selectedMatchKey, setSelectedMatchKey] = useState<string | null>(null);
   const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
   const [popupSearch, setPopupSearch] = useState("");
@@ -118,6 +136,7 @@ function SchedulerPage() {
   const hasLoadedRef = useRef(false);
   // Mirrors dirtyAssignmentCount so the init effect can read it without adding it as a dep.
   const hasDirtyAssignmentsRef = useRef(false);
+  const hasDirtyTeamAssignmentsRef = useRef(false);
 
   // Count of individual assignment changes vs last saved/loaded state
   const dirtyAssignmentCount = useMemo(() => {
@@ -133,11 +152,27 @@ function SchedulerPage() {
     return count;
   }, [matchUidMap, savedMatchUidMap]);
 
+  const dirtyTeamAssignmentCount = useMemo(() => {
+    const allKeys = new Set([
+      ...Object.keys(teamUidMap),
+      ...Object.keys(savedTeamUidMap),
+    ]);
+    let count = 0;
+    for (const key of allKeys) {
+      if ((teamUidMap[key] ?? null) !== (savedTeamUidMap[key] ?? null)) count++;
+    }
+    return count;
+  }, [teamUidMap, savedTeamUidMap]);
+
   // Keep hasDirtyAssignmentsRef in sync so the init effect can read it without
   // adding dirtyAssignmentCount as a dependency (which would cause infinite loops).
   useEffect(() => {
     hasDirtyAssignmentsRef.current = dirtyAssignmentCount > 0;
   }, [dirtyAssignmentCount]);
+
+  useEffect(() => {
+    hasDirtyTeamAssignmentsRef.current = dirtyTeamAssignmentCount > 0;
+  }, [dirtyTeamAssignmentCount]);
 
   // Combined init effect — derives schedule + scouters from context data (no direct SQLite calls).
   // Runs on event change, passive polling (120s), and realtime events automatically.
@@ -145,6 +180,10 @@ function SchedulerPage() {
     if (!currentEvent) {
       setSchedule(null);
       setAllScouters([]);
+      setTeamRows([]);
+      setTeamScouterMap({});
+      setTeamUidMap({});
+      setSavedTeamUidMap({});
       setLoadingScouters(false);
       return;
     }
@@ -157,6 +196,7 @@ function SchedulerPage() {
       setSelectedUids(new Set());
       hasLoadedRef.current = false;
       setIsEditingAssignments(false);
+      setIsEditingTeamAssignments(false);
     }
 
     // Only show the loading spinner on first load; background refreshes update silently.
@@ -225,6 +265,54 @@ function SchedulerPage() {
         role: (p.role as string) ?? "scouter",
       }));
     setAllScouters(eligible);
+
+    // ── Team assignments from event_team_data (via get_teams + get_pit_scouting_data) ──
+    {
+      const byUid = new Map(eligible.map((s) => [s.uid, s.name]));
+      void (async () => {
+        try {
+          const [teams, pitData] = await Promise.all([
+            invoke<{ team: string; team_name?: string | null }[]>("get_teams", {
+              event: currentEvent,
+            }),
+            invoke<
+              Array<{
+                team: string;
+                assigned: string | null;
+              }>
+            >("get_pit_scouting_data", { event: currentEvent }),
+          ]);
+
+          const rows = teams
+            .map((t) => {
+              const teamNumber = parseInt((t.team ?? "").replace("frc", ""), 10);
+              return {
+                teamKey: t.team,
+                teamNumber: Number.isNaN(teamNumber) ? 0 : teamNumber,
+                teamName: t.team_name ?? null,
+              } as TeamAssignmentRow;
+            })
+            .sort((a, b) => a.teamNumber - b.teamNumber);
+          setTeamRows(rows);
+
+          const uidMap: Record<string, string> = {};
+          const nameMap: Record<string, string> = {};
+          pitData.forEach((row) => {
+            if (!row.assigned) return;
+            uidMap[row.team] = row.assigned;
+            nameMap[row.team] = byUid.get(row.assigned) ?? row.assigned;
+          });
+
+          if (!hasDirtyTeamAssignmentsRef.current) {
+            setTeamUidMap(uidMap);
+            setTeamScouterMap(nameMap);
+            setSavedTeamUidMap(uidMap);
+          }
+        } catch {
+          // Keep scheduler usable even if team-assignment read fails.
+        }
+      })();
+    }
 
     // ── Initialize selectedUids: in-memory > schedule UIDs > localStorage > all ──
     if (_persistedSelectedUids === null) {
@@ -433,6 +521,16 @@ function SchedulerPage() {
         };
       });
       setPitAssignments(result);
+      // Keep editable Team Assignments UI in sync with generated initial assignments.
+      // This is intentionally not marked as "saved" yet; user can still tweak before saving.
+      const generatedTeamUidMap: Record<string, string> = {};
+      const generatedTeamScouterMap: Record<string, string> = {};
+      result.forEach((row) => {
+        generatedTeamUidMap[row.teamKey] = row.uid;
+        generatedTeamScouterMap[row.teamKey] = row.name;
+      });
+      setTeamUidMap(generatedTeamUidMap);
+      setTeamScouterMap(generatedTeamScouterMap);
       toast.success(
         `Scheduled ${result.length} teams across ${selected.length} scouters`,
       );
@@ -465,12 +563,75 @@ function SchedulerPage() {
     }
   };
 
-  const openTeamPopup = (matchKey: string, teamKey: string) => {
+  const handleSaveTeamAssignments = async () => {
+    if (!currentEvent) return;
+    const allKeys = new Set([
+      ...Object.keys(teamUidMap),
+      ...Object.keys(savedTeamUidMap),
+    ]);
+    const changes = Array.from(allKeys)
+      .filter((key) => (teamUidMap[key] ?? null) !== (savedTeamUidMap[key] ?? null))
+      .map((key) => ({
+        teamKey: key,
+        uid: teamUidMap[key] ?? null,
+        name: teamScouterMap[key] ?? null,
+      }))
+      .filter((c): c is { teamKey: string; uid: string; name: string } => !!c.uid && !!c.name);
+
+    if (changes.length === 0) return;
+    setSavingTeamAssignments(true);
+    try {
+      await assignPitTeams(currentEvent, changes);
+      setSavedTeamUidMap({ ...teamUidMap });
+      toast.success(
+        `Saved ${changes.length} team change${changes.length !== 1 ? "s" : ""}`,
+      );
+    } catch (e: any) {
+      toast.error(`Failed to save team assignments: ${e.message ?? String(e)}`);
+    } finally {
+      setSavingTeamAssignments(false);
+    }
+  };
+
+  const handleResetTeamAssignments = () => {
+    const revertedScouterMap: Record<string, string> = {};
+    Object.entries(savedTeamUidMap).forEach(([teamKey, uid]) => {
+      const scouter = allScouters.find((s) => s.uid === uid);
+      if (scouter) revertedScouterMap[teamKey] = scouter.name;
+    });
+    setTeamScouterMap(revertedScouterMap);
+    setTeamUidMap({ ...savedTeamUidMap });
+    toast.success("Team assignment changes discarded");
+  };
+
+  const openMatchTeamPopup = (matchKey: string, teamKey: string) => {
+    setScouterPopupMode("match");
     setSelectedMatchKey(matchKey);
     setSelectedTeamKey(teamKey);
     setPopupSearch("");
     setShowScouterPopup(true);
   };
+
+  const openTeamAssignmentPopup = (teamKey: string) => {
+    setScouterPopupMode("team");
+    setSelectedMatchKey(null);
+    setSelectedTeamKey(teamKey);
+    setPopupSearch("");
+    setShowScouterPopup(true);
+  };
+
+  const popupAssignmentKey =
+    scouterPopupMode === "match"
+      ? selectedMatchKey && selectedTeamKey
+        ? `${selectedMatchKey}|${selectedTeamKey}`
+        : null
+      : selectedTeamKey;
+  const popupCurrentScouter =
+    popupAssignmentKey == null
+      ? null
+      : scouterPopupMode === "match"
+        ? (matchScouterMap[popupAssignmentKey] ?? null)
+        : (teamScouterMap[popupAssignmentKey] ?? null);
 
   return (
     <div className="h-full flex gap-3 p-4 overflow-hidden">
@@ -663,13 +824,32 @@ function SchedulerPage() {
         </div>
       </div>
 
-      {/* Right Panel - Match Schedule */}
+      {/* Right Panel - Match / Team Assignments */}
       <div className="flex-2 flex flex-col">
         <div className="flex items-center justify-between pb-4">
-          <h2 className="text-xl font-semibold">Match Schedule</h2>
           <div className="flex items-center gap-2">
-            {/* Save/Reset for individual assignment edits */}
-            {dirtyAssignmentCount > 0 && (
+            <h2 className="text-xl font-semibold">
+              {rightPanelView === "match" ? "Match Schedule" : "Team Assignments"}
+            </h2>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
+              onClick={() =>
+                setRightPanelView((v) => (v === "match" ? "team" : "match"))
+              }
+              title={
+                rightPanelView === "match"
+                  ? "Switch to Team Assignments"
+                  : "Switch to Match Schedule"
+              }
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Save/Reset for active panel assignment edits */}
+            {rightPanelView === "match" && dirtyAssignmentCount > 0 && (
               <>
                 <Button
                   size="sm"
@@ -692,19 +872,61 @@ function SchedulerPage() {
                 </Button>
               </>
             )}
+            {rightPanelView === "team" && dirtyTeamAssignmentCount > 0 && (
+              <>
+                <Button
+                  size="sm"
+                  className="h-8"
+                  disabled={savingTeamAssignments}
+                  onClick={handleSaveTeamAssignments}
+                >
+                  {savingTeamAssignments
+                    ? "Saving…"
+                    : `Save (${dirtyTeamAssignmentCount})`}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  disabled={savingTeamAssignments}
+                  onClick={handleResetTeamAssignments}
+                >
+                  Reset ({dirtyTeamAssignmentCount})
+                </Button>
+              </>
+            )}
             <Button
               size="sm"
-              variant={isEditingAssignments ? "default" : "outline"}
+              variant={
+                rightPanelView === "match"
+                  ? isEditingAssignments
+                    ? "default"
+                    : "outline"
+                  : isEditingTeamAssignments
+                    ? "default"
+                    : "outline"
+              }
               className="h-8 gap-1.5"
-              onClick={() => setIsEditingAssignments((v) => !v)}
+              onClick={() =>
+                rightPanelView === "match"
+                  ? setIsEditingAssignments((v) => !v)
+                  : setIsEditingTeamAssignments((v) => !v)
+              }
             >
               <Pencil className="w-3.5 h-3.5" />
-              {isEditingAssignments ? "Done" : "Edit"}
+              {rightPanelView === "match"
+                ? isEditingAssignments
+                  ? "Done"
+                  : "Edit"
+                : isEditingTeamAssignments
+                  ? "Done"
+                  : "Edit"}
             </Button>
           </div>
         </div>
         <div className="flex-1 overflow-hidden rounded-lg border border-border">
-          <div className="flex flex-col h-full overflow-hidden relative">
+          {rightPanelView === "match" ? (
+            <div className="flex flex-col h-full overflow-hidden relative">
             <div className="grid grid-cols-[100px_repeat(6,_1fr)_80px] gap-0 px-3 py-3 bg-card/50 flex-shrink-0 relative z-10 border-b border-border/50">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Match
@@ -767,7 +989,7 @@ function SchedulerPage() {
                                 }`}
                                 onClick={() =>
                                   isEditingAssignments &&
-                                  openTeamPopup(match.matchKey, team.teamKey)
+                                  openMatchTeamPopup(match.matchKey, team.teamKey)
                                 }
                               >
                                 {team.teamNumber}
@@ -820,7 +1042,7 @@ function SchedulerPage() {
                                 }`}
                                 onClick={() =>
                                   isEditingAssignments &&
-                                  openTeamPopup(match.matchKey, team.teamKey)
+                                  openMatchTeamPopup(match.matchKey, team.teamKey)
                                 }
                               >
                                 {team.teamNumber}
@@ -857,12 +1079,75 @@ function SchedulerPage() {
                 </div>
               ))}
             </div>
-          </div>
+            </div>
+          ) : (
+            <div className="flex flex-col h-full overflow-hidden relative">
+              <div className="grid grid-cols-[120px_1fr] gap-0 px-3 py-3 bg-card/50 flex-shrink-0 relative z-10 border-b border-border/50">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Team
+                </span>
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Assigned Scouter
+                </span>
+              </div>
+              <div className="h-full overflow-y-auto">
+                {teamRows.map((row) => {
+                  const assignedName = teamScouterMap[row.teamKey] ?? null;
+                  const isDirty =
+                    (teamUidMap[row.teamKey] ?? null) !==
+                    (savedTeamUidMap[row.teamKey] ?? null);
+                  return (
+                    <div
+                      key={row.teamKey}
+                      className="grid grid-cols-[120px_1fr] gap-0 items-center px-3 py-2.5 border-b border-border/50"
+                    >
+                      <span className="text-xs font-semibold text-foreground/80">
+                        {row.teamNumber || row.teamKey}
+                      </span>
+                      <div>
+                        {isEditingTeamAssignments && !assignedName ? (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => openTeamAssignmentPopup(row.teamKey)}
+                          >
+                            Add
+                          </Button>
+                        ) : isEditingTeamAssignments && assignedName ? (
+                          <button
+                            className={`text-xs truncate hover:underline ${
+                              isDirty ? "text-blue-400" : "text-yellow-500"
+                            }`}
+                            onClick={() => openTeamAssignmentPopup(row.teamKey)}
+                          >
+                            {assignedName}
+                          </button>
+                        ) : (
+                          <span
+                            className={`text-xs truncate ${
+                              isDirty
+                                ? "text-blue-400"
+                                : assignedName
+                                  ? "text-yellow-500"
+                                  : "text-muted-foreground"
+                            }`}
+                          >
+                            {assignedName ?? "None"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Assign Scouter Popup */}
-      {showScouterPopup && selectedMatchKey && selectedTeamKey && (
+      {showScouterPopup && selectedTeamKey && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card rounded-lg p-6 w-96 max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center border-b pb-3 mb-4">
@@ -877,44 +1162,40 @@ function SchedulerPage() {
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto pr-2">
-              {matchScouterMap[`${selectedMatchKey}|${selectedTeamKey}`] && (
+              {popupCurrentScouter && (
                 <div className="mb-4 p-2 border rounded-md bg-secondary/30">
                   <p className="text-sm text-muted-foreground">
                     Current Scouter:
                   </p>
                   <div className="flex justify-between items-center mt-1">
-                    <span className="font-medium">
-                      {
-                        matchScouterMap[
-                          `${selectedMatchKey}|${selectedTeamKey}`
-                        ]
-                      }
-                    </span>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => {
-                        const key = `${selectedMatchKey}|${selectedTeamKey}`;
-                        setMatchScouterMap((prev) => {
-                          const next = { ...prev };
-                          delete next[key];
-                          return next;
-                        });
-                        setMatchUidMap((prev) => {
-                          const next = { ...prev };
-                          delete next[key];
-                          return next;
-                        });
-                        setAssignedMatchTeams((prev) => {
-                          const next = new Set(prev);
-                          next.delete(key);
-                          return next;
-                        });
-                        setShowScouterPopup(false);
-                      }}
-                    >
-                      Remove
-                    </Button>
+                    <span className="font-medium">{popupCurrentScouter}</span>
+                    {scouterPopupMode === "match" && popupAssignmentKey && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          const key = popupAssignmentKey;
+                          setMatchScouterMap((prev) => {
+                            const next = { ...prev };
+                            delete next[key];
+                            return next;
+                          });
+                          setMatchUidMap((prev) => {
+                            const next = { ...prev };
+                            delete next[key];
+                            return next;
+                          });
+                          setAssignedMatchTeams((prev) => {
+                            const next = new Set(prev);
+                            next.delete(key);
+                            return next;
+                          });
+                          setShowScouterPopup(false);
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -945,18 +1226,20 @@ function SchedulerPage() {
                       key={s.uid}
                       className="flex items-center gap-3 px-2 py-2 w-full text-left hover:bg-secondary/40"
                       onClick={() => {
-                        if (selectedMatchKey && selectedTeamKey) {
-                          const key = `${selectedMatchKey}|${selectedTeamKey}`;
-                          setMatchScouterMap((prev) => ({
-                            ...prev,
-                            [key]: s.name,
-                          }));
+                        if (!popupAssignmentKey) return;
+                        if (scouterPopupMode === "match") {
+                          const key = popupAssignmentKey;
+                          setMatchScouterMap((prev) => ({ ...prev, [key]: s.name }));
                           setMatchUidMap((prev) => ({ ...prev, [key]: s.uid }));
                           setAssignedMatchTeams((prev) => {
                             const next = new Set(prev);
                             next.add(key);
                             return next;
                           });
+                        } else {
+                          const key = popupAssignmentKey;
+                          setTeamScouterMap((prev) => ({ ...prev, [key]: s.name }));
+                          setTeamUidMap((prev) => ({ ...prev, [key]: s.uid }));
                         }
                         setShowScouterPopup(false);
                       }}
