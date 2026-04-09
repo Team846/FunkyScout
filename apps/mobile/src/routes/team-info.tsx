@@ -1132,7 +1132,7 @@ function TeamInfoPage() {
                     </div>
                     </div>
                     <div className="flex items-center justify-between py-2">
-                      <p className="text-foreground">Drive Type</p>
+                      <p className="text-foreground">Drive Type/Experience</p>
                       <div className="flex items-center gap-1.5">
                         <p className="font-semibold text-foreground">{pitData.driveType}</p>
                      </div>

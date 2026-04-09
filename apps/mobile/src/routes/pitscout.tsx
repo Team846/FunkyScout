@@ -650,7 +650,7 @@ function ScoutPage() {
           </div>
         </Section>
         {/* Drive Type Section */}
-        <Section title="Drive Type">
+        <Section title="Drive Type/Driver Experience">
           <div className="flex flex-col gap-3 px-2">
             <Input
               type="text"
@@ -658,7 +658,7 @@ function ScoutPage() {
               value={driveType}
               onChange={(e) => setDriveType(e.target.value)}
               className="h-10 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground"
-              placeholder="(E.g. swerve module type, tank drive)"
+              placeholder="(E.g. swerve module type, tank drive, as well as number of comps of driver experience)"
             />
             </div>
         </Section>
