@@ -61,6 +61,7 @@ function PicklistViewPage() {
   const [saving, setSaving] = useState(false);
   const [lastLoadedTimestamp, setLastLoadedTimestamp] = useState<number>(0);
   const lastLoadedAtRef = useRef<number>(0); // When we set lastLoadedTimestamp, for grace period
+  const selfEditAtRef = useRef<number>(0); // Set on save; suppresses self-echo conflict toasts
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -150,7 +151,13 @@ function PicklistViewPage() {
           significantDiff,
         });
 
-        if (isNewer && significantDiff) {
+        // Suppress conflict toast if this looks like our own edit bouncing back
+        // from Supabase (sync round-trip is typically well under 30s)
+        const isSelfEdit =
+          selfEditAtRef.current > 0 &&
+          Date.now() - selfEditAtRef.current < 30_000;
+
+        if (isNewer && significantDiff && !isSelfEdit) {
           console.log(
             "[picklist-view] ⚠️ Remote changes detected - cache is newer!"
           );
@@ -330,6 +337,7 @@ function PicklistViewPage() {
       );
 
       setHasUnsavedChanges(false);
+      selfEditAtRef.current = Date.now(); // Suppress conflict toast for 30s after own save
       console.log(
         "[picklist-view] ✅ Saved changes, refreshing from Supabase to get authoritative timestamp"
       );

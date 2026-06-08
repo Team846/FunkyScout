@@ -38,7 +38,7 @@ function PitScoutImagesPage() {
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<
-    "idle" | "submitting" | "synced"
+    "idle" | "submitting" | "pending" | "synced"
   >("idle");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,8 +117,8 @@ function PitScoutImagesPage() {
         }
       );
 
-      toast.success("Pit scouting submitted!", { id: toastId });
-      setSyncStatus("synced");
+      toast.success("Saved! Syncing in background…", { id: toastId });
+      setSyncStatus("pending");
 
       // Clear form data
       clearFormData();
@@ -126,7 +126,7 @@ function PitScoutImagesPage() {
       // Navigate to home after short delay
       setTimeout(() => {
         navigate({ to: "/home" });
-      }, 1500);
+      }, 800);
     } catch (error) {
       console.error("Submit error:", error);
       toast.error("Failed to submit pit data", { id: toastId });
@@ -307,7 +307,8 @@ function PitScoutImagesPage() {
             <div className="px-2">
               <Alert className="bg-muted border border-border">
                 <AlertDescription className="text-sm text-muted-foreground font-light">
-                  {syncStatus === "submitting" && "Submitting locally..."}
+                  {syncStatus === "submitting" && "Saving locally..."}
+                  {syncStatus === "pending" && "Saved locally — will sync when connected"}
                   {syncStatus === "synced" &&
                     isSyncing &&
                     "Syncing to cloud..."}

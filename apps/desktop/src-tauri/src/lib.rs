@@ -143,6 +143,7 @@ pub fn run() {
             commands::tba::fetch_tba_team_statuses,
             commands::tba::fetch_tba_match_schedule,
             commands::tba::fetch_team_stats,
+            commands::tba::get_cached_team_stats,
             commands::tba::fetch_match_rp,
             commands::tba::fetch_event_videos,
             commands::tba::bootstrap_event_schedule,

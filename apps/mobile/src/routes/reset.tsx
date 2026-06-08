@@ -3,7 +3,7 @@ import { Button } from "@shadcn/ui/components/button.tsx";
 import { Input } from "@shadcn/ui/components/input.tsx";
 import { useState } from "react";
 import { toast } from "sonner";
-import { updatePassword } from "@lib/supabase/auth";
+import { updatePassword, sendPasswordReset } from "@lib/supabase/auth";
 import { useEffect } from "react";
 import supabase from "@lib/supabase/supabase";
 
@@ -20,11 +20,37 @@ function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [resendEmail, setResendEmail] = useState("");
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
+    // 30s timeout — token exchange can be slow in Safari/in-app browsers
     const timeout = setTimeout(() => {
       setInvalid(true);
-    }, 10000);
+    }, 30000);
+
+    // Try to manually exchange tokens from the URL hash — handles the case where the
+    // link opened in SafariViewController (which has isolated localStorage) so the
+    // onAuthStateChange event never fires despite valid tokens being present
+    const tryHashExchange = async () => {
+      const hash = window.location.hash;
+      if (hash.includes("access_token") && hash.includes("type=recovery")) {
+        const params = new URLSearchParams(hash.slice(1));
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (!error) {
+            clearTimeout(timeout);
+            setReady(true);
+          }
+        }
+      }
+    };
+    tryHashExchange();
 
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
@@ -78,13 +104,50 @@ function ResetPasswordPage() {
     );
   }
 
+  const handleResend = async () => {
+    if (!resendEmail.trim()) {
+      toast.error("Enter your email address");
+      return;
+    }
+    setResending(true);
+    try {
+      await sendPasswordReset(resendEmail.trim());
+      toast.success("Reset email sent — check your inbox");
+    } catch {
+      toast.error("Failed to send reset email");
+    } finally {
+      setResending(false);
+    }
+  };
+
   if (invalid) {
     return (
       <div className="min-h-dvh w-full bg-background flex items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-4">
-          <p className="text-xl font-bold text-destructive text-center">
-            This reset link is invalid or has expired.
+        <div className="flex flex-col items-center gap-5 max-w-sm text-center">
+          <p className="text-xl font-bold text-destructive">
+            Couldn't verify the reset link.
           </p>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            This sometimes happens when the link opens in a different browser.
+            Try copying the link from the email and opening it directly in your
+            main browser, or request a new reset link below.
+          </p>
+          <div className="w-full flex flex-col gap-2">
+            <Input
+              type="email"
+              value={resendEmail}
+              onChange={(e) => setResendEmail(e.target.value)}
+              placeholder="Your email address"
+              className="h-9 w-full border border-border rounded-md text-foreground bg-accent text-sm font-thin placeholder:text-foreground"
+            />
+            <Button
+              onClick={handleResend}
+              disabled={resending}
+              className="h-11 w-full bg-primary text-primary-foreground"
+            >
+              {resending ? "Sending…" : "Send a new reset link"}
+            </Button>
+          </div>
           <Button
             variant="outline"
             onClick={() => navigate({ to: "/auth" })}

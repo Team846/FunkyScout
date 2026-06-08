@@ -255,13 +255,12 @@ export class SyncManager {
    * Fetches existing data, merges pit data with TBA stats, then upserts
    */
   private async syncTeamData(payload: PutTeamDataPayload): Promise<void> {
-    const { event, team, data, name, uid, teamName, timestamp: queueTimestamp } = payload;
+    const { event, team, data, name, uid, teamName } = payload;
 
     // 1. Fetch existing data to preserve TBA stats and team_name.
-    //    Also fetch last_modified to detect stale queue items.
     const { data: existing, error: fetchError } = await this.supabaseClient
       .from("event_team_data")
-      .select("data, team_name, last_modified")
+      .select("data, team_name")
       .eq("event", event)
       .eq("team", team)
       .maybeSingle();
@@ -275,22 +274,7 @@ export class SyncManager {
       throw fetchError;
     }
 
-    // 2. Stale-data protection: if Supabase was modified AFTER this queue item was created,
-    //    a more recent submission has already been processed. Skip to avoid overwriting newer data.
-    //    (This covers the 30-minute delayed retry scenario where Scout A's old form overwrites
-    //    Scout B's newer submission that processed in the meantime.)
-    if (existing?.last_modified && queueTimestamp) {
-      const supabaseModifiedMs = new Date(existing.last_modified).getTime();
-      if (supabaseModifiedMs > queueTimestamp) {
-        console.warn(
-          `[Sync] Skipping stale team data for ${team} (queue created ${new Date(queueTimestamp).toISOString()}, ` +
-          `Supabase last_modified ${existing.last_modified}) — newer data already in Supabase`
-        );
-        return;
-      }
-    }
-
-    // 3. Merge new pit scouting fields on top of any existing pit scouting data.
+    // 2. Merge new pit scouting fields on top of any existing pit scouting data.
     //    existing.data may contain previously submitted pit fields from another scout
     //    or a partial re-submission — preserve anything not present in the new payload.
     let mergedData = data;
@@ -301,14 +285,12 @@ export class SyncManager {
       };
     }
 
-    // 4. Preserve existing team_name from TBA bootstrap if not provided
+    // 3. Preserve existing team_name from TBA bootstrap if not provided
     const finalTeamName = teamName || existing?.team_name || null;
 
-    // 5. Upsert merged data — only include name/uid if present to prevent null overwrites.
+    // 4. Upsert merged data — only include name/uid if present to prevent null overwrites.
     // If name/uid are null/undefined, the existing scouter identity is preserved in Supabase.
     // (Matches the protection already in syncMatchData and the desktop Rust path.)
-    // last_modified is set explicitly so the stale-data check on retries works correctly:
-    // a retrying stale queue item will see last_modified > its own timestamp and skip.
     const upsertPayload: Record<string, unknown> = {
       event,
       team,
@@ -371,9 +353,6 @@ export class SyncManager {
     };
 
     // 3. Sync to Supabase using existing syncTeamData.
-    //    Use Date.now() as the timestamp — the image upload just succeeded, so this
-    //    write is current. Using the original queue timestamp would cause the stale-data
-    //    check to skip the write if TBA updated the row since this item was queued.
     await this.syncTeamData({
       event,
       team,
@@ -381,7 +360,7 @@ export class SyncManager {
       teamName,
       name,
       uid,
-      timestamp: Date.now(),
+      timestamp,
     });
 
     // 4. Write real paths back to local SQLite so the UI refreshes immediately.

@@ -85,22 +85,21 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
   /**
    * Read team data from local SQLite cache and fetch live stats from TBA/Statbotics.
    * SQLite (via Rust sync) provides pit scouting data and team names.
-   * TBA/Statbotics provide rank, record, EPA, OPR in memory — never stored locally.
+   * TBA/Statbotics stats use stale-while-revalidate: cached stats show immediately,
+   * then a live fetch runs in the background and updates the UI when done.
    */
   const fetchTeams = useCallback(async () => {
     if (!currentEvent) return;
 
     try {
-      const [[cached, pitData], statsMap] = await Promise.all([
+      // Phase 1: read SQLite team names + stale cached stats simultaneously (fast, offline-safe)
+      const [[cached, pitData], cachedStats] = await Promise.all([
         Promise.all([
           getSQLiteTeams(currentEvent),
           getPitScoutingData(currentEvent),
         ]),
-        invoke<Record<string, TeamStatsEntry>>("fetch_team_stats", { event: currentEvent })
-          .catch((e) => {
-            console.warn("[DesktopTeamData] fetch_team_stats failed:", e);
-            return {} as Record<string, TeamStatsEntry>;
-          }),
+        invoke<Record<string, TeamStatsEntry>>("get_cached_team_stats", { event: currentEvent })
+          .catch(() => ({} as Record<string, TeamStatsEntry>)),
       ]);
 
       if (cached.length > 0) {
@@ -125,8 +124,9 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
 
       setPitScoutingData(pitData);
 
-      if (Object.keys(statsMap).length > 0) {
-        setTeamStatsData(statsMap);
+      // Apply stale cache immediately so stats are visible before the live fetch completes
+      if (Object.keys(cachedStats).length > 0) {
+        setTeamStatsData(cachedStats);
       }
     } catch (error) {
       console.error("[DesktopTeamData] Failed to fetch team data:", error);
@@ -134,6 +134,18 @@ export function DesktopTeamDataProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       setLastDataRefreshAt(Date.now());
     }
+
+    // Phase 2: fetch live stats in background — updates UI when done, writes to cache on success
+    invoke<Record<string, TeamStatsEntry>>("fetch_team_stats", { event: currentEvent })
+      .then((live) => {
+        if (Object.keys(live).length > 0) {
+          setTeamStatsData(live);
+          setLastDataRefreshAt(Date.now());
+        }
+      })
+      .catch((e) =>
+        console.warn("[DesktopTeamData] live stats fetch failed, using cached stats", e)
+      );
   }, [currentEvent]);
 
   // Keep ref in sync

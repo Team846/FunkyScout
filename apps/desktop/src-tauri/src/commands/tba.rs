@@ -1,6 +1,7 @@
 use crate::services::tba::{MatchSchedule, TeamRank};
 use crate::services::StatboticsService;
 use serde_json::{json, Value};
+use sqlx::Row;
 use std::{collections::HashMap, sync::Mutex};
 use tauri::State;
 
@@ -227,12 +228,22 @@ pub async fn fetch_event_videos(
 /// Calls TBA statuses, TBA OPRs, and Statbotics EPA in parallel through the Rust backend
 /// so the webview never makes direct external API calls (avoids CORS/ATS issues in Tauri).
 /// Returns: map of team_key → { rank, record, nextMatch, lastMatch, epa, opr, dpr }
+/// On success, writes the result to external_cache for offline fallback.
 #[tauri::command]
 pub async fn fetch_team_stats(
     state: State<'_, Mutex<crate::AppState>>,
     event: String,
 ) -> Result<HashMap<String, Value>, String> {
-    let tba_service = state.lock().unwrap().tba_service.clone();
+    let (tba_service, pool) = {
+        let app_state = state.lock().unwrap();
+        let pool = app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone();
+        (app_state.tba_service.clone(), pool)
+    };
     let statbotics_service = StatboticsService::new();
 
     // Fetch TBA statuses, OPRs, and Statbotics EPA in parallel — all non-fatal on error
@@ -275,5 +286,55 @@ pub async fn fetch_team_stats(
         })
         .collect();
 
+    // Persist to external_cache so stats are available offline on next load
+    if !result.is_empty() {
+        if let Ok(data_str) = serde_json::to_string(&result) {
+            let _ = sqlx::query(
+                "INSERT INTO external_cache (source, endpoint, data) VALUES ('team_stats', ?, ?)
+                 ON CONFLICT(source, endpoint) DO UPDATE SET data = excluded.data"
+            )
+            .bind(&event)
+            .bind(&data_str)
+            .execute(&pool)
+            .await;
+        }
+    }
+
     Ok(result)
+}
+
+/// Read cached team stats from external_cache (populated by fetch_team_stats on last successful fetch).
+/// Returns empty map if no cache entry exists for the event.
+#[tauri::command]
+pub async fn get_cached_team_stats(
+    state: State<'_, Mutex<crate::AppState>>,
+    event: String,
+) -> Result<HashMap<String, Value>, String> {
+    let pool = {
+        let app_state = state.lock().unwrap();
+        app_state
+            .database
+            .as_ref()
+            .ok_or("Database not initialized")?
+            .get_sqlx_pool()
+            .clone()
+    };
+
+    let row = sqlx::query(
+        "SELECT data FROM external_cache WHERE source = 'team_stats' AND endpoint = ?"
+    )
+    .bind(&event)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("Failed to query external_cache: {}", e))?;
+
+    match row {
+        Some(r) => {
+            let data_str: String = r.try_get("data").unwrap_or_default();
+            let parsed: HashMap<String, Value> =
+                serde_json::from_str(&data_str).unwrap_or_default();
+            Ok(parsed)
+        }
+        None => Ok(HashMap::new()),
+    }
 }

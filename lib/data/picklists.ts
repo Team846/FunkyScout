@@ -8,12 +8,22 @@ import type { EventPicklist } from "./schema";
 import { upsertEventPicklistsRows } from "../db";
 
 const picklistSyncKey = (event: string) => `lastPicklistSync_${event}`;
+const picklistFullSyncKey = (event: string) => `lastPicklistFullSync_${event}`;
+
+// 5-minute lookback buffer absorbs clock skew and most partial-fetch gaps
+const CLOCK_SKEW_BUFFER_MS = 5 * 60 * 1000;
+// Periodic full-fetch heal: re-fetch everything every 30 minutes to catch any rows
+// that slipped through partial incremental fetches during spotty connectivity
+const FULL_HEAL_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
  * Fetch all picklists for an event from Supabase and upsert into local cache.
  *
  * Incremental sync: after the first fetch, only rows with last_modified >=
- * last sync time are fetched (1-minute clock-skew buffer).
+ * last sync time are fetched (5-minute clock-skew buffer).
+ *
+ * Every 30 minutes a full-fetch heal is forced regardless of the incremental
+ * sync key, to recover rows missed during partial fetches on spotty connections.
  *
  * Entries are now embedded in the picklist row's `picklist` JSONB column —
  * no separate event_picklist_entries query is needed.
@@ -24,10 +34,20 @@ const picklistSyncKey = (event: string) => `lastPicklistSync_${event}`;
 export async function getPicklists(
   eventKey: string,
 ): Promise<{ picklists: EventPicklist[]; isIncremental: boolean } | null> {
+  // If it's been > 30 min since the last full load, force one to heal any gaps
+  const lastFullSyncStr = localStorage.getItem(picklistFullSyncKey(eventKey));
+  const needsFullHeal = lastFullSyncStr
+    ? Date.now() - new Date(lastFullSyncStr).getTime() > FULL_HEAL_INTERVAL_MS
+    : false;
+  if (needsFullHeal) {
+    localStorage.removeItem(picklistSyncKey(eventKey));
+    console.log(`[getPicklists] Full-heal triggered for ${eventKey}`);
+  }
+
   const lastSyncStr = localStorage.getItem(picklistSyncKey(eventKey));
   const isIncremental = !!lastSyncStr;
   const cutoffISO = isIncremental
-    ? new Date(new Date(lastSyncStr!).getTime() - 60_000).toISOString()
+    ? new Date(new Date(lastSyncStr!).getTime() - CLOCK_SKEW_BUFFER_MS).toISOString()
     : null;
 
   try {
@@ -86,6 +106,10 @@ export async function getPicklists(
     }
 
     localStorage.setItem(picklistSyncKey(eventKey), new Date().toISOString());
+    // Record when the last full load completed so the heal timer resets correctly
+    if (!isIncremental) {
+      localStorage.setItem(picklistFullSyncKey(eventKey), new Date().toISOString());
+    }
 
     return {
       picklists: (picklists || []) as EventPicklist[],
