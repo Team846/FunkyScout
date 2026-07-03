@@ -1,7 +1,7 @@
 use crate::services::tba::{MatchSchedule, TeamRank};
 use crate::services::StatboticsService;
 use serde_json::{json, Value};
-use sqlx::Row;
+use sea_orm::sqlx::{self, Row};
 use std::{collections::HashMap, sync::Mutex};
 use tauri::State;
 

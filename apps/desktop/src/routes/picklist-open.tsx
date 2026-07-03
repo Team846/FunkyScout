@@ -18,10 +18,7 @@ import {
   Grid2X2,
   GitCompare,
 } from "lucide-react";
-import {
-  getTeamNum,
-  SortableFullPanel,
-} from "../components/TeamPanelShared";
+import { getTeamNum, SortableFullPanel } from "../components/TeamPanelShared";
 import {
   DndContext,
   closestCenter,
@@ -57,14 +54,26 @@ import { toast } from "sonner";
 import { useTabContext } from "../contexts/TabContext";
 import { useDesktopEvent } from "../contexts/DesktopEventContext";
 import { useDesktopCompetitionData } from "../contexts/DesktopCompetitionDataContext";
-import type { TbaClimbEntry, MatchScoutingData } from "../contexts/DesktopCompetitionDataContext";
+import type {
+  TbaClimbEntry,
+  MatchScoutingData,
+} from "../contexts/DesktopCompetitionDataContext";
 import { useDesktopTeamData } from "../contexts/DesktopTeamDataContext";
 import type { TBATeam } from "../contexts/DesktopTeamDataContext";
 import { usePicklistEditor } from "@lib/hooks/usePicklistEditor";
 import { deletePicklist, updatePicklist } from "@lib/data/writes";
-import { GRAPHABLE_STATS, getStatDataPoints, getTbaStatDataPoints } from "@lib/data/matchStats";
+import {
+  GRAPHABLE_STATS,
+  getStatDataPoints,
+  getTbaStatDataPoints,
+} from "@lib/data/matchStats";
 import type { PicklistEntry } from "@lib/data/schema";
-
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@shadcn/ui/components/tooltip.tsx";
 export const Route = createFileRoute("/picklist-open")({
   component: PicklistEditorPage,
   validateSearch: (search: Record<string, unknown>) => ({
@@ -123,25 +132,32 @@ function computeGraphData(
   teams: string[],
   matchData: MatchScoutingData[],
   tbaTeams: TBATeam[],
-  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>
+  tbaClimbData: Record<string, Record<string, TbaClimbEntry>>,
 ): { raws: (number | null)[]; normalized: number[]; winnerIdx: number } {
   const stat = GRAPHABLE_STATS.find((s) => s.key === metricKey);
 
   // Returns null when no data is available (distinct from 0 which means "genuinely zero")
   const getRaw = (teamKey: string): number | null => {
     if (metricKey === "epa")
-      return tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+      return (
+        tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null
+      );
     if (metricKey === "opr")
       return tbaTeams.find((t) => t.key === teamKey)?.opr ?? null;
     // TBA-sourced stats: iterate all played matches (correct denominator)
     if (stat?.source === "tba") {
-      const epa = tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+      const epa =
+        tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ??
+        null;
       const pts = getTbaStatDataPoints(metricKey, teamKey, tbaClimbData, epa);
       if (!pts.length) return null; // No TBA data — not the same as zero
       return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
     }
     // Scouting stats
-    const pts = getStatDataPoints(metricKey, matchData.filter((m) => m.team === teamKey) as any);
+    const pts = getStatDataPoints(
+      metricKey,
+      matchData.filter((m) => m.team === teamKey) as any,
+    );
     if (!pts.length) return null; // Not scouted — not the same as zero
     return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
   };
@@ -155,9 +171,8 @@ function computeGraphData(
       ? stat.normalize(r, nonNullRaws)
       : r / max;
   });
-  const winnerIdx = nonNullRaws.length > 0
-    ? raws.indexOf(Math.max(...nonNullRaws))
-    : -1;
+  const winnerIdx =
+    nonNullRaws.length > 0 ? raws.indexOf(Math.max(...nonNullRaws)) : -1;
   return { raws, normalized, winnerIdx };
 }
 
@@ -193,99 +208,116 @@ function SidebarTeamCard({
   const teamNum = getTeamNum(entry.team);
   const teamName = tbaTeam?.name ?? entry.team;
   const tbaRank = tbaTeam?.rank;
-
+  {console.log(entry, entry.flags)}
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-      }}
-      className={[
-        "flex items-stretch rounded-lg border overflow-hidden select-none transition-all",
-        isExcluded ? "opacity-40 grayscale" : "",
-        isSelected
-          ? "border-primary"
-          : "border-border/60 hover:border-muted-foreground",
-      ].join(" ")}
-    >
-      {/* ── Drag handle strip (left edge) ── */}
-      <div
-        {...attributes}
-        {...listeners}
-        onClick={(e) => e.stopPropagation()}
-        className="group/drag w-6 flex-shrink-0 flex flex-col items-center justify-center gap-[5px] cursor-grab active:cursor-grabbing bg-muted/40 hover:bg-muted/70 transition-colors pl-3.5 pr-1"
-      >
-        {[0, 1, 2].map((row) => (
-          <div key={row} className="flex gap-[3px]">
-            <div className="w-[5px] h-[5px] rounded-full bg-muted-foreground/60 group-hover/drag:bg-foreground transition-colors" />
-            <div className="w-[5px] h-[5px] rounded-full bg-muted-foreground/60 group-hover/drag:bg-foreground transition-colors" />
-          </div>
-        ))}
-      </div>
-
-      {/* ── Card content ── */}
-      <div
-        onClick={onSelect}
-        className={[
-          "flex-1 px-3 py-3 cursor-pointer min-w-0",
-          isExcluded ? "bg-muted" : "bg-card",
-        ].join(" ")}
-      >
-        {/* Row 1: rank + divider + name + number */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-semibold text-primary w-5 text-center flex-shrink-0">
-            {entry.rank}
-          </span>
-          {/* Vertical divider */}
-          <div className="w-px h-4 bg-muted-foreground/50 flex-shrink-0" />
-          <span className="text-sm font-medium text-foreground/80 flex-1 truncate">
-            {teamName}
-          </span>
-          <span className="text-sm text-primary flex-shrink-0">{teamNum}</span>
-        </div>
-
-        {/* Row 2: icons + TBA rank badge (aligned with rank number) */}
-        <div className="flex items-center gap-2 mt-2">
-          {/* Exclude icon in w-5 container to align with rank number */}
-          <div className="w-5 flex items-center justify-center flex-shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleExclude();
-              }}
-              className={[
-                "rounded transition-colors",
-                isExcluded
-                  ? "text-destructive drop-shadow-[0_0_4px_hsl(var(--destructive))]"
-                  : "text-muted-foreground/50 hover:text-muted-foreground",
-              ].join(" ")}
-              title={isExcluded ? "Include team" : "Exclude team"}
-            >
-              <Ban className="w-4 h-4" />
-            </button>
-          </div>
-
-          <button
-            onClick={(e) => { e.stopPropagation(); onTeamExpand?.(); }}
-            className="rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            title="Open team page"
+    
+    <Tooltip>
+      <TooltipTrigger asChild>
+        
+        <div
+        
+          ref={setNodeRef}
+          style={{
+            transform: CSS.Transform.toString(transform),
+            transition,
+            opacity: isDragging ? 0.4 : 1,
+          }}
+          className={[
+            "flex items-stretch rounded-lg border overflow-hidden select-none transition-all",
+            isExcluded ? "opacity-40 grayscale" : "",
+            isSelected
+              ? "border-primary"
+              : "border-border/60 hover:border-muted-foreground",
+          ].join(" ")}
+        >
+          {/* ── Drag handle strip (left edge) ── */}
+          <div
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="group/drag w-6 flex-shrink-0 flex flex-col items-center justify-center gap-[5px] cursor-grab active:cursor-grabbing bg-muted/40 hover:bg-muted/70 transition-colors pl-3.5 pr-1"
           >
-            <Maximize2 className="w-4 h-4" />
-          </button>
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="flex gap-[3px]">
+                <div className="w-[5px] h-[5px] rounded-full bg-muted-foreground/60 group-hover/drag:bg-foreground transition-colors" />
+                <div className="w-[5px] h-[5px] rounded-full bg-muted-foreground/60 group-hover/drag:bg-foreground transition-colors" />
+              </div>
+            ))}
+          </div>
 
-          {tbaRank !== undefined && (
-            <div className="flex items-center gap-1.5 ml-auto">
-              <span className="text-xs text-muted-foreground/60">Rank</span>
-              <span className="w-8 h-5 rounded-full bg-primary text-background text-xs flex items-center justify-center">
-                #{tbaRank}
+          {/* ── Card content ── */}
+          <div
+            onClick={onSelect}
+            className={[
+              "flex-1 px-3 py-3 cursor-pointer min-w-0",
+              isExcluded ? "bg-muted" : "bg-card",
+            ].join(" ")}
+          >
+            {/* Row 1: rank + divider + name + number */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold text-primary w-5 text-center flex-shrink-0">
+                {entry.rank}
+              </span>
+              {/* Vertical divider */}
+              <div className="w-px h-4 bg-muted-foreground/50 flex-shrink-0" />
+              <span className="text-sm font-medium text-foreground/80 flex-1 truncate">
+                {teamName}
+              </span>
+              <span className="text-sm text-primary flex-shrink-0">
+                {teamNum}
               </span>
             </div>
-          )}
+
+            {/* Row 2: icons + TBA rank badge (aligned with rank number) */}
+            <div className="flex items-center gap-2 mt-2">
+              {/* Exclude icon in w-5 container to align with rank number */}
+              <div className="w-5 flex items-center justify-center flex-shrink-0">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleExclude();
+                  }}
+                  className={[
+                    "rounded transition-colors",
+                    isExcluded
+                      ? "text-destructive drop-shadow-[0_0_4px_hsl(var(--destructive))]"
+                      : "text-muted-foreground/50 hover:text-muted-foreground",
+                  ].join(" ")}
+                  title={isExcluded ? "Include team" : "Exclude team"}
+                >
+                  <Ban className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTeamExpand?.();
+                }}
+                className="rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                title="Open team page"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+
+              {tbaRank !== undefined && (
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <span className="text-xs text-muted-foreground/60">Rank</span>
+                  <span className="w-8 h-5 rounded-full bg-primary text-background text-xs flex items-center justify-center">
+                    #{tbaRank}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        {entry.flags?.tags &&
+          Array.isArray(entry.flags.tags) &&
+          entry.flags.tags.map((tag: string) => <p key={tag}>{tag}</p>)}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -359,7 +391,11 @@ function TeamBar({
         >
           <Grid2X2 className="w-5 h-5" />
         </div>
-        <button onClick={onTeamExpand} className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors" title="Open team page">
+        <button
+          onClick={onTeamExpand}
+          className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
+          title="Open team page"
+        >
           <Maximize2 className="w-5 h-5" />
         </button>
         <button
@@ -376,7 +412,9 @@ function TeamBar({
 // ─── Sortable wrappers for main view ────────────────────────────────────────
 
 function SortableTeamBar(
-  props: Omit<TeamBarProps, "dragListeners" | "dragAttributes"> & { onTeamExpand?: () => void }
+  props: Omit<TeamBarProps, "dragListeners" | "dragAttributes"> & {
+    onTeamExpand?: () => void;
+  },
 ) {
   const {
     attributes,
@@ -441,14 +479,20 @@ function GraphCard({
   const { raws, normalized, winnerIdx } = useMemo(
     () => computeGraphData(metricKey, teams, matchData, tbaTeams, tbaClimbData),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [metricKey, teams.join(","), matchData.length, tbaTeams.length, tbaClimbData]
+    [
+      metricKey,
+      teams.join(","),
+      matchData.length,
+      tbaTeams.length,
+      tbaClimbData,
+    ],
   );
 
   const maxBarHeight = BAR_HEIGHT_PX;
 
   // Calculate bar width based on number of teams (expand when fewer teams)
   const barWidth = teams.length <= 2 ? 70 : teams.length === 3 ? 55 : 45;
-  
+
   return (
     <div className="w-[280px] flex-shrink-0 border border-border rounded-lg bg-card flex flex-col overflow-hidden">
       {/* Header */}
@@ -477,7 +521,9 @@ function GraphCard({
       {/* Bar chart */}
       <div
         className="flex-1 flex items-end justify-around px-3 pb-2 pt-2"
-        style={{ gap: teams.length <= 2 ? '8px' : teams.length === 3 ? '6px' : '4px' }}
+        style={{
+          gap: teams.length <= 2 ? "8px" : teams.length === 3 ? "6px" : "4px",
+        }}
       >
         {teams.length === 0 ? (
           <span className="text-xs text-muted-foreground self-center">
@@ -507,7 +553,9 @@ function GraphCard({
                       <span className="text-[9px] text-muted-foreground/70 font-medium">
                         {percentile}%
                       </span>
-                      <span className="text-[8px] text-muted-foreground/70">↓</span>
+                      <span className="text-[8px] text-muted-foreground/70">
+                        ↓
+                      </span>
                     </div>
                   )}
                   {/* Bar with percentile inside */}
@@ -526,11 +574,17 @@ function GraphCard({
                   </div>
                 </div>
                 {/* Stat value - highlighted if best */}
-                <span className={[
-                  "text-[11px] font-medium mt-1 flex-shrink-0",
-                  isWinner ? "text-primary" : "text-muted-foreground",
-                ].join(" ")}>
-                  {rawVal == null ? "—" : rawVal === 0 ? "0" : rawVal.toFixed(1)}
+                <span
+                  className={[
+                    "text-[11px] font-medium mt-1 flex-shrink-0",
+                    isWinner ? "text-primary" : "text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {rawVal == null
+                    ? "—"
+                    : rawVal === 0
+                      ? "0"
+                      : rawVal.toFixed(1)}
                 </span>
                 {/* Team number */}
                 <span className="text-[11px] font-semibold text-foreground truncate w-full text-center flex-shrink-0">
@@ -555,12 +609,13 @@ interface MetricPickerProps {
 
 function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
   const [search, setSearch] = useState("");
-  
+
   const filteredMetrics = useMemo(() => {
     if (!search.trim()) return ALL_GRAPH_METRICS;
     const q = search.toLowerCase();
     return ALL_GRAPH_METRICS.filter(
-      (m) => m.label.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)
+      (m) =>
+        m.label.toLowerCase().includes(q) || m.group.toLowerCase().includes(q),
     );
   }, [search]);
 
@@ -577,7 +632,7 @@ function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
         }}
       />
       {/* Modal */}
-      <div 
+      <div
         className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 bg-muted border border-border rounded-lg shadow-xl z-50 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -623,8 +678,9 @@ function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
                 <div className="px-4 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                   {group}
                 </div>
-                {filteredMetrics.filter((m) => m.group === group).map(
-                  (metric) => {
+                {filteredMetrics
+                  .filter((m) => m.group === group)
+                  .map((metric) => {
                     const isActive = activeMetrics.includes(metric.key);
                     return (
                       <button
@@ -641,8 +697,7 @@ function MetricPicker({ activeMetrics, onSelect, onClose }: MetricPickerProps) {
                         {isActive && " ✓"}
                       </button>
                     );
-                  }
-                )}
+                  })}
               </div>
             ))
           )}
@@ -666,7 +721,8 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   const navigate = useNavigate();
   const { addTab } = useTabContext();
   const { currentEvent, useTbaClimb } = useDesktopEvent();
-  const { picklists, tbaClimbData, matchScoutingData, refresh } = useDesktopCompetitionData();
+  const { picklists, tbaClimbData, matchScoutingData, refresh } =
+    useDesktopCompetitionData();
   const { tbaTeams, pitScoutingData } = useDesktopTeamData();
 
   // ── State ──
@@ -714,19 +770,18 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     }
   }, [selectedPicklist?.type]);
 
-
   // ── Merge picklist entries with all event teams ──
   const mergedInitialEntries = useMemo<PicklistEntry[]>(() => {
     if (!selectedPicklist) return [];
     const entriesByTeam = new Map(
-      selectedPicklist.picklist.map((e) => [e.team, e])
+      selectedPicklist.picklist.map((e) => [e.team, e]),
     );
     const maxRank = selectedPicklist.picklist.reduce(
       (m, e) => Math.max(m, e.rank || 0),
-      0
+      0,
     );
     const inPicklist = [...selectedPicklist.picklist].sort(
-      (a, b) => (a.rank || 0) - (b.rank || 0)
+      (a, b) => (a.rank || 0) - (b.rank || 0),
     );
     const extra = tbaTeams
       .filter((t) => !entriesByTeam.has(t.key))
@@ -768,8 +823,9 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
   // Restore scroll position on mount
   useEffect(() => {
     const saved = _picklistUIState.get(picklistId)?.scrollY;
-    if (teamListScrollRef.current && saved) teamListScrollRef.current.scrollTop = saved;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (teamListScrollRef.current && saved)
+      teamListScrollRef.current.scrollTop = saved;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const autoSavedPicklistRef = useRef<string | null>(null);
@@ -785,15 +841,30 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
       rank: e.rank ?? 0,
       flags: e.flags ?? {},
     }));
-    updatePicklist(picklistId, currentEvent, selectedPicklist.title, validEntries, picklistType)
-      .then(() => console.log("[PicklistOpen] Auto-saved initial entries for new picklist:", picklistId))
-      .catch((e) => console.error("[PicklistOpen] Failed to auto-save new picklist:", e));
+    updatePicklist(
+      picklistId,
+      currentEvent,
+      selectedPicklist.title,
+      validEntries,
+      picklistType,
+    )
+      .then(() =>
+        console.log(
+          "[PicklistOpen] Auto-saved initial entries for new picklist:",
+          picklistId,
+        ),
+      )
+      .catch((e) =>
+        console.error("[PicklistOpen] Failed to auto-save new picklist:", e),
+      );
   }, [picklistId, mergedInitialEntries.length]);
 
   // ── Sidebar DnD sensors ──
   const sidebarSensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   // ── Main view DnD sensors ──
@@ -801,7 +872,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
 
   // ── Filtered sidebar entries ──
   const filteredEntries = useMemo(() => {
-    if (!searchTeam.trim()) return displayEntries.filter(e => e?.team);
+    if (!searchTeam.trim()) return displayEntries.filter((e) => e?.team);
     const q = searchTeam.toLowerCase();
     return displayEntries.filter(
       (e) =>
@@ -809,10 +880,9 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
         getTeamNum(e?.team)?.includes(q) ||
         (tbaTeams.find((t) => t.key === e.team)?.name ?? "")
           .toLowerCase()
-          .includes(q)
+          .includes(q),
     );
-    }, [displayEntries, searchTeam, tbaTeams]);
-
+  }, [displayEntries, searchTeam, tbaTeams]);
 
   // ── Sidebar drag end ──
   const handleSidebarDragEnd = (event: DragEndEvent) => {
@@ -857,7 +927,10 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
         return r != null ? r : null;
       }
       if (sortKey === "epa") {
-        return tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+        return (
+          tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ??
+          null
+        );
       }
       if (sortKey === "opr") {
         const opr = tbaTeams.find((t) => t.key === teamKey)?.opr;
@@ -865,12 +938,17 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
       }
       const stat = GRAPHABLE_STATS.find((s) => s.key === sortKey);
       if (stat?.source === "tba") {
-        const epa = tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ?? null;
+        const epa =
+          tbaTeams.find((t) => t.key === teamKey)?.epa?.total_points?.mean ??
+          null;
         const pts = getTbaStatDataPoints(sortKey, teamKey, tbaClimbData, epa);
         if (!pts.length) return null;
         return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
       }
-      const pts = getStatDataPoints(sortKey, matchScoutingData.filter((m) => m.team === teamKey) as any);
+      const pts = getStatDataPoints(
+        sortKey,
+        matchScoutingData.filter((m) => m.team === teamKey) as any,
+      );
       if (!pts.length) return null;
       return pts.reduce((s, p) => s + p.raw, 0) / pts.length;
     };
@@ -1007,7 +1085,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                     (v) =>
                       TYPE_CYCLE[
                         (TYPE_CYCLE.indexOf(v) + 1) % TYPE_CYCLE.length
-                      ]
+                      ],
                   )
                 }
                 className="text-xs px-3 py-1 rounded-md bg-muted text-muted-foreground border border-border hover:border-primary/40 font-medium transition-colors capitalize"
@@ -1048,7 +1126,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                           className="text-muted-foreground/70"
                         >
                           {ALL_SORT_OPTIONS.filter(
-                            (s) => s.group === group
+                            (s) => s.group === group,
                           ).map((opt) => (
                             <CommandItem
                               key={opt.key}
@@ -1063,7 +1141,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                             </CommandItem>
                           ))}
                         </CommandGroup>
-                      )
+                      ),
                     )}
                   </CommandList>
                 </Command>
@@ -1096,7 +1174,8 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
             className="flex-[3] overflow-y-auto py-2 px-3 space-y-2.5 "
             onScroll={(e) => {
               const state = _picklistUIState.get(picklistId);
-              if (state) state.scrollY = (e.currentTarget as HTMLDivElement).scrollTop;
+              if (state)
+                state.scrollY = (e.currentTarget as HTMLDivElement).scrollTop;
             }}
           >
             <DndContext
@@ -1118,7 +1197,12 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                     onToggleExclude={() => toggleExclude(entry.team)}
                     onTeamExpand={() => {
                       const teamNum = entry.team.replace("frc", "");
-                      addTab("/team", `Team ${teamNum}`, { team: entry.team }, `team-${entry.team}`);
+                      addTab(
+                        "/team",
+                        `Team ${teamNum}`,
+                        { team: entry.team },
+                        `team-${entry.team}`,
+                      );
                       navigate({ to: "/team", search: { team: entry.team } });
                     }}
                   />
@@ -1134,77 +1218,77 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
 
           {/* Bottom actions - aligned with graph section */}
           <div className="w-full h-auto p-3 flex items-end">
-          <div className="w-full">
-            {deleteConfirmOpen ? (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleDelete}
-                  className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
-                <button
-                  onClick={() => setDeleteConfirmOpen(false)}
-                  className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </button>
-              </div>
-            ) : hasChanges ? (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={saveChanges}
-                  disabled={isSaving}
-                  className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                >
-                  <Save className="w-4 h-4" />
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-                <button
-                  onClick={() => {
-                    resetChanges();
-                    toast.success("Changes discarded");
-                  }}
-                  disabled={isSaving}
-                  className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground disabled:opacity-50 transition-colors"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Reset
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() =>
-                    navigate({
-                      to: "/comparison",
-                      search: { teams: fullPanelTeams.join(",") },
-                    })
-                  }
-                  className="h-10 w-10 flex items-center justify-center rounded-lg border border-border text-primary hover:border-muted-foreground transition-colors flex-shrink-0"
-                  title="Open in Comparison"
-                >
-                  <GitCompare className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => navigate({ to: "/picklists" })}
-                  className="flex-1 h-10 flex items-center justify-center px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground transition-colors"
-                >
-                  Switch Picklist
-                </button>
-                <button
-                  onClick={() => setDeleteConfirmOpen(true)}
-                  className="h-10 w-10 flex items-center justify-center rounded-lg border border-border text-primary hover:border-destructive hover:text-destructive transition-colors flex-shrink-0"
-                  title="Delete picklist"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
-            )}
+            <div className="w-full">
+              {deleteConfirmOpen ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDelete}
+                    className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmOpen(false)}
+                    className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </button>
+                </div>
+              ) : hasChanges ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={saveChanges}
+                    disabled={isSaving}
+                    className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  >
+                    <Save className="w-4 h-4" />
+                    {isSaving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      resetChanges();
+                      toast.success("Changes discarded");
+                    }}
+                    disabled={isSaving}
+                    className="flex-1 h-10 flex items-center justify-center gap-1.5 px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground disabled:opacity-50 transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Reset
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() =>
+                      navigate({
+                        to: "/comparison",
+                        search: { teams: fullPanelTeams.join(",") },
+                      })
+                    }
+                    className="h-10 w-10 flex items-center justify-center rounded-lg border border-border text-primary hover:border-muted-foreground transition-colors flex-shrink-0"
+                    title="Open in Comparison"
+                  >
+                    <GitCompare className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => navigate({ to: "/picklists" })}
+                    className="flex-1 h-10 flex items-center justify-center px-3 rounded-lg border border-border text-sm font-medium text-foreground/80 hover:border-muted-foreground transition-colors"
+                  >
+                    Switch Picklist
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="h-10 w-10 flex items-center justify-center rounded-lg border border-border text-primary hover:border-destructive hover:text-destructive transition-colors flex-shrink-0"
+                    title="Delete picklist"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         </div>
       </div>
 
@@ -1232,31 +1316,52 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                   <div className="flex h-full items-stretch justify-center gap-3">
                     {/* Full panels (slots 0 & 1) - fixed width */}
                     {fullPanelTeams.map((teamKey) => (
+                      
                       <SortableFullPanel
                         key={teamKey}
                         teamKey={teamKey}
                         entry={entries.find((e) => e.team === teamKey)}
+                        /** new */
+                        
+                        selectedPicklist={selectedPicklist}
+                        
+
+                        /**new */
+
                         tbaTeam={tbaTeams.find((t) => t.key === teamKey)}
                         matchData={matchScoutingData}
                         allMatchData={matchScoutingData}
                         allTbaTeams={tbaTeams}
-                        pitScouting={pitScoutingData.find((p) => p.team === teamKey)}
+                        pitScouting={pitScoutingData.find(
+                          (p) => p.team === teamKey,
+                        )}
                         tbaClimbData={tbaClimbData}
                         useTbaClimb={useTbaClimb}
                         onMoveUp={() => moveRank(teamKey, "up")}
                         onMoveDown={() => moveRank(teamKey, "down")}
                         onRemove={() =>
                           setSelectedTeams((prev) =>
-                            prev.filter((t) => t !== teamKey)
+                            prev.filter((t) => t !== teamKey),
                           )
                         }
                         statOverviewMetric={statOverviewMetric}
                         onStatOverviewMetricChange={setStatOverviewMetric}
-                        onGraphMetric={(key) => setActiveMetrics((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key])}
+                        onGraphMetric={(key) =>
+                          setActiveMetrics((prev) =>
+                            prev.includes(key)
+                              ? prev.filter((k) => k !== key)
+                              : [...prev, key],
+                          )
+                        }
                         graphedMetrics={activeMetrics}
                         onTeamExpand={() => {
                           const teamNum = teamKey.replace("frc", "");
-                          addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+                          addTab(
+                            "/team",
+                            `Team ${teamNum}`,
+                            { team: teamKey },
+                            `team-${teamKey}`,
+                          );
                           navigate({ to: "/team", search: { team: teamKey } });
                         }}
                       />
@@ -1270,12 +1375,17 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                         tbaTeam={tbaTeams.find((t) => t.key === teamKey)}
                         onRemove={() =>
                           setSelectedTeams((prev) =>
-                            prev.filter((t) => t !== teamKey)
+                            prev.filter((t) => t !== teamKey),
                           )
                         }
                         onTeamExpand={() => {
                           const teamNum = teamKey.replace("frc", "");
-                          addTab("/team", `Team ${teamNum}`, { team: teamKey }, `team-${teamKey}`);
+                          addTab(
+                            "/team",
+                            `Team ${teamNum}`,
+                            { team: teamKey },
+                            `team-${teamKey}`,
+                          );
                           navigate({ to: "/team", search: { team: teamKey } });
                         }}
                       />
@@ -1323,7 +1433,9 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
             role="button"
             tabIndex={0}
             onClick={() => setShowMetricPicker((v) => !v)}
-            onKeyDown={(e) => e.key === "Enter" && setShowMetricPicker((v) => !v)}
+            onKeyDown={(e) =>
+              e.key === "Enter" && setShowMetricPicker((v) => !v)
+            }
             className="w-14 flex-shrink-0 border border-border rounded-lg bg-card flex items-center justify-center text-primary hover:bg-secondary transition-colors cursor-pointer relative"
             title="Add metric"
           >
