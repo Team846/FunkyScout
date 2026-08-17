@@ -20,16 +20,18 @@ interface TeamStats {
   teamNumber: number;
   teamName: string;
   rank: number;
+  fsm: number | null;
   epa: number | null;
   averageRating: number | null; // Average of all ratings across all matches
   avgClimbPts: number | null; // Avg climb points per match (auto=15, L1=10, L2=20, L3=30)
   matchCount: number; // Total matches scouted
 }
 
-type SortField = "rank" | "epa" | "averageRating" | "avgClimbPts";
+type SortField = "rank" | "fsm" | "epa" | "averageRating" | "avgClimbPts";
 
 const SORT_FIELD_LABELS: Record<SortField, string> = {
   rank: "Rank",
+  fsm: "FSM",
   epa: "EPA",
   averageRating: "Avg Rating",
   avgClimbPts: "Climb Pts",
@@ -109,17 +111,19 @@ export function DataPage() {
     // Use centralized stats calculation
     const statsMap = calculateAllTeamStats(matchScoutingData);
 
-    // Combine with TBA data (EPA/OPR) and ranking
+    // Combine with TBA/FSM data (EPA/OPR/FSM) and ranking
     return teams.map((team) => {
       const stats = statsMap[team.key];
       const tbaTeamEntry = tbaTeams.find((t) => t.key === team.key);
       const epaValue = tbaTeamEntry?.epa?.total_points?.mean ?? null;
+      const fsmValue = tbaTeamEntry?.fsm ?? null;
 
       return {
         teamKey: team.key,
         teamNumber: team.num,
         teamName: team.name,
         rank: team.rank || 0,
+        fsm: fsmValue,
         epa: epaValue, // Keep EPA from TBA data
         averageRating: stats?.ratings.overall || null,
         avgClimbPts: stats
@@ -144,6 +148,10 @@ export function DataPage() {
         case "rank":
           aVal = a.rank === 0 ? 999 : a.rank;
           bVal = b.rank === 0 ? 999 : b.rank;
+          break;
+        case "fsm":
+          aVal = a.fsm ?? -1;
+          bVal = b.fsm ?? -1;
           break;
         case "epa":
           aVal = a.epa ?? -1;
@@ -178,6 +186,8 @@ export function DataPage() {
     switch (sortField) {
       case "rank":
         return team.rank > 0 ? `Rank ${team.rank}` : "Rank —";
+      case "fsm":
+        return team.fsm != null ? `FSM: ${team.fsm.toFixed(1)}` : "FSM: —";
       case "epa":
         return team.epa != null ? `EPA: ${team.epa.toFixed(1)}` : "EPA: —";
       case "averageRating":

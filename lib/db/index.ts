@@ -129,6 +129,7 @@ export interface TbaTeam {
   } | null;
   opr?: number;
   dpr?: number;
+  fsm?: number;
   last_synced?: number;
 }
 

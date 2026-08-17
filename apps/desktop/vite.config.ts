@@ -18,6 +18,7 @@ export default defineConfig(async () => ({
   }), react(), tailwindcss()],
   // Use shared .env from workspace root
   envDir: path.resolve(__dirname, "../.."),
+  envPrefix: ["VITE_", "FSM_"],
   resolve: {
     alias: [
       { find: "@ui", replacement: path.resolve(__dirname, "../../packages/shadcn/src") },

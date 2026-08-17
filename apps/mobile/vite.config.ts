@@ -78,6 +78,7 @@ export default defineConfig({
   plugins,
   // Use shared .env from workspace root
   envDir: path.resolve(__dirname, "../.."),
+  envPrefix: ["VITE_", "FSM_"],
   server: {
     port: 5713,
     // Required headers for SQLite WASM with OPFS (SharedArrayBuffer)

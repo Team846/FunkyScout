@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getEventMatchData, getEventTeamData, getEventSchedule, type EventMatchData } from "@lib/db";
 import { useSync } from "@lib/context/SyncContext";
+import { useTeamData } from "@lib/context/TeamDataContext";
 import { getMatchLabel } from "@lib/utils/match";
 import { calculateSingleMatchStats, calculateTeamStats, type TeamStats } from "@lib/data/matchStats";
 import type { MatchDataRaw } from "@lib/config/match-action-schemas/actions.types";
@@ -31,10 +32,12 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   const [teamStats, setTeamStats] = useState<{
     opr?: number;
     epa?: { total_points?: { mean?: number; sd?: number } } | null;
+    fsm?: number;
   } | null>(null);
   const [nextMatch, setNextMatch] = useState<{ match: string; time?: number } | null>(null);
   const [teamAutos, setTeamAutos] = useState<TeamAutoDisplay[]>([]);
   const { registerRefreshCallback } = useSync();
+  const { tbaTeams } = useTeamData();
 
   const loadData = useCallback(() => {
     if (!eventKey || !teamKey) return;
@@ -53,14 +56,16 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
         setSelectedMatch(validData[0].match);
       }
 
-      // Get team stats (OPR/EPA) and autos (normalize team key: event_team_data can store frc1234 or 1234)
+      // Get team stats (OPR/EPA/FSM) and autos (normalize team key: event_team_data can store frc1234 or 1234)
       const teamData = teamDataResult.find(
         (t) => t.team === teamKey || t.team === teamKey.replace(/^frc/i, "")
       );
+      console.log(teamData, teamData?.data.fsm)
       if (teamData?.data) {
         setTeamStats({
           opr: teamData.data.opr,
           epa: teamData.data.epa,
+          fsm: teamData.data.fsm,
         });
         const raw = (teamData.data as { autos?: unknown[] })?.autos ?? [];
         if (!Array.isArray(raw)) {
@@ -127,6 +132,16 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
     return registerRefreshCallback(loadData);
   }, [registerRefreshCallback, loadData]);
 
+  const tbaTeam = tbaTeams.find(
+    (t) => t.key === teamKey || t.team === parseInt(teamKey.replace(/^frc/i, ""), 10)
+  );
+
+  const effectiveTeamStats = {
+    opr: teamStats?.opr ?? tbaTeam?.opr,
+    epa: teamStats?.epa ?? tbaTeam?.epa,
+    fsm: teamStats?.fsm ?? tbaTeam?.fsm,
+  };
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -138,26 +153,45 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   if (matchData.length === 0) {
     return (
       <div className="flex flex-1 flex-col gap-6 px-6 py-4">
-        {/* OPR/EPA Stats - Same as scouted view */}
-        {teamStats && (teamStats.opr !== null && teamStats.opr !== undefined || teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined) && (
-          <div className="grid grid-cols-2 gap-3">
-            {teamStats.opr !== null && teamStats.opr !== undefined && (
+        {/* OPR/EPA/FSM Stats - Same as scouted view */}
+        {effectiveTeamStats && (
+          (effectiveTeamStats.opr !== null && effectiveTeamStats.opr !== undefined) ||
+          (effectiveTeamStats.epa?.total_points?.mean !== null && effectiveTeamStats.epa?.total_points?.mean !== undefined) ||
+          (effectiveTeamStats.fsm !== null && effectiveTeamStats.fsm !== undefined)
+        ) && (
+          <div className={`grid gap-3 ${
+            [
+              effectiveTeamStats.opr != null ? 1 : 0,
+              effectiveTeamStats.epa?.total_points?.mean != null ? 1 : 0,
+              effectiveTeamStats.fsm != null ? 1 : 0
+            ].reduce((a, b) => a + b, 0) === 3
+              ? "grid-cols-3"
+              : "grid-cols-2"
+          }`}>
+            {effectiveTeamStats.opr !== null && effectiveTeamStats.opr !== undefined && (
               <div className="rounded-xl bg-muted p-4">
                 <p className="text-xs text-muted-foreground mb-1">OPR</p>
                 <p className="text-xl font-bold text-primary">
-                  {teamStats.opr.toFixed(1)}
+                  {effectiveTeamStats.opr.toFixed(1)}
                 </p>
               </div>
             )}
-            {teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined && (
+            {effectiveTeamStats.epa?.total_points?.mean !== null && effectiveTeamStats.epa?.total_points?.mean !== undefined && (
               <div className="rounded-xl bg-muted p-4">
                 <p className="text-xs text-muted-foreground mb-1">EPA</p>
                 <p className="text-xl font-bold text-primary">
-                  {teamStats.epa.total_points.mean.toFixed(1)}
+                  {effectiveTeamStats.epa.total_points.mean.toFixed(1)}
                 </p>
               </div>
             )}
-            
+            {effectiveTeamStats.fsm !== null && effectiveTeamStats.fsm !== undefined && (
+              <div className="rounded-xl bg-muted p-4">
+                <p className="text-xs text-muted-foreground mb-1">FSM</p>
+                <p className="text-xl font-bold text-primary">
+                  {effectiveTeamStats.fsm.toFixed(1)}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -256,22 +290,42 @@ export function MatchScoutingTab({ eventKey, teamKey }: MatchScoutingTabProps) {
   
   return (
     <div className="flex flex-col gap-10 p-2.5">
-      {/* OPR/EPA Stats */}
-      {teamStats && (teamStats.opr !== null && teamStats.opr !== undefined || teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined) && (
-        <div className="grid grid-cols-2 gap-3">
-          {teamStats.opr !== null && teamStats.opr !== undefined && (
+      {/* OPR/EPA/FSM Stats */}
+      {effectiveTeamStats && (
+        (effectiveTeamStats.opr !== null && effectiveTeamStats.opr !== undefined) ||
+        (effectiveTeamStats.epa?.total_points?.mean !== null && effectiveTeamStats.epa?.total_points?.mean !== undefined) ||
+        (effectiveTeamStats.fsm !== null && effectiveTeamStats.fsm !== undefined)
+      ) && (
+        <div className={`grid gap-3 ${
+          [
+            effectiveTeamStats.opr != null ? 1 : 0,
+            effectiveTeamStats.epa?.total_points?.mean != null ? 1 : 0,
+            effectiveTeamStats.fsm != null ? 1 : 0
+          ].reduce((a, b) => a + b, 0) === 3
+            ? "grid-cols-3"
+            : "grid-cols-2"
+        }`}>
+          {effectiveTeamStats.opr !== null && effectiveTeamStats.opr !== undefined && (
             <div className="rounded-xl bg-muted p-4">
               <p className="text-sm text-muted-foreground mb-1">OPR</p>
               <p className="text-2xl font-bold text-primary">
-                {teamStats.opr.toFixed(1)}
+                {effectiveTeamStats.opr.toFixed(1)}
               </p>
             </div>
           )}
-          {teamStats.epa?.total_points?.mean !== null && teamStats.epa?.total_points?.mean !== undefined && (
+          {effectiveTeamStats.epa?.total_points?.mean !== null && effectiveTeamStats.epa?.total_points?.mean !== undefined && (
             <div className="rounded-xl bg-muted p-4">
               <p className="text-sm text-muted-foreground mb-1">EPA</p>
               <p className="text-2xl font-bold text-primary">
-                {teamStats.epa.total_points.mean.toFixed(1)}
+                {effectiveTeamStats.epa.total_points.mean.toFixed(1)}
+              </p>
+            </div>
+          )}
+          {effectiveTeamStats.fsm !== null && effectiveTeamStats.fsm !== undefined && (
+            <div className="rounded-xl bg-muted p-4">
+              <p className="text-sm text-muted-foreground mb-1">FSM</p>
+              <p className="text-2xl font-bold text-primary">
+                {effectiveTeamStats.fsm.toFixed(1)}
               </p>
             </div>
           )}

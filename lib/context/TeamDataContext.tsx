@@ -15,6 +15,7 @@ import {
   getTbaTeams,
   cacheTbaTeams,
   getEventTeamData,
+  upsertEventTeamDataRows,
   type TbaTeam,
   type EventTeamData,
 } from "@lib/db";
@@ -25,6 +26,7 @@ import {
 } from "@lib/utils/fetchUtils";
 import { fetchTBATeamStatuses, fetchTBAEventOPRs } from "@lib/tba/event";
 import { fetchStatboticsEventTeams } from "@lib/statbotics/event";
+import { fetchFSMEventTeams } from "@lib/fsm/event";
 
 export interface Team {
   key: string;
@@ -50,6 +52,7 @@ export interface TBATeam {
   } | null;
   opr?: number;
   dpr?: number;
+  fsm?: number;
 }
 
 interface TeamStatsEntry {
@@ -60,6 +63,7 @@ interface TeamStatsEntry {
   epa: TBATeam["epa"] | null;
   opr?: number;
   dpr?: number;
+  fsm?: number;
 }
 
 interface TeamDataContextType {
@@ -168,40 +172,77 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
       }
       try {
         // Fetch Supabase team data (pit scouting fields, team_name, assignments)
-        // AND TBA/Statbotics stats in parallel — same poll cycle, same 5-min interval.
+        // AND TBA/Statbotics/FSM stats in parallel — same poll cycle, same 5-min interval.
         // Use allSettled for API calls so one failure doesn't block the Supabase update.
-        const [supabaseTeams, [statusResult, epaResult, oprResult]] = await Promise.all([
+        const [supabaseTeams, [statusResult, epaResult, oprResult, fsmResult]] = await Promise.all([
           getTeams(currentEvent),
           Promise.allSettled([
             fetchTBATeamStatuses(currentEvent),
             fetchStatboticsEventTeams(currentEvent),
             fetchTBAEventOPRs(currentEvent),
+            fetchFSMEventTeams(currentEvent),
           ]),
         ]);
 
         const statuses = statusResult.status === "fulfilled" ? statusResult.value : undefined;
         const epaMap = epaResult.status === "fulfilled" ? (epaResult.value as Record<string, any>) : {};
         const oprMap = oprResult.status === "fulfilled" ? oprResult.value : undefined;
+        const fsmMap = fsmResult.status === "fulfilled" ? fsmResult.value : {};
 
-        // Build live stats map from TBA + Statbotics.
-        // rank, record, next/last match, EPA, OPR are NOT read from Supabase data —
-        // mobile polls TBA and Statbotics directly to avoid triggering unnecessary
+        // Build live stats map from TBA + Statbotics + FSM.
+        // rank, record, next/last match, EPA, OPR, FSM are NOT read from Supabase data —
+        // mobile polls TBA, Statbotics, and FSM directly to avoid triggering unnecessary
         // last_modified bumps on event_team_data during competition.
-        if (statuses) {
+        const allTeamKeys = new Set([
+          ...Object.keys(statuses ?? {}),
+          ...Object.keys(fsmMap ?? {}),
+          ...(supabaseTeams ?? []).map((t: { team: string }) => t.team),
+        ]);
+
+        if (allTeamKeys.size > 0) {
           const stats: Record<string, TeamStatsEntry> = {};
-          for (const [teamKey, status] of Object.entries(statuses as Record<string, any>)) {
+          for (const teamKey of allTeamKeys) {
+            const status = (statuses as Record<string, any> | undefined)?.[teamKey];
+            const rawNum = teamKey.replace(/^frc/i, "");
             stats[teamKey] = {
-              rank: status.qual?.ranking?.rank ?? 0,
-              record: status.qual?.ranking?.record ?? { wins: 0, losses: 0, ties: 0 },
-              nextMatch: status.next_match_key ?? null,
-              lastMatch: status.last_match_key ?? null,
+              rank: status?.qual?.ranking?.rank ?? 0,
+              record: status?.qual?.ranking?.record ?? { wins: 0, losses: 0, ties: 0 },
+              nextMatch: status?.next_match_key ?? null,
+              lastMatch: status?.last_match_key ?? null,
               epa: (epaMap as Record<string, any>)[teamKey] ?? null,
               opr: oprMap?.oprs[teamKey],
               dpr: oprMap?.dprs[teamKey],
+              fsm: fsmMap[teamKey] ?? fsmMap[rawNum],
             };
           }
-          console.log(`[TeamData] Stats: updated ${Object.keys(stats).length} teams from TBA/Statbotics`);
+          console.log(`[TeamData] Stats: updated ${Object.keys(stats).length} teams from TBA/Statbotics/FSM`);
           setTeamStatsData(stats);
+        }
+
+        // Persist computed FSM, OPR, EPA into local SQLite event_team_data.data JSON column
+        // so that getEventTeamData(eventKey) returns teamData.data.fsm as expected.
+        if (supabaseTeams && supabaseTeams.length > 0) {
+          const rowsToUpsert = supabaseTeams.map((supabaseTeam: any) => {
+            const rawNum = supabaseTeam.team.replace(/^frc/i, "");
+            const fsmVal = fsmMap[supabaseTeam.team] ?? fsmMap[rawNum];
+            const oprVal = oprMap?.oprs?.[supabaseTeam.team] ?? oprMap?.oprs?.[rawNum];
+            const epaVal = (epaMap as Record<string, any>)[supabaseTeam.team] ?? (epaMap as Record<string, any>)[rawNum];
+
+            const existingData = typeof supabaseTeam.data === "object" && supabaseTeam.data !== null ? supabaseTeam.data : {};
+            const newData = {
+              ...existingData,
+              ...(fsmVal !== undefined ? { fsm: fsmVal } : {}),
+              ...(oprVal !== undefined ? { opr: oprVal } : {}),
+              ...(epaVal !== undefined ? { epa: epaVal } : {}),
+            };
+
+            return {
+              ...supabaseTeam,
+              data: newData,
+            };
+          });
+
+          await upsertEventTeamDataRows(currentEvent, rowsToUpsert);
         }
 
         // Update base team list from Supabase (team_name only — no computed stats).
@@ -217,6 +258,8 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               supabaseTeam.team.replace("frc", ""),
               10
             );
+            const rawNum = supabaseTeam.team.replace(/^frc/i, "");
+            const fsmVal = fsmMap[supabaseTeam.team] ?? fsmMap[rawNum];
             return {
               event: currentEvent,
               team_key: supabaseTeam.team,
@@ -229,6 +272,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
               epa: null,
               opr: undefined,
               dpr: undefined,
+              fsm: fsmVal,
               next_match: undefined,
               last_match: undefined,
               last_synced: Date.now(),
@@ -401,6 +445,7 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
           epa: s?.epa ?? null,
           opr: s?.opr,
           dpr: s?.dpr,
+          fsm: s?.fsm ?? t.fsm,
         };
       }),
     [baseTbaTeams, teamStatsData]
