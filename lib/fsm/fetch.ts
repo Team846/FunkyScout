@@ -18,7 +18,7 @@ async function fetchFSMData(param: string, method: "GET" | "POST" = "GET") {
   console.log(url)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
-
+  
   try {
     const headers: Record<string, string> = {};
     if (fsmApiKey) {
@@ -41,7 +41,7 @@ async function fetchFSMData(param: string, method: "GET" | "POST" = "GET") {
     const text = await response.text();
     console.log("HERE", text)
     if (!contentType.includes("application/json") && text.trim().startsWith("<")) {
-      console.warn(`[FSM] Received HTML response for ${param}`);
+      console.log(`[FSM] Received HTML response for ${param}`);
       return undefined;
     }
 
@@ -49,22 +49,22 @@ async function fetchFSMData(param: string, method: "GET" | "POST" = "GET") {
       
       const data = JSON.parse(text);
       if (data?.error) {
-        console.warn(`[FSM] API error for ${param}:`, data.error.message || data.error);
+        console.log(`[FSM] API error for ${param}:`, data.error.message || data.error);
         return undefined;
       }
-      
+      console.log(data)
       return data;
     } catch (parseError) {
-      console.warn(`[FSM] Failed to parse JSON response for ${param}`);
+      console.log(`[FSM] Failed to parse JSON response for ${param}`);
       return undefined;
     }
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === "AbortError") {
-      console.warn(`[FSM] Request timed out after 10s for ${param}`);
+      console.log(`[FSM] Request timed out after 10s for ${param}`);
       return undefined;
     }
-    console.warn(`[FSM] Fetch failed for ${param}:`, error);
+    console.log(`[FSM] Fetch failed for ${param}:`, error);
     return undefined;
   }
 }

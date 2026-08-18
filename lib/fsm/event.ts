@@ -22,12 +22,14 @@ export async function fetchFSMEventTeams(
 ): Promise<Record<string, number>> {
   try {
     const data = await fetchFSMData(`/events/${event}/teams`);
-    if (!data || !Array.isArray(data.teams)) {
+    console.log('FETCH FSM DATA:', data)
+    if (!data || !Array.isArray(data.data.teams)) {
+      console.log('HERE 1')
       return {};
     }
 
     const result: Record<string, number> = {};
-    for (const team of data.teams) {
+    for (const team of data.data.teams) {
       console.log("TEAM", team)
       if (team.fsm != null && typeof team.fsm === "number") {
         const teamKey = team.team_key || (team.team_number ? `frc${team.team_number}` : null);
@@ -38,7 +40,7 @@ export async function fetchFSMEventTeams(
         }
       }
     }
-    console.log(result)
+    console.log('HERE 2', result)
     return result;
   } catch (error) {
     console.error(`[FSM] Failed to fetch event teams for ${event}:`, error);
