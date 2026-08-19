@@ -21,8 +21,6 @@ import { canCreatePicklist } from "@lib/utils/permissions";
 import { getMatchLabel } from "@lib/utils/match";
 import { getUserEventScheduleAssignments } from "@lib/db";
 import {
-  scheduleShiftNotifications,
-  clearShiftNotifications,
   rescheduleOnResume,
 } from "../../lib/shiftNotifications";
 
@@ -455,20 +453,7 @@ export function DashboardPage() {
         untilBreak,
       });
 
-      // Schedule 1-min-warning notifications for all upcoming shifts
-      const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
-      const effectiveNow = now - UPCOMING_BUFFER_MS;
-      scheduleShiftNotifications(
-        rawDashShifts
-          .filter((s) => !s.matchTime || s.matchTime > effectiveNow)
-          .map((s) => ({
-            match: s.assignment.match,
-            matchLabel: getMatchLabel(s.assignment.match),
-            teamNumber: s.assignment.team.replace("frc", ""),
-            alliance: s.assignment.alliance,
-            time: s.matchTime,
-          })),
-      );
+
 
       const upcomingShifts = rawDashShifts
         .filter((s) => s.matchTime && s.matchTime > now - SHIFT_BUFFER_MS)
@@ -509,7 +494,6 @@ export function DashboardPage() {
     const interval = setInterval(recompute, 30_000);
     return () => {
       clearInterval(interval);
-      clearShiftNotifications();
     };
   }, [rawDashShifts, dashShiftsDone, tbaSchedule]);
 

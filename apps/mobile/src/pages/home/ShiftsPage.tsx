@@ -17,8 +17,6 @@ import {
 } from "@lib/db";
 import {
   requestNotificationPermission,
-  scheduleShiftNotifications,
-  clearShiftNotifications,
   rescheduleOnResume,
 } from "../../lib/shiftNotifications";
 
@@ -162,20 +160,6 @@ export function ShiftsPage() {
       .finally(() => setInitialLoading(false));
   }, [currentEvent, userData.name, tbaSchedule]);
 
-  // Re-split past/upcoming every 30s so the highlight advances without a poll.
-  // Also reschedule notifications so timeouts stay accurate after recompute.
-  const scheduleNotifications = useCallback((upcoming: RawShift[]) => {
-    scheduleShiftNotifications(
-      upcoming.map((s) => ({
-        match: s.match,
-        matchLabel: s.matchLabel,
-        teamNumber: s.teamNumber,
-        alliance: s.alliance,
-        time: s.time,
-      }))
-    );
-  }, []);
-
   useEffect(() => {
     function recompute() {
       const { combined, nextIdx } = splitShifts(rawShifts);
@@ -184,17 +168,11 @@ export function ShiftsPage() {
         return nextIdx;
       });
       setShifts(combined);
-
-      // Schedule notifications for upcoming shifts only
-      const UPCOMING_BUFFER_MS = 2 * 60 * 1000;
-      const effectiveNow = Date.now() - UPCOMING_BUFFER_MS;
-      const upcoming = rawShifts.filter((s) => !s.time || s.time > effectiveNow);
-      scheduleNotifications(upcoming);
     }
     recompute();
     const interval = setInterval(recompute, 30_000);
     return () => clearInterval(interval);
-  }, [rawShifts, scheduleNotifications]);
+  }, [rawShifts]);
 
   // Auto-scroll to the next shift once when data loads.
   // home.tsx uses min-h-dvh so the window is the scroll container (not CommandList).
