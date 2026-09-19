@@ -20,7 +20,7 @@ export interface PicklistEditorState {
 export interface PicklistEditorActions {
   handleDragEnd: (event: DragEndEvent) => void;
   toggleExclude: (teamKey: string) => void;
-  setTeamTier: (teamKey: string, tier: number | null) => void;
+  setTeamTier: (teamKey: string, tier: number | null) => Promise<void>;
   saveChanges: () => Promise<void>;
   resetChanges: () => void;
   setEntries: (entries: EventPicklistEntry[]) => void;
@@ -45,6 +45,14 @@ function partitionExcluded(entries: EventPicklistEntry[]): EventPicklistEntry[] 
   const included = entries.filter((e) => !e.flags?.excluded);
   const excluded = entries.filter((e) => e.flags?.excluded);
   return [...included, ...excluded];
+}
+
+function entriesToPicklistPayload(entries: EventPicklistEntry[]) {
+  return entries.map((e) => ({
+    team: e.team,
+    rank: e.rank ?? 0,
+    flags: e.flags ?? {},
+  }));
 }
 
 export function usePicklistEditor(
@@ -266,7 +274,10 @@ export function usePicklistEditor(
     console.log("[usePicklistEditor] ✓ Toggled exclude (unsaved)");
   };
 
-  const setTeamTier = (teamKey: string, tier: number | null) => {
+  const setTeamTier = async (teamKey: string, tier: number | null) => {
+    if (!picklistId || !eventKey) return;
+
+    const previous = entries;
     const updated = entries.map((e) => {
       if (e.team !== teamKey) return e;
       const nextFlags = { ...(e.flags ?? {}) };
@@ -278,6 +289,25 @@ export function usePicklistEditor(
       return { ...e, flags: nextFlags };
     });
     setEntries(updated);
+
+    setIsSaving(true);
+    try {
+      await updatePicklist(
+        picklistId,
+        eventKey,
+        title,
+        entriesToPicklistPayload(updated),
+        type,
+      );
+      setOriginalEntries(updated);
+      setJustSaved(true);
+      setSaveTimestamp(Date.now());
+    } catch (error) {
+      setEntries(previous);
+      onSaveError?.(error as Error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   /**
@@ -299,14 +329,14 @@ export function usePicklistEditor(
 
     try {
       // Ensure all entries have required fields
-      const validEntries = entries.map((e) => ({
-        team: e.team,
-        rank: e.rank ?? 0,
-        flags: e.flags ?? {},
-      }));
-
       console.log("[usePicklistEditor] Calling updatePicklist...");
-      await updatePicklist(picklistId, eventKey, title, validEntries, type);
+      await updatePicklist(
+        picklistId,
+        eventKey,
+        title,
+        entriesToPicklistPayload(entries),
+        type,
+      );
       console.log("[usePicklistEditor] updatePicklist returned");
 
       const now = Date.now();
