@@ -17,7 +17,14 @@ import {
   Maximize2,
   Grid2X2,
   GitCompare,
+  Layers,
 } from "lucide-react";
+import {
+  getPicklistEntryTier,
+  picklistTeamCardBorderClasses,
+  picklistTierBorderStyle,
+  PICKLIST_TIER_MAX,
+} from "@lib/picklist/tiers";
 import { getTeamNum, SortableFullPanel } from "../components/TeamPanelShared";
 import {
   DndContext,
@@ -184,6 +191,7 @@ interface SidebarTeamCardProps {
   isSelected: boolean;
   onSelect: () => void;
   onToggleExclude: () => void;
+  onSetTier: (tier: number | null) => void;
   onTeamExpand?: () => void;
 }
 
@@ -193,8 +201,10 @@ function SidebarTeamCard({
   isSelected,
   onSelect,
   onToggleExclude,
+  onSetTier,
   onTeamExpand,
 }: SidebarTeamCardProps) {
+  const [tierOpen, setTierOpen] = useState(false);
   const {
     attributes,
     listeners,
@@ -205,10 +215,15 @@ function SidebarTeamCard({
   } = useSortable({ id: entry.team });
 
   const isExcluded = !!entry.flags?.excluded;
+  const tier = getPicklistEntryTier(entry.flags);
   const teamNum = getTeamNum(entry.team);
   const teamName = tbaTeam?.name ?? entry.team;
   const tbaRank = tbaTeam?.rank;
-  {console.log(entry, entry.flags)}
+  const borderClasses = picklistTeamCardBorderClasses(tier, {
+    isSelected,
+    isExcluded,
+  });
+  const tierBorderStyle = picklistTierBorderStyle(tier);
   return (
     
     <Tooltip>
@@ -221,13 +236,12 @@ function SidebarTeamCard({
             transform: CSS.Transform.toString(transform),
             transition,
             opacity: isDragging ? 0.4 : 1,
+            ...tierBorderStyle,
           }}
           className={[
-            "flex items-stretch rounded-lg border overflow-hidden select-none transition-all",
+            "flex items-stretch rounded-lg overflow-hidden select-none transition-all",
+            tier !== null ? "border-solid" : `border ${borderClasses}`,
             isExcluded ? "opacity-40 grayscale" : "",
-            isSelected
-              ? "border-primary"
-              : "border-border/60 hover:border-muted-foreground",
           ].join(" ")}
         >
           {/* ── Drag handle strip (left edge) ── */}
@@ -299,6 +313,70 @@ function SidebarTeamCard({
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
+
+              <Popover open={tierOpen} onOpenChange={setTierOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className={[
+                      "rounded text-xs font-semibold min-w-[1.75rem] h-6 px-1 flex items-center justify-center gap-0.5 transition-colors",
+                      tier !== null
+                        ? "text-foreground"
+                        : "text-muted-foreground/50 hover:text-muted-foreground",
+                    ].join(" ")}
+                    title={
+                      tier !== null ? `Tier ${tier} — change tier` : "Set tier"
+                    }
+                  >
+                    <Layers className="w-3.5 h-3.5 shrink-0" />
+                    {tier !== null ? tier : "—"}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-auto p-2"
+                  side="right"
+                  align="start"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <p className="text-xs text-muted-foreground mb-2 px-1">
+                    Team tier
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 max-w-[10rem]">
+                    {Array.from({ length: PICKLIST_TIER_MAX }, (_, i) => i + 1).map(
+                      (t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            onSetTier(t);
+                            setTierOpen(false);
+                          }}
+                          className={[
+                            "w-8 h-8 rounded-md text-xs font-bold transition-colors",
+                            tier === t
+                              ? "bg-muted"
+                              : "bg-background hover:bg-muted/60",
+                          ].join(" ")}
+                          style={picklistTierBorderStyle(t)}
+                        >
+                          {t}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSetTier(null);
+                      setTierOpen(false);
+                    }}
+                    className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground py-1"
+                  >
+                    Clear tier
+                  </button>
+                </PopoverContent>
+              </Popover>
 
               {tbaRank !== undefined && (
                 <div className="flex items-center gap-1.5 ml-auto">
@@ -797,6 +875,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
     isSaving,
     handleDragEnd: hookHandleDragEnd,
     toggleExclude,
+    setTeamTier,
     saveChanges,
     resetChanges,
     setEntries,
@@ -1195,6 +1274,7 @@ function PicklistEditor({ picklistId }: { picklistId: string }) {
                     isSelected={selectedTeams.includes(entry.team)}
                     onSelect={() => toggleSelectedTeam(entry.team)}
                     onToggleExclude={() => toggleExclude(entry.team)}
+                    onSetTier={(tier) => setTeamTier(entry.team, tier)}
                     onTeamExpand={() => {
                       const teamNum = entry.team.replace("frc", "");
                       addTab(

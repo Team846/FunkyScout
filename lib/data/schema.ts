@@ -97,6 +97,7 @@ export interface EventMatchData {
 export interface PicklistEntry {
   team: string;
   rank: number;
+  /** Optional: excluded, tags, tier (1–5), etc. */
   flags: Record<string, unknown> | null;
 }
 

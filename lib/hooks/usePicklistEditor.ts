@@ -20,6 +20,7 @@ export interface PicklistEditorState {
 export interface PicklistEditorActions {
   handleDragEnd: (event: DragEndEvent) => void;
   toggleExclude: (teamKey: string) => void;
+  setTeamTier: (teamKey: string, tier: number | null) => void;
   saveChanges: () => Promise<void>;
   resetChanges: () => void;
   setEntries: (entries: EventPicklistEntry[]) => void;
@@ -265,6 +266,20 @@ export function usePicklistEditor(
     console.log("[usePicklistEditor] ✓ Toggled exclude (unsaved)");
   };
 
+  const setTeamTier = (teamKey: string, tier: number | null) => {
+    const updated = entries.map((e) => {
+      if (e.team !== teamKey) return e;
+      const nextFlags = { ...(e.flags ?? {}) };
+      if (tier === null) {
+        delete nextFlags.tier;
+      } else {
+        nextFlags.tier = tier;
+      }
+      return { ...e, flags: nextFlags };
+    });
+    setEntries(updated);
+  };
+
   /**
    * Save changes to database
    * This is the ONLY function that actually persists to Supabase
@@ -331,6 +346,7 @@ export function usePicklistEditor(
     isSaving,
     handleDragEnd,
     toggleExclude,
+    setTeamTier,
     saveChanges,
     resetChanges,
     setEntries,
